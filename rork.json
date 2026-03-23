@@ -1,0 +1,9 @@
+{
+  "apps": [
+    {
+      "name": "Gnome",
+      "path": "expo",
+      "framework": "react-native"
+    }
+  ]
+}
