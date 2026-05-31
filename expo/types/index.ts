@@ -34,6 +34,7 @@ export interface Profile {
   can_claim: boolean;
   can_sponsor: boolean;
   can_create_promotions: boolean;
+  can_offer_delivery: boolean; // future (V2 delivery), dormant in V1
   created_at: string;
 }
 
@@ -48,6 +49,7 @@ export interface Listing {
   lat: number | null;
   lng: number | null;
   status: ListingStatus;
+  delivery_available?: boolean; // future (V2 delivery), dormant in V1
   created_at: string;
   expires_at: string;
   // Joined / derived (not columns):
@@ -61,6 +63,8 @@ export interface Claim {
   listing_id: string;
   claimer_id: string;
   status: ClaimStatus;
+  fulfillment_method?: string; // future (V2 delivery): pickup | delivery | meetup
+  assigned_fulfiller_id?: string | null; // future (V2 delivery), dormant in V1
   created_at: string;
   // Joined:
   listing?: Listing | null;

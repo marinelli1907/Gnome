@@ -49,6 +49,7 @@ create table if not exists public.profiles (
   can_claim             boolean not null default true,
   can_sponsor           boolean not null default false,
   can_create_promotions boolean not null default false,
+  can_offer_delivery    boolean not null default false,  -- future (V2 delivery); generic, no cross-app tie
   created_at        timestamptz not null default now()
 );
 
@@ -64,6 +65,7 @@ create table if not exists public.listings (
   quantity        text,
   weight_estimate text,                              -- future-proofing (nullable)
   organic_flag    boolean not null default false,    -- future-proofing
+  delivery_available boolean not null default false, -- future (V2 delivery); V1 listings stay pickup
   photos          text[] not null default '{}',
   -- Precise location:
   lat             double precision,
@@ -92,6 +94,9 @@ create table if not exists public.claims (
   listing_id  uuid not null references public.listings (id) on delete cascade,
   claimer_id  uuid not null references public.profiles (id) on delete cascade,
   status      claim_status not null default 'pending',
+  -- future (V2 delivery) — dormant in V1, nothing reads these:
+  fulfillment_method     text not null default 'pickup',  -- pickup | delivery | meetup
+  assigned_fulfiller_id  uuid references public.profiles (id) on delete set null,
   created_at  timestamptz not null default now(),
   unique (listing_id, claimer_id)
 );
