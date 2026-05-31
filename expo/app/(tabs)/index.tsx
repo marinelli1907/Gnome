@@ -9,7 +9,9 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { List, Map as MapIcon } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
+import MapListings from '@/components/MapListings';
 import { EmptyState } from '@/components/ui';
 import { CATEGORIES } from '@/constants/categories';
 import Colors from '@/constants/colors';
@@ -27,6 +29,7 @@ export default function BrowseScreen() {
   const [coords, setCoords] = useState<Coords | null>(null);
   const [radius, setRadius] = useState<RadiusOption>(10);
   const [category, setCategory] = useState<string | null>(null);
+  const [mode, setMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
     void getCurrentCoords().then(setCoords);
@@ -40,8 +43,23 @@ export default function BrowseScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Text style={styles.brand}>🍅 Gnome</Text>
-      <Text style={styles.tagline}>Fresh surplus from neighbors near you</Text>
+      <View style={styles.brandRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.brand}>🍅 Gnome</Text>
+          <Text style={styles.tagline}>Fresh surplus from neighbors near you</Text>
+        </View>
+        <Pressable
+          onPress={() => setMode(mode === 'list' ? 'map' : 'list')}
+          style={styles.modeBtn}
+        >
+          {mode === 'list' ? (
+            <MapIcon size={18} color={Colors.primary} />
+          ) : (
+            <List size={18} color={Colors.primary} />
+          )}
+          <Text style={styles.modeBtnText}>{mode === 'list' ? 'Map' : 'List'}</Text>
+        </Pressable>
+      </View>
 
       <ScrollView
         horizontal
@@ -113,23 +131,30 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <FlatList
-        data={data ?? []}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        ListHeaderComponent={Header}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <View style={styles.cardWrap}>
-            <ListingCard listing={item} />
-          </View>
-        )}
-        ListEmptyComponent={isLoading ? null : empty}
-        refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
-        }
-      />
+      {mode === 'map' ? (
+        <>
+          {Header}
+          <MapListings listings={data ?? []} center={coords} />
+        </>
+      ) : (
+        <FlatList
+          data={data ?? []}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          ListHeaderComponent={Header}
+          columnWrapperStyle={styles.row}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <View style={styles.cardWrap}>
+              <ListingCard listing={item} />
+            </View>
+          )}
+          ListEmptyComponent={isLoading ? null : empty}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
+          }
+        />
+      )}
     </View>
   );
 }
@@ -138,6 +163,19 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   list: { paddingBottom: 32 },
   header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
+  brandRow: { flexDirection: 'row', alignItems: 'center' },
+  modeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modeBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
   brand: { fontSize: 28, fontWeight: '800', color: Colors.primaryDark },
   tagline: { fontSize: 14, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
   chipRow: { marginHorizontal: -16 },

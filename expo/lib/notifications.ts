@@ -39,8 +39,27 @@ export async function registerForPushNotifications(userId: string): Promise<void
 
     await supabase
       .from('device_tokens')
-      .upsert({ user_id: userId, token }, { onConflict: 'token' });
+      .upsert(
+        { user_id: userId, token, platform: Platform.OS },
+        { onConflict: 'token' },
+      );
   } catch {
     // Push is best-effort; never block the app on it.
+  }
+}
+
+/**
+ * Ask the `notify` Edge Function to push to the counterparty. Best-effort: the
+ * loop still works (and persists) even if push isn't deployed yet.
+ */
+export async function notifyCounterparty(
+  event: 'claim' | 'approved',
+  claimId: string,
+): Promise<void> {
+  try {
+    if (!isSupabaseConfigured) return;
+    await supabase.functions.invoke('notify', { body: { event, claimId } });
+  } catch {
+    // ignore — notifications are not required for the core loop
   }
 }

@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { notifyCounterparty } from './notifications';
 import { distanceMiles, radiusToMiles, type Coords, type RadiusOption } from './location';
 import type { Claim, Listing, Profile, ProfileStats } from '@/types';
 
@@ -197,7 +198,8 @@ export function useClaimListing(uid?: string) {
       if (error) throw error;
       return data as Claim;
     },
-    onSuccess: (_d, listingId) => {
+    onSuccess: (claim, listingId) => {
+      void notifyCounterparty('claim', claim.id);
       qc.invalidateQueries({ queryKey: keys.listing(listingId) });
       qc.invalidateQueries({ queryKey: keys.myClaims(uid) });
     },
@@ -217,7 +219,8 @@ export function useUpdateClaim(uid?: string) {
         .eq('id', input.claimId);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_d, input) => {
+      if (input.status === 'approved') void notifyCounterparty('approved', input.claimId);
       qc.invalidateQueries({ queryKey: keys.incomingClaims(uid) });
       qc.invalidateQueries({ queryKey: keys.myClaims(uid) });
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
