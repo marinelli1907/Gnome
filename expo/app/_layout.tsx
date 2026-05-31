@@ -1,114 +1,23 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { StatusBar } from "expo-status-bar";
-import { AppProvider } from "@/providers/AppProvider";
-import Colors from "@/constants/colors";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import React, { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from '@/providers/AuthProvider';
+import Colors from '@/constants/colors';
 
 void SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+});
 
-function RootLayoutNav() {
-  return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="listing/[id]"
-        options={{
-          title: "Listing",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="create-listing"
-        options={{
-          presentation: "modal",
-          title: "New Listing",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="chat/[id]"
-        options={{
-          title: "Chat",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="seller-dashboard"
-        options={{
-          title: "Seller Dashboard",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="seller-plan"
-        options={{
-          title: "Seller Plans",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="promote-listing"
-        options={{
-          presentation: "modal",
-          title: "Promote Listing",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="tax-summary"
-        options={{
-          title: "Earnings & Tax",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="storefront"
-        options={{
-          title: "Storefront",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="orders"
-        options={{
-          title: "Orders & Requests",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="notifications"
-        options={{
-          title: "Notifications",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-      <Stack.Screen
-        name="checkout"
-        options={{
-          presentation: "modal",
-          title: "Checkout",
-          headerStyle: { backgroundColor: Colors.surface },
-          headerTintColor: Colors.text,
-        }}
-      />
-    </Stack>
-  );
-}
+const headerStyle = {
+  headerStyle: { backgroundColor: Colors.surface },
+  headerTintColor: Colors.text,
+};
 
 export default function RootLayout() {
   useEffect(() => {
@@ -118,10 +27,22 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <AppProvider>
-          <StatusBar style="dark" />
-          <RootLayoutNav />
-        </AppProvider>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <StatusBar style="dark" />
+            <Stack screenOptions={{ headerBackTitle: 'Back' }}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="sign-in"
+                options={{ presentation: 'modal', title: 'Sign In', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="listing/[id]"
+                options={{ title: 'Listing', ...headerStyle }}
+              />
+            </Stack>
+          </AuthProvider>
+        </SafeAreaProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
