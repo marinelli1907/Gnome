@@ -1,44 +1,68 @@
 {
   "expo": {
     "name": "Gnome",
-    "slug": "r9mrmt4s1upcmz5ty7xwq",
+    "slug": "gnome",
+    "scheme": "gnome",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "owner": "boonesystems",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FEFAE0"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.r9mrmt4s1upcmz5ty7xwq"
+      "bundleIdentifier": "app.boonesystems.gnome",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Gnome uses your location to show surplus produce listings near you.",
+        "NSPhotoLibraryUsageDescription": "Gnome needs access to your photos so you can add pictures to your listings.",
+        "NSCameraUsageDescription": "Gnome needs camera access so you can photograph your surplus produce."
+      }
     },
     "android": {
+      "package": "app.boonesystems.gnome",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FEFAE0"
       },
-      "package": "app.rork.r9mrmt4s1upcmz5ty7xwq"
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
       [
-        "expo-router",
+        "expo-location",
         {
-          "origin": "https://rork.com/"
+          "locationWhenInUsePermission": "Gnome uses your location to show surplus produce listings near you."
         }
       ],
-      "expo-font",
-      "expo-web-browser"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Gnome needs access to your photos so you can add pictures to your listings."
+        }
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
     }
   }
 }
