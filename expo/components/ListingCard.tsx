@@ -20,6 +20,7 @@ export default function ListingCard({ listing }: { listing: Listing }) {
   const router = useRouter();
   const cat = categoryFor(listing.category);
   const photo = listing.photos?.[0];
+  const isWanted = listing.kind === 'wanted';
   const distance =
     listing.distance_miles != null
       ? listing.distance_miles < 0.1
@@ -45,10 +46,13 @@ export default function ListingCard({ listing }: { listing: Listing }) {
             {cat.emoji} {cat.label}
           </Text>
         </View>
+        <View style={[styles.kindChip, { backgroundColor: isWanted ? Colors.accent : Colors.primary }]}>
+          <Text style={styles.kindChipText}>{isWanted ? 'Wanted' : 'Available'}</Text>
+        </View>
       </View>
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
-          {listing.title}
+          {isWanted ? `Looking for ${listing.title}` : listing.title}
         </Text>
         {listing.quantity ? (
           <Text style={styles.quantity} numberOfLines={1}>
@@ -94,6 +98,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   catChipText: { fontSize: 11, fontWeight: '700', color: Colors.text },
+  kindChip: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  kindChipText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
   body: { padding: 10, gap: 3 },
   title: { fontSize: 15, fontWeight: '700', color: Colors.text },
   quantity: { fontSize: 13, color: Colors.textSecondary },

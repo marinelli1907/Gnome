@@ -4,7 +4,26 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { notifyCounterparty } from './notifications';
+import { notifyCounterparty, notifyOfferCreated } from './notifications';
+import type { ListingKind } from '@/types';
+
+/** Best-effort analytics event. Never throws into the UI. */
+export async function logEvent(
+  eventType: string,
+  opts: { userId?: string | null; listingId?: string | null; metadata?: Record<string, unknown> } = {},
+): Promise<void> {
+  try {
+    if (!isSupabaseConfigured) return;
+    await supabase.from('events').insert({
+      event_type: eventType,
+      user_id: opts.userId ?? null,
+      listing_id: opts.listingId ?? null,
+      metadata: opts.metadata ?? {},
+    });
+  } catch {
+    /* analytics is best-effort */
+  }
+}
 import { distanceMiles, radiusToMiles, type Coords, type RadiusOption } from './location';
 import type { Claim, Listing, Profile, ProfileStats } from '@/types';
 
@@ -36,6 +55,7 @@ export interface BrowseFilters {
   coords: Coords | null;
   radius: RadiusOption;
   category: string | null;
+  kind: 'all' | ListingKind;
 }
 
 export function useListings(filters: BrowseFilters) {
@@ -51,6 +71,7 @@ export function useListings(filters: BrowseFilters) {
         .order('created_at', { ascending: false })
         .limit(200);
       if (filters.category) q = q.eq('category', filters.category);
+      if (filters.kind !== 'all') q = q.eq('kind', filters.kind);
 
       const { data, error } = await q;
       if (error) throw error;
@@ -148,12 +169,14 @@ export function useMyClaims(uid?: string) {
 // Mutations
 // ---------------------------------------------------------------------------
 export interface NewListing {
+  kind: ListingKind;
   title: string;
   description: string;
   category: string;
   quantity: string;
   photos: string[];
   coords: Coords | null;
+  fulfilledByListingId?: string | null;
 }
 
 export function useCreateListing(uid?: string) {
@@ -165,6 +188,7 @@ export function useCreateListing(uid?: string) {
         .from('listings')
         .insert({
           owner_id: uid,
+          kind: input.kind,
           title: input.title,
           description: input.description || null,
           category: input.category,
@@ -172,13 +196,27 @@ export function useCreateListing(uid?: string) {
           photos: input.photos,
           lat: input.coords?.lat ?? null,
           lng: input.coords?.lng ?? null,
+          fulfilled_by_listing_id: input.fulfilledByListingId ?? null,
         })
         .select(LISTING_SELECT)
         .single();
       if (error) throw error;
       return shapeListing(data);
     },
-    onSuccess: () => {
+    onSuccess: (listing) => {
+      if (listing.kind === 'wanted') {
+        void logEvent('wanted_created', { userId: uid, listingId: listing.id });
+      } else {
+        // New offer -> server-side category+radius matching pushes to wanted owners.
+        void notifyOfferCreated(listing.id);
+        if (listing.fulfilled_by_listing_id) {
+          void logEvent('offer_matched_to_want', {
+            userId: uid,
+            listingId: listing.id,
+            metadata: { wanted_id: listing.fulfilled_by_listing_id },
+          });
+        }
+      }
       qc.invalidateQueries({ queryKey: ['listings'] });
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
     },
@@ -236,6 +274,7 @@ export function useUpdateListingStatus(uid?: string) {
     mutationFn: async (input: {
       listingId: string;
       status: 'completed' | 'removed' | 'active';
+      kind?: ListingKind;
     }): Promise<void> => {
       const { error } = await supabase
         .from('listings')
@@ -244,6 +283,9 @@ export function useUpdateListingStatus(uid?: string) {
       if (error) throw error;
     },
     onSuccess: (_d, input) => {
+      if (input.kind === 'wanted' && input.status === 'completed') {
+        void logEvent('wanted_completed', { userId: uid, listingId: input.listingId });
+      }
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
       qc.invalidateQueries({ queryKey: keys.listing(input.listingId) });
       qc.invalidateQueries({ queryKey: ['listings'] });

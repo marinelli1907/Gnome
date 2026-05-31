@@ -18,6 +18,8 @@ export type UserType =
 
 export type ClaimStatus = 'pending' | 'approved' | 'declined' | 'cancelled';
 
+export type ListingKind = 'offer' | 'wanted';
+
 export interface Profile {
   id: string;
   name: string;
@@ -41,6 +43,8 @@ export interface Profile {
 export interface Listing {
   id: string;
   owner_id: string;
+  kind: ListingKind;
+  fulfilled_by_listing_id: string | null;
   title: string;
   description: string | null;
   category: string;

@@ -61,11 +61,20 @@ export default function ProfileScreen() {
       })
     : '—';
 
-  const confirmStatus = (listingId: string, status: 'completed' | 'removed') => {
-    const verb = status === 'completed' ? 'Mark as picked up' : 'Remove listing';
+  const confirmStatus = (
+    listingId: string,
+    status: 'completed' | 'removed',
+    kind: 'offer' | 'wanted',
+  ) => {
+    const verb =
+      status === 'removed'
+        ? 'Remove listing'
+        : kind === 'wanted'
+          ? 'Mark as fulfilled'
+          : 'Mark as picked up';
     Alert.alert(verb, `${verb}?`, [
       { text: 'Back', style: 'cancel' },
-      { text: verb, onPress: () => updateStatus.mutate({ listingId, status }) },
+      { text: verb, onPress: () => updateStatus.mutate({ listingId, status, kind }) },
     ]);
   };
 
@@ -117,10 +126,10 @@ export default function ProfileScreen() {
               <Badge label={cap(l.status)} color={STATUS_COLOR[l.status]} />
               {(l.status === 'active' || l.status === 'claimed') && (
                 <View style={styles.listingActions}>
-                  <Pressable onPress={() => confirmStatus(l.id, 'completed')}>
+                  <Pressable onPress={() => confirmStatus(l.id, 'completed', l.kind)}>
                     <Text style={styles.linkDone}>Done</Text>
                   </Pressable>
-                  <Pressable onPress={() => confirmStatus(l.id, 'removed')}>
+                  <Pressable onPress={() => confirmStatus(l.id, 'removed', l.kind)}>
                     <Text style={styles.linkCancel}>Remove</Text>
                   </Pressable>
                 </View>

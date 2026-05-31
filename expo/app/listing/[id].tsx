@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Alert,
   Dimensions,
@@ -15,7 +15,7 @@ import { Avatar, Badge, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { categoryFor } from '@/constants/categories';
 import { useAuth } from '@/providers/AuthProvider';
-import { useClaimListing, useListing, useMyClaims } from '@/lib/db';
+import { useClaimListing, useListing, useMyClaims, logEvent } from '@/lib/db';
 
 const { width } = Dimensions.get('window');
 
@@ -27,6 +27,12 @@ export default function ListingDetailScreen() {
   const { data: listing, isLoading } = useListing(id);
   const myClaims = useMyClaims(userId ?? undefined);
   const claim = useClaimListing(userId ?? undefined);
+
+  useEffect(() => {
+    if (listing && listing.kind === 'wanted') {
+      void logEvent('wanted_viewed', { userId: userId ?? null, listingId: listing.id });
+    }
+  }, [listing?.id, listing?.kind, userId]);
 
   if (isLoading) {
     return <View style={styles.screen} />;
@@ -41,8 +47,21 @@ export default function ListingDetailScreen() {
 
   const cat = categoryFor(listing.category);
   const isOwner = userId === listing.owner_id;
+  const isWanted = listing.kind === 'wanted';
   const existingClaim = (myClaims.data ?? []).find((c) => c.listing_id === listing.id);
   const isActive = listing.status === 'active';
+
+  const onIHaveThis = () => {
+    router.push({
+      pathname: '/post',
+      params: {
+        kind: 'offer',
+        category: listing.category,
+        title: `Offer: ${listing.title}`,
+        fulfilledBy: listing.id,
+      },
+    });
+  };
 
   const onClaim = () => {
     if (!userId) {
@@ -75,8 +94,13 @@ export default function ListingDetailScreen() {
 
         <View style={styles.body}>
           <View style={styles.titleRow}>
-            <Text style={styles.title}>{listing.title}</Text>
-            <Badge label={cap(listing.status)} color={isActive ? Colors.success : Colors.textTertiary} />
+            <Text style={styles.title}>
+              {isWanted ? `Looking for ${listing.title}` : listing.title}
+            </Text>
+            <Badge
+              label={isWanted ? 'Wanted' : cap(listing.status)}
+              color={isWanted ? Colors.accent : isActive ? Colors.success : Colors.textTertiary}
+            />
           </View>
           <Text style={styles.category}>
             {cat.emoji} {cat.label}
@@ -110,7 +134,17 @@ export default function ListingDetailScreen() {
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
         {isOwner ? (
-          <Text style={styles.footerNote}>This is your listing. Manage claims in the Activity tab.</Text>
+          <Text style={styles.footerNote}>
+            {isWanted
+              ? "This is your Wanted post. We'll notify you when a neighbor offers a match."
+              : 'This is your listing. Manage claims in the Activity tab.'}
+          </Text>
+        ) : isWanted ? (
+          isActive ? (
+            <Button label="I Have This" onPress={onIHaveThis} />
+          ) : (
+            <Text style={styles.footerNote}>This want is no longer active.</Text>
+          )
         ) : existingClaim ? (
           <Button label={`Claim ${cap(existingClaim.status)}`} onPress={() => router.push('/activity')} variant="secondary" />
         ) : isActive ? (

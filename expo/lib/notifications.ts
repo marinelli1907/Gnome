@@ -63,3 +63,17 @@ export async function notifyCounterparty(
     // ignore — notifications are not required for the core loop
   }
 }
+
+/**
+ * A new offer was created. The Edge Function matches it (same category, within
+ * radius, last 30 days) against active Wanted posts and pushes to those owners.
+ * Best-effort: matching/logging happens server-side with the service role.
+ */
+export async function notifyOfferCreated(listingId: string): Promise<void> {
+  try {
+    if (!isSupabaseConfigured) return;
+    await supabase.functions.invoke('notify', { body: { event: 'offer_created', listingId } });
+  } catch {
+    // ignore — matching pushes are not required for the core loop
+  }
+}

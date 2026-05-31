@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, X } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
@@ -21,6 +21,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing } from '@/lib/db';
 import { uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
+import type { ListingKind } from '@/types';
 
 const MAX_PHOTOS = 5;
 
@@ -30,12 +31,34 @@ export default function PostScreen() {
   const { userId } = useAuth();
   const createListing = useCreateListing(userId ?? undefined);
 
-  const [title, setTitle] = useState('');
+  // Params arrive from the "I Have This" flow on a Wanted post.
+  const params = useLocalSearchParams<{
+    kind?: string;
+    category?: string;
+    title?: string;
+    fulfilledBy?: string;
+  }>();
+
+  const [kind, setKind] = useState<ListingKind>(params.kind === 'wanted' ? 'wanted' : 'offer');
+  const [title, setTitle] = useState(params.title ?? '');
   const [quantity, setQuantity] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<string>('vegetables');
+  const [category, setCategory] = useState<string>(params.category ?? 'vegetables');
   const [assets, setAssets] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
   const [busy, setBusy] = useState(false);
+
+  // Re-apply prefill when the user re-enters via "I Have This" with new params.
+  const seed = params.fulfilledBy ?? '';
+  useEffect(() => {
+    if (params.fulfilledBy) {
+      setKind('offer');
+      setFulfilledBy(params.fulfilledBy);
+      if (params.title) setTitle(params.title);
+      if (params.category) setCategory(params.category);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
 
   if (!userId) {
     return (
@@ -43,13 +66,15 @@ export default function PostScreen() {
         <EmptyState
           emoji="🔑"
           title="Sign in to post"
-          subtitle="You need an account to share your surplus. Browsing stays free."
+          subtitle="You need an account to share surplus or post a want. Browsing stays free."
         >
           <Button label="Sign in / Sign up" onPress={() => router.push('/sign-in')} style={{ marginTop: 12 }} />
         </EmptyState>
       </View>
     );
   }
+
+  const isWanted = kind === 'wanted';
 
   const pickImages = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -67,9 +92,20 @@ export default function PostScreen() {
   const removeAsset = (uri: string) =>
     setAssets((prev) => prev.filter((a) => a.uri !== uri));
 
+  const reset = () => {
+    setTitle('');
+    setQuantity('');
+    setDescription('');
+    setAssets([]);
+    setFulfilledBy(null);
+  };
+
   const submit = async () => {
     if (!title.trim()) {
-      Alert.alert('Add a title', 'What are you sharing? e.g. "Cherry tomatoes"');
+      Alert.alert(
+        isWanted ? 'What are you looking for?' : 'Add a title',
+        isWanted ? 'e.g. "Fresh basil"' : 'What are you sharing? e.g. "Cherry tomatoes"',
+      );
       return;
     }
     setBusy(true);
@@ -77,17 +113,16 @@ export default function PostScreen() {
       const photos = assets.length ? await uploadListingImages(userId, assets) : [];
       const coords = await getCurrentCoords();
       const listing = await createListing.mutateAsync({
+        kind,
         title: title.trim(),
         description: description.trim(),
         category,
         quantity: quantity.trim(),
         photos,
         coords,
+        fulfilledByListingId: fulfilledBy,
       });
-      setTitle('');
-      setQuantity('');
-      setDescription('');
-      setAssets([]);
+      reset();
       router.push(`/listing/${listing.id}`);
     } catch (e: any) {
       Alert.alert('Could not post', e?.message ?? 'Please try again.');
@@ -105,7 +140,36 @@ export default function PostScreen() {
         contentContainerStyle={[styles.container, { paddingTop: insets.top + 12 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.heading}>Share your surplus</Text>
+        {/* Kind choice — no role screen, just what you're doing right now. */}
+        <View style={styles.kindRow}>
+          <Pressable
+            onPress={() => setKind('offer')}
+            disabled={!!fulfilledBy}
+            style={[styles.kindBtn, !isWanted && styles.kindBtnActive, !!fulfilledBy && isWanted && styles.kindBtnDisabled]}
+          >
+            <Text style={styles.kindEmoji}>🧺</Text>
+            <Text style={[styles.kindText, !isWanted && styles.kindTextActive]}>I have extra</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setKind('wanted')}
+            disabled={!!fulfilledBy}
+            style={[styles.kindBtn, isWanted && styles.kindBtnActive, !!fulfilledBy && styles.kindBtnDisabled]}
+          >
+            <Text style={styles.kindEmoji}>🔎</Text>
+            <Text style={[styles.kindText, isWanted && styles.kindTextActive]}>I&apos;m looking for</Text>
+          </Pressable>
+        </View>
+
+        {fulfilledBy ? (
+          <View style={styles.banner}>
+            <Text style={styles.bannerText}>
+              You&apos;re creating an offer in response to a Wanted post. Once posted,
+              the neighbor who wanted it can claim your offer.
+            </Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.heading}>{isWanted ? 'Post what you need' : 'Share your surplus'}</Text>
 
         <View style={styles.photoRow}>
           {assets.map((a) => (
@@ -119,13 +183,25 @@ export default function PostScreen() {
           {assets.length < MAX_PHOTOS && (
             <Pressable style={styles.addPhoto} onPress={pickImages}>
               <Camera size={24} color={Colors.primary} />
-              <Text style={styles.addPhotoText}>Add photo</Text>
+              <Text style={styles.addPhotoText}>
+                {isWanted ? 'Add photo (optional)' : 'Add photo'}
+              </Text>
             </Pressable>
           )}
         </View>
 
-        <Field label="What are you sharing?" value={title} onChangeText={setTitle} placeholder="Cherry tomatoes" />
-        <Field label="Quantity" value={quantity} onChangeText={setQuantity} placeholder="About 2 lbs / a full basket" />
+        <Field
+          label={isWanted ? 'What are you looking for?' : 'What are you sharing?'}
+          value={title}
+          onChangeText={setTitle}
+          placeholder={isWanted ? 'Fresh basil' : 'Cherry tomatoes'}
+        />
+        <Field
+          label={isWanted ? 'How much do you need? (optional)' : 'Quantity'}
+          value={quantity}
+          onChangeText={setQuantity}
+          placeholder={isWanted ? 'A handful for pesto' : 'About 2 lbs / a full basket'}
+        />
 
         <Text style={styles.fieldLabel}>Category</Text>
         <View style={styles.catWrap}>
@@ -149,14 +225,26 @@ export default function PostScreen() {
           label="Details (optional)"
           value={description}
           onChangeText={setDescription}
-          placeholder="Picked this morning, porch pickup, come grab them!"
+          placeholder={
+            isWanted
+              ? 'Making sauce this weekend — happy to swap or just grateful!'
+              : 'Picked this morning, porch pickup, come grab them!'
+          }
           multiline
           numberOfLines={3}
           style={styles.multiline}
         />
 
-        <Text style={styles.note}>Listings expire after 7 days. Free to share — no payments.</Text>
-        <Button label="Post listing" onPress={submit} loading={busy} />
+        <Text style={styles.note}>
+          {isWanted
+            ? 'Wanted posts expire after 30 days. Neighbors with a match can offer it to you.'
+            : 'Listings expire after 7 days. Free to share — no payments.'}
+        </Text>
+        <Button
+          label={isWanted ? 'Post want' : fulfilledBy ? 'Create offer' : 'Post listing'}
+          onPress={submit}
+          loading={busy}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -165,6 +253,29 @@ export default function PostScreen() {
 const styles = StyleSheet.create({
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   container: { padding: 20, paddingBottom: 40 },
+  kindRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  kindBtn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  kindBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
+  kindBtnDisabled: { opacity: 0.5 },
+  kindEmoji: { fontSize: 22 },
+  kindText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  kindTextActive: { color: Colors.primary },
+  banner: {
+    backgroundColor: Colors.secondary + '22',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  bannerText: { fontSize: 13, color: Colors.text, lineHeight: 19 },
   heading: { fontSize: 24, fontWeight: '800', color: Colors.text, marginBottom: 16 },
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   photo: { width: 84, height: 84, borderRadius: 12, overflow: 'hidden' },
@@ -190,8 +301,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
+    paddingHorizontal: 4,
   },
-  addPhotoText: { fontSize: 11, color: Colors.primary, fontWeight: '600' },
+  addPhotoText: { fontSize: 10, color: Colors.primary, fontWeight: '600', textAlign: 'center' },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 8 },
   catWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   catChip: {

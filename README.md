@@ -66,6 +66,14 @@ filter: Near Me / 5 / 10 / 25 / 50 mi) · claim · owner approve/decline · 7-da
 auto-expiry · trust signals (Member Since, Posts Shared, Claims Completed) ·
 push notifications.
 
+**V1.1 — Wanted posts:** alongside "I have extra" (offer), neighbors can post
+"I'm looking for" (wanted). Same feed, filter **All / Available / Wanted**.
+Tapping **I Have This** on a Wanted post creates a normal Offer linked back via
+`fulfilled_by_listing_id`; the wanted owner then claims that offer through the
+existing claim→approve flow. A new offer fires category+radius matching that
+notifies relevant wanted owners (one-way). Wanted posts expire after 30 days.
+Schema lives in `supabase/migrations/0003_wanted_posts.sql`.
+
 **Categories (hard-coded):** Vegetables, Fruit, Herbs, Eggs, Seeds, Plants,
 Flowers, Compost, Honey, Farm Fresh, Other.
 

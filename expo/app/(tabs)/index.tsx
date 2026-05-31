@@ -29,6 +29,7 @@ export default function BrowseScreen() {
   const [coords, setCoords] = useState<Coords | null>(null);
   const [radius, setRadius] = useState<RadiusOption>(10);
   const [category, setCategory] = useState<string | null>(null);
+  const [kindFilter, setKindFilter] = useState<'all' | 'offer' | 'wanted'>('all');
   const [mode, setMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
@@ -36,8 +37,8 @@ export default function BrowseScreen() {
   }, []);
 
   const filters = useMemo(
-    () => ({ coords, radius, category }),
-    [coords, radius, category],
+    () => ({ coords, radius, category, kind: kindFilter }),
+    [coords, radius, category, kindFilter],
   );
   const { data, isLoading, refetch, isRefetching, error } = useListings(filters);
 
@@ -59,6 +60,27 @@ export default function BrowseScreen() {
           )}
           <Text style={styles.modeBtnText}>{mode === 'list' ? 'Map' : 'List'}</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.kindFilterRow}>
+        {([
+          { v: 'all', label: 'All' },
+          { v: 'offer', label: 'Available' },
+          { v: 'wanted', label: 'Wanted' },
+        ] as const).map((opt) => {
+          const active = kindFilter === opt.v;
+          return (
+            <Pressable
+              key={opt.v}
+              onPress={() => setKindFilter(opt.v)}
+              style={[styles.segment, active && styles.segmentActive]}
+            >
+              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <ScrollView
@@ -176,6 +198,23 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   modeBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  kindFilterRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 3,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 9,
+    alignItems: 'center',
+  },
+  segmentActive: { backgroundColor: Colors.surface },
+  segmentText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  segmentTextActive: { color: Colors.primary, fontWeight: '700' },
   brand: { fontSize: 28, fontWeight: '800', color: Colors.primaryDark },
   tagline: { fontSize: 14, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
   chipRow: { marginHorizontal: -16 },
