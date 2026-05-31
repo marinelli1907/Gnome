@@ -19,6 +19,18 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+// supabase-js initializes a realtime client that needs a global WebSocket.
+// Node < 22 has none, so polyfill from `ws`. (React Native/Hermes has WebSocket
+// natively, so the app itself never needs this.)
+if (typeof globalThis.WebSocket === 'undefined') {
+  try {
+    const { default: WS } = await import('ws');
+    globalThis.WebSocket = WS;
+  } catch {
+    /* if ws isn't present, createClient may warn on Node < 22 */
+  }
+}
+
 const URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
 const ANON = process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_ROLE_KEY;
