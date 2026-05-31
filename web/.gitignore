@@ -1,0 +1,15 @@
+/node_modules
+/.next
+/out
+/build
+
+# next auto-generates this on build/dev
+next-env.d.ts
+
+# env (anon key lives here; gitignored)
+.env*.local
+.env
+
+# misc
+.DS_Store
+*.tsbuildinfo
