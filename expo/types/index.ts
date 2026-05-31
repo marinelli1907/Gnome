@@ -16,7 +16,13 @@ export type UserType =
   | 'market'
   | 'municipality';
 
-export type ClaimStatus = 'pending' | 'approved' | 'declined' | 'cancelled';
+export type ClaimStatus =
+  | 'pending'
+  | 'approved'
+  | 'declined'
+  | 'cancelled'
+  | 'completed'
+  | 'expired';
 
 export type ListingKind = 'offer' | 'wanted';
 
@@ -73,6 +79,15 @@ export interface Claim {
   // Joined:
   listing?: Listing | null;
   claimer?: Profile | null;
+}
+
+export interface ClaimMessage {
+  id: string;
+  claim_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+  reported_at: string | null;
 }
 
 export interface ProfileStats {

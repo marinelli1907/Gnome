@@ -77,3 +77,16 @@ export async function notifyOfferCreated(listingId: string): Promise<void> {
     // ignore — matching pushes are not required for the core loop
   }
 }
+
+/**
+ * A pickup-chat message was sent. The Edge Function pushes the OTHER party
+ * (derived from the claim, not the client) with the body preview.
+ */
+export async function notifyMessage(claimId: string, preview: string): Promise<void> {
+  try {
+    if (!isSupabaseConfigured) return;
+    await supabase.functions.invoke('notify', { body: { event: 'message', claimId, preview } });
+  } catch {
+    // ignore — chat works without push
+  }
+}

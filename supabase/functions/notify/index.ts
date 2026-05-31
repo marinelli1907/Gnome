@@ -28,6 +28,9 @@ Deno.serve(async (req: Request) => {
     if (payload.event === 'offer_created') {
       return await handleOfferCreated(admin, payload.listingId);
     }
+    if (payload.event === 'message') {
+      return await handleMessage(admin, req, payload.claimId, payload.preview);
+    }
     return await handleClaim(admin, payload.event, payload.claimId);
   } catch (e) {
     return json({ error: String(e) }, 500);
@@ -59,6 +62,40 @@ async function handleClaim(admin: any, event: string, claimId: string) {
   }
 
   const sent = await pushToUser(admin, recipientId, message, { claimId, event });
+  return json({ sent });
+}
+
+// --- message -> push the other party ---------------------------------------
+async function handleMessage(admin: any, req: Request, claimId: string, preview: string) {
+  if (!claimId) return json({ error: 'claimId required' }, 400);
+
+  // Identify the sender from their JWT (not from the client payload).
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  const { data: u } = await admin.auth.getUser(token);
+  const senderId = u?.user?.id;
+  if (!senderId) return json({ error: 'unauthenticated' }, 401);
+
+  const { data: claim, error } = await admin
+    .from('claims')
+    .select('id, claimer_id, listing:listings(owner_id)')
+    .eq('id', claimId)
+    .single();
+  if (error || !claim) return json({ error: 'claim not found' }, 404);
+
+  const ownerId = claim.listing?.owner_id;
+  const claimerId = claim.claimer_id;
+  if (senderId !== ownerId && senderId !== claimerId) {
+    return json({ error: 'not a party to this claim' }, 403);
+  }
+  const recipientId = senderId === ownerId ? claimerId : ownerId;
+
+  const body = (preview ?? '').slice(0, 80) || 'You have a new message.';
+  const sent = await pushToUser(
+    admin,
+    recipientId,
+    { title: 'New message about your Gnome pickup', body },
+    { claimId, event: 'message' },
+  );
   return json({ sent });
 }
 

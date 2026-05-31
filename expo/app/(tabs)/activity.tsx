@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Alert,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -24,6 +25,8 @@ const STATUS_COLOR: Record<ClaimStatus, string> = {
   approved: Colors.success,
   declined: Colors.error,
   cancelled: Colors.textTertiary,
+  completed: Colors.textTertiary,
+  expired: Colors.textTertiary,
 };
 
 export default function ActivityScreen() {
@@ -104,7 +107,14 @@ export default function ActivityScreen() {
                 <Text style={styles.cardTitle}>{c.claimer?.name ?? 'A neighbor'}</Text>
                 <Text style={styles.cardSub} numberOfLines={1}>{c.listing?.title}</Text>
               </View>
-              <Badge label={cap(c.status)} color={STATUS_COLOR[c.status]} />
+              <View style={styles.rightCol}>
+                <Badge label={cap(c.status)} color={STATUS_COLOR[c.status]} />
+                {messageable(c.status) && (
+                  <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
+                    <Text style={styles.msgLink}>Message</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           ))}
         </>
@@ -121,7 +131,14 @@ export default function ActivityScreen() {
               <Text style={styles.cardTitle}>{c.listing?.title ?? 'Listing'}</Text>
               <Text style={styles.cardSub}>from {c.listing?.owner?.name ?? 'a neighbor'}</Text>
             </View>
-            <Badge label={cap(c.status)} color={STATUS_COLOR[c.status]} />
+            <View style={styles.rightCol}>
+              <Badge label={cap(c.status)} color={STATUS_COLOR[c.status]} />
+              {messageable(c.status) && (
+                <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
+                  <Text style={styles.msgLink}>Message</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         ))
       )}
@@ -131,6 +148,11 @@ export default function ActivityScreen() {
 
 function cap(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Chat is available once a claim is approved, and stays readable when completed.
+function messageable(status: ClaimStatus) {
+  return status === 'approved' || status === 'completed';
 }
 
 const styles = StyleSheet.create({
@@ -159,6 +181,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
+  rightCol: { alignItems: 'flex-end', gap: 6 },
+  msgLink: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
   cardSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1 },

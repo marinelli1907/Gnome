@@ -74,6 +74,15 @@ existing claim→approve flow. A new offer fires category+radius matching that
 notifies relevant wanted owners (one-way). Wanted posts expire after 30 days.
 Schema lives in `supabase/migrations/0003_wanted_posts.sql`.
 
+**V1.2 — Claim-scoped pickup chat:** once a claim is **approved**, the listing
+owner and that claimant get a **Message** button opening a private thread tied to
+the claim (`claim_id` is the thread — not global DMs). Writable while approved,
+**read-only** once the pickup is completed; pending/declined/cancelled show no
+chat. Each message pushes the other party. Safety: a "Report conversation"
+action, a fixed "pickup details only" guidance line, 500-char limit, and rate
+limits (client 1/2s, server 30/claim/hour). RLS restricts read+write to the two
+parties only. Schema: `supabase/migrations/0004_pickup_chat.sql`.
+
 **Categories (hard-coded):** Vegetables, Fruit, Herbs, Eggs, Seeds, Plants,
 Flowers, Compost, Honey, Farm Fresh, Other.
 

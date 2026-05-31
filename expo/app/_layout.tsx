@@ -40,6 +40,10 @@ export default function RootLayout() {
                 name="listing/[id]"
                 options={{ title: 'Listing', ...headerStyle }}
               />
+              <Stack.Screen
+                name="chat/[claimId]"
+                options={{ title: 'Pickup chat', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>

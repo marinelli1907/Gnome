@@ -4,8 +4,8 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { notifyCounterparty, notifyOfferCreated } from './notifications';
-import type { ListingKind } from '@/types';
+import { notifyCounterparty, notifyOfferCreated, notifyMessage } from './notifications';
+import type { ClaimMessage, ListingKind } from '@/types';
 
 /** Best-effort analytics event. Never throws into the UI. */
 export async function logEvent(
@@ -38,6 +38,8 @@ export const keys = {
   incomingClaims: (uid?: string) => ['incomingClaims', uid] as const,
   profile: (id: string) => ['profile', id] as const,
   profileStats: (id: string) => ['profileStats', id] as const,
+  claimThread: (id: string) => ['claimThread', id] as const,
+  claimMessages: (id: string) => ['claimMessages', id] as const,
 };
 
 const LISTING_SELECT = '*, owner:profiles(*), claims(count)';
@@ -281,6 +283,15 @@ export function useUpdateListingStatus(uid?: string) {
         .update({ status: input.status })
         .eq('id', input.listingId);
       if (error) throw error;
+      // Completing a pickup also completes its approved claim, which closes the
+      // pickup chat to writes while keeping it readable as history.
+      if (input.status === 'completed') {
+        await supabase
+          .from('claims')
+          .update({ status: 'completed' })
+          .eq('listing_id', input.listingId)
+          .eq('status', 'approved');
+      }
     },
     onSuccess: (_d, input) => {
       if (input.kind === 'wanted' && input.status === 'completed') {
@@ -331,6 +342,80 @@ export function useProfileStats(id?: string) {
         postsShared: postsRes.count ?? 0,
         claimsCompleted: claimsRes.count ?? 0,
       };
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Claim-scoped pickup chat (V1.2)
+// ---------------------------------------------------------------------------
+
+/** The claim + its parties + status, for the chat header and composer gating. */
+export function useClaimThread(claimId?: string) {
+  return useQuery({
+    queryKey: keys.claimThread(claimId ?? ''),
+    enabled: isSupabaseConfigured && !!claimId,
+    queryFn: async (): Promise<Claim | null> => {
+      const { data, error } = await supabase
+        .from('claims')
+        .select('*, claimer:profiles(*), listing:listings(*, owner:profiles(*))')
+        .eq('id', claimId as string)
+        .maybeSingle();
+      if (error) throw error;
+      return data as Claim | null;
+    },
+  });
+}
+
+export function useClaimMessages(claimId?: string) {
+  return useQuery({
+    queryKey: keys.claimMessages(claimId ?? ''),
+    enabled: isSupabaseConfigured && !!claimId,
+    refetchInterval: 5000, // lightweight polling; no realtime/typing in V1.2
+    queryFn: async (): Promise<ClaimMessage[]> => {
+      const { data, error } = await supabase
+        .from('claim_messages')
+        .select('*')
+        .eq('claim_id', claimId as string)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as ClaimMessage[];
+    },
+  });
+}
+
+export function useSendMessage(claimId?: string, uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: string): Promise<ClaimMessage> => {
+      if (!uid || !claimId) throw new Error('Not signed in.');
+      const trimmed = body.trim();
+      if (!trimmed) throw new Error('Message is empty.');
+      if (trimmed.length > 500) throw new Error('Messages are limited to 500 characters.');
+      const { data, error } = await supabase
+        .from('claim_messages')
+        .insert({ claim_id: claimId, sender_id: uid, body: trimmed })
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data as ClaimMessage;
+    },
+    onSuccess: (msg) => {
+      void notifyMessage(msg.claim_id, msg.body.slice(0, 80));
+      void logEvent('claim_message_sent', { userId: uid, metadata: { claim_id: msg.claim_id } });
+      qc.invalidateQueries({ queryKey: keys.claimMessages(claimId ?? '') });
+    },
+  });
+}
+
+export function useReportClaim(claimId?: string, uid?: string) {
+  return useMutation({
+    mutationFn: async (reason: string): Promise<void> => {
+      if (!uid || !claimId) throw new Error('Not signed in.');
+      const { error } = await supabase
+        .from('claim_reports')
+        .insert({ claim_id: claimId, reporter_id: uid, reason: reason || null });
+      if (error) throw error;
     },
   });
 }
