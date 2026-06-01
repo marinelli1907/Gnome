@@ -56,6 +56,10 @@ export default function RootLayout() {
                 name="market/edit/[id]"
                 options={{ title: 'Name your garden', ...headerStyle }}
               />
+              <Stack.Screen
+                name="request/[listingId]"
+                options={{ presentation: 'modal', title: 'Send a request', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>

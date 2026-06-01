@@ -57,23 +57,8 @@ export default function ListingDetailScreen() {
   const existingClaim = (myClaims.data ?? []).find((c) => c.listing_id === listing.id);
   const isActive = listing.status === 'active';
 
-  const onIHaveThis = () => {
-    router.push({
-      pathname: '/post',
-      params: {
-        type: 'free',
-        category: listing.category,
-        title: `Offer: ${listing.title}`,
-        fulfilledBy: listing.id,
-      },
-    });
-  };
-
-  const onComingSoon = () =>
-    Alert.alert(
-      `${ctaLabel(type)} — coming soon`,
-      'Trade and purchase requests arrive in the next update. Browsing and free claims work now.',
-    );
+  // Trade / Sale / Wanted go through the shared request sheet; Free claims inline.
+  const openRequest = () => router.push(`/request/${listing.id}`);
 
   const onClaim = () => {
     if (!userId) {
@@ -161,17 +146,13 @@ export default function ListingDetailScreen() {
           </Text>
         ) : !isActive ? (
           <Text style={styles.footerNote}>This listing is no longer available.</Text>
-        ) : type === 'wanted' ? (
-          <Button label="I Have This" onPress={onIHaveThis} />
+        ) : existingClaim ? (
+          <Button label={`Request ${cap(existingClaim.status)}`} onPress={() => router.push('/activity')} variant="secondary" />
         ) : type === 'free' ? (
-          existingClaim ? (
-            <Button label={`Claim ${cap(existingClaim.status)}`} onPress={() => router.push('/activity')} variant="secondary" />
-          ) : (
-            <Button label="Claim this" onPress={onClaim} loading={claim.isPending} />
-          )
+          <Button label="Claim this" onPress={onClaim} loading={claim.isPending} />
         ) : (
-          // Trade / Sale request flows land in M3.
-          <Button label={ctaLabel(type)} onPress={onComingSoon} />
+          // Trade -> Offer Trade, Sale -> Request to Buy, Wanted -> I Have This.
+          <Button label={ctaLabel(type)} onPress={openRequest} />
         )}
       </View>
     </View>

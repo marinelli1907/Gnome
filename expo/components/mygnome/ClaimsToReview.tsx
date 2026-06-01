@@ -3,7 +3,27 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Avatar, Badge, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { formatPrice } from '@/lib/listingType';
 import { useIncomingClaims, useUpdateClaim } from '@/lib/db';
+import type { Claim } from '@/types';
+
+// Owner-facing summary of an incoming request, by type.
+function summarize(c: Claim): { verb: string; context: string | null; note: string | null } {
+  switch (c.claim_type) {
+    case 'trade_offer':
+      return { verb: 'offers a trade for', context: c.trade_offer_text ?? null, note: c.buyer_note ?? null };
+    case 'purchase_request':
+      return {
+        verb: 'wants to buy',
+        context: c.agreed_price_cents != null ? formatPrice(c.agreed_price_cents) : null,
+        note: c.buyer_note ?? null,
+      };
+    case 'wanted_response':
+      return { verb: 'has', context: c.buyer_note ?? null, note: null };
+    default:
+      return { verb: 'wants', context: c.buyer_note ?? null, note: null };
+  }
+}
 
 export default function ClaimsToReview({ uid }: { uid: string }) {
   const router = useRouter();
@@ -34,29 +54,34 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
   return (
     <View style={{ gap: 12 }}>
       {pending.length > 0 && <Text style={styles.section}>Waiting for you</Text>}
-      {pending.map((c) => (
-        <View key={c.id} style={styles.card}>
-          <View style={styles.head}>
-            <Avatar uri={c.claimer?.avatar_url} name={c.claimer?.name} size={40} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{c.claimer?.name ?? 'A neighbor'}</Text>
-              <Text style={styles.sub} numberOfLines={1}>
-                wants “{c.listing?.title}” · {timeAgo(c.created_at)}
-              </Text>
+      {pending.map((c) => {
+        const s = summarize(c);
+        return (
+          <View key={c.id} style={styles.card}>
+            <View style={styles.head}>
+              <Avatar uri={c.claimer?.avatar_url} name={c.claimer?.name} size={40} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{c.claimer?.name ?? 'A neighbor'}</Text>
+                <Text style={styles.sub} numberOfLines={1}>
+                  {s.verb} “{c.listing?.title}” · {timeAgo(c.created_at)}
+                </Text>
+              </View>
+              <Badge label="Pending" color={Colors.warning} />
             </View>
-            <Badge label="Pending" color={Colors.warning} />
+            {s.context ? <Text style={styles.context}>“{s.context}”</Text> : null}
+            {s.note ? <Text style={styles.note}>Note: {s.note}</Text> : null}
+            <View style={styles.actions}>
+              <Button label="Approve" onPress={() => act(c.id, 'approved', c.listing?.title)} style={{ flex: 1 }} />
+              <Button
+                label="Decline"
+                variant="secondary"
+                onPress={() => act(c.id, 'declined', c.listing?.title)}
+                style={{ flex: 1 }}
+              />
+            </View>
           </View>
-          <View style={styles.actions}>
-            <Button label="Approve" onPress={() => act(c.id, 'approved', c.listing?.title)} style={{ flex: 1 }} />
-            <Button
-              label="Decline"
-              variant="secondary"
-              onPress={() => act(c.id, 'declined', c.listing?.title)}
-              style={{ flex: 1 }}
-            />
-          </View>
-        </View>
-      ))}
+        );
+      })}
 
       {approved.length > 0 && <Text style={[styles.section, { marginTop: 8 }]}>Approved</Text>}
       {approved.map((c) => (
@@ -94,7 +119,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -107,6 +132,8 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 15, fontWeight: '700', color: Colors.text },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1 },
-  actions: { flexDirection: 'row', gap: 10 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  context: { fontSize: 14, color: Colors.text, fontStyle: 'italic', marginTop: 4 },
+  note: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
   link: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
 });

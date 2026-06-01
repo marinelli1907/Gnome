@@ -16,6 +16,8 @@ export type UserType =
   | 'market'
   | 'municipality';
 
+export type ClaimType = 'claim' | 'trade_offer' | 'purchase_request' | 'wanted_response';
+
 export type ClaimStatus =
   | 'pending'
   | 'approved'
@@ -106,6 +108,12 @@ export interface Claim {
   listing_id: string;
   claimer_id: string;
   status: ClaimStatus;
+  claim_type?: ClaimType;
+  buyer_note?: string | null;
+  trade_offer_text?: string | null;
+  agreed_price_cents?: number | null;
+  quantity_requested?: number | null;
+  payment_status?: string;
   fulfillment_method?: string; // future (V2 delivery): pickup | delivery | meetup
   assigned_fulfiller_id?: string | null; // future (V2 delivery), dormant in V1
   created_at: string;

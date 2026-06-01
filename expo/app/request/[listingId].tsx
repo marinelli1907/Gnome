@@ -1,0 +1,186 @@
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button, Field, EmptyState } from '@/components/ui';
+import Colors from '@/constants/colors';
+import { categoryFor } from '@/constants/categories';
+import { formatPrice } from '@/lib/listingType';
+import { useAuth } from '@/providers/AuthProvider';
+import { useClaimListing, useListing } from '@/lib/db';
+import type { ClaimType, ListingType } from '@/types';
+
+export default function RequestScreen() {
+  const { listingId } = useLocalSearchParams<{ listingId: string }>();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { userId } = useAuth();
+  const { data: listing, isLoading, error } = useListing(listingId);
+  const claim = useClaimListing(userId ?? undefined);
+
+  const [tradeOffer, setTradeOffer] = useState('');
+  const [note, setNote] = useState('');
+
+  if (isLoading) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <ActivityIndicator color={Colors.primary} />
+      </View>
+    );
+  }
+  if (error) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <EmptyState emoji="⚠️" title="Couldn't load this listing" subtitle="Please try again." />
+      </View>
+    );
+  }
+  if (!listing) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <EmptyState emoji="🥕" title="Listing not found" subtitle="It may have expired or been removed." />
+      </View>
+    );
+  }
+  if (!userId) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <EmptyState emoji="🔑" title="Sign in first" subtitle="You need an account to make a request.">
+          <Button label="Sign in / Sign up" onPress={() => router.push('/sign-in')} style={{ marginTop: 12 }} />
+        </EmptyState>
+      </View>
+    );
+  }
+  if (listing.owner_id === userId) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <EmptyState emoji="🙂" title="This is your listing" subtitle="You can't request your own listing." />
+      </View>
+    );
+  }
+
+  const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
+  const cat = categoryFor(listing.category);
+
+  const config: Record<ListingType, { heading: string; cta: string; claimType: ClaimType }> = {
+    free: { heading: `Claim "${listing.title}"`, cta: 'Send claim', claimType: 'claim' },
+    trade: { heading: `Offer a trade for "${listing.title}"`, cta: 'Send trade offer', claimType: 'trade_offer' },
+    sale: { heading: `Request to buy "${listing.title}"`, cta: 'Send buy request', claimType: 'purchase_request' },
+    wanted: { heading: `You have "${listing.title}"`, cta: 'Send', claimType: 'wanted_response' },
+  };
+  const c = config[type];
+
+  const submit = () => {
+    if (type === 'trade' && !tradeOffer.trim()) {
+      Alert.alert('What will you trade?', 'Tell the grower what you’re offering.');
+      return;
+    }
+    claim.mutate(
+      {
+        listingId: listing.id,
+        title: listing.title,
+        claimType: c.claimType,
+        tradeOfferText: type === 'trade' ? tradeOffer.trim() : null,
+        buyerNote: note.trim() || null,
+        agreedPriceCents: type === 'sale' ? listing.price_cents ?? null : null,
+        paymentStatus: type === 'sale' ? 'external' : 'none',
+      },
+      {
+        onSuccess: () => {
+          Alert.alert('Request sent!', 'The grower will review it. You can chat once it’s approved.', [
+            { text: 'OK', onPress: () => router.replace('/activity') },
+          ]);
+        },
+        onError: (e: any) => {
+          const msg = /duplicate|unique/i.test(e?.message ?? '')
+            ? 'You’ve already sent a request for this listing.'
+            : e?.message ?? 'Please try again.';
+          Alert.alert('Could not send', msg);
+        },
+      },
+    );
+  };
+
+  return (
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.heading}>{c.heading}</Text>
+        <Text style={styles.sub}>
+          {cat.emoji} {cat.label}
+          {listing.market?.name ? ` · 🏡 ${listing.market.name}` : ''}
+        </Text>
+
+        {type === 'sale' && (
+          <View style={styles.priceBox}>
+            <Text style={styles.priceLabel}>Price</Text>
+            <Text style={styles.price}>
+              {listing.price_cents != null ? formatPrice(listing.price_cents, listing.unit) : '—'}
+            </Text>
+            <Text style={styles.priceNote}>Payment is arranged in person — Gnome never handles money.</Text>
+          </View>
+        )}
+
+        {type === 'trade' && (
+          <Field
+            label="What will you trade?"
+            value={tradeOffer}
+            onChangeText={setTradeOffer}
+            placeholder={listing.trade_for ? `They want: ${listing.trade_for}` : 'Eggs, herbs, anything from your garden'}
+            multiline
+            numberOfLines={3}
+            style={styles.multiline}
+          />
+        )}
+
+        <Field
+          label={
+            type === 'wanted'
+              ? 'What do you have? (optional)'
+              : 'Add a note for the grower (optional)'
+          }
+          value={note}
+          onChangeText={setNote}
+          placeholder={
+            type === 'wanted'
+              ? 'I have a big bunch of fresh basil ready now.'
+              : 'When could I pick up? Anything else to know?'
+          }
+          multiline
+          numberOfLines={3}
+          style={styles.multiline}
+        />
+
+        <Button label={c.cta} onPress={submit} loading={claim.isPending} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: Colors.background },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  container: { padding: 20, paddingTop: 16 },
+  heading: { fontSize: 22, fontWeight: '800', color: Colors.text },
+  sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
+  priceBox: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  priceLabel: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase' },
+  price: { fontSize: 26, fontWeight: '800', color: Colors.sell, marginTop: 2 },
+  priceNote: { fontSize: 12, color: Colors.textTertiary, marginTop: 6, lineHeight: 17 },
+  multiline: { minHeight: 80, textAlignVertical: 'top' },
+});

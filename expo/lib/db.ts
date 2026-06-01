@@ -29,6 +29,7 @@ import type {
   Claim,
   ChatSummary,
   ClaimStatus,
+  ClaimType,
   GnomeEvent,
   Listing,
   Market,
@@ -264,14 +265,32 @@ export function useCreateListing(uid?: string) {
   });
 }
 
+export interface NewClaim {
+  listingId: string;
+  title?: string;
+  claimType?: ClaimType;
+  buyerNote?: string | null;
+  tradeOfferText?: string | null;
+  agreedPriceCents?: number | null;
+  paymentStatus?: 'none' | 'external';
+}
+
 export function useClaimListing(uid?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { listingId: string; title?: string }): Promise<Claim> => {
-      if (!uid) throw new Error('You must be signed in to claim.');
+    mutationFn: async (input: NewClaim): Promise<Claim> => {
+      if (!uid) throw new Error('You must be signed in to make a request.');
       const { data, error } = await supabase
         .from('claims')
-        .insert({ listing_id: input.listingId, claimer_id: uid })
+        .insert({
+          listing_id: input.listingId,
+          claimer_id: uid,
+          claim_type: input.claimType ?? 'claim',
+          buyer_note: input.buyerNote || null,
+          trade_offer_text: input.tradeOfferText || null,
+          agreed_price_cents: input.agreedPriceCents ?? null,
+          payment_status: input.paymentStatus ?? 'none',
+        })
         .select('*')
         .single();
       if (error) throw error;

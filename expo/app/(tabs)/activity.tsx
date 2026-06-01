@@ -58,7 +58,7 @@ export default function MyGnomeScreen() {
   const unreadCount = chats.filter((c) => isUnread(c, userId, reads)).length;
 
   const SEGMENTS: { key: Tab; label: string; badge?: number }[] = [
-    { key: 'claims', label: 'Claims', badge: pendingCount },
+    { key: 'claims', label: 'Requests', badge: pendingCount },
     { key: 'listings', label: 'Listings' },
     { key: 'pickups', label: 'Pickups' },
     { key: 'messages', label: 'Messages', badge: unreadCount },
