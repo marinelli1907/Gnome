@@ -48,6 +48,14 @@ export default function RootLayout() {
                 name="edit-listing/[id]"
                 options={{ title: 'Edit listing', ...headerStyle }}
               />
+              <Stack.Screen
+                name="market/[id]"
+                options={{ title: 'Market', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="market/edit/[id]"
+                options={{ title: 'Name your garden', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>

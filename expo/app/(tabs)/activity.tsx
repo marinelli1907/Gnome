@@ -15,6 +15,7 @@ import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useIncomingClaims, useMyChats } from '@/lib/db';
 import { isUnread, useChatReads } from '@/lib/chatReads';
+import MyMarketCard from '@/components/mygnome/MyMarketCard';
 import ClaimsToReview from '@/components/mygnome/ClaimsToReview';
 import MyListingsView from '@/components/mygnome/MyListingsView';
 import MyPickups from '@/components/mygnome/MyPickups';
@@ -76,6 +77,8 @@ export default function MyGnomeScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <Text style={styles.h1}>My Gnome</Text>
+
+      <MyMarketCard uid={userId} />
 
       <ScrollView
         horizontal

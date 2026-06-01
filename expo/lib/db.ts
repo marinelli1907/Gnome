@@ -31,6 +31,7 @@ import type {
   ClaimStatus,
   GnomeEvent,
   Listing,
+  Market,
   Profile,
   ProfileStats,
 } from '@/types';
@@ -50,9 +51,12 @@ export const keys = {
   claimMessages: (id: string) => ['claimMessages', id] as const,
   myEvents: (uid?: string) => ['myEvents', uid] as const,
   myChats: (uid?: string) => ['myChats', uid] as const,
+  myMarket: (uid?: string) => ['myMarket', uid] as const,
+  market: (id: string) => ['market', id] as const,
+  marketListings: (id: string) => ['marketListings', id] as const,
 };
 
-const LISTING_SELECT = '*, owner:profiles(*), claims(count)';
+const LISTING_SELECT = '*, owner:profiles(*), market:markets(name), claims(count)';
 
 function shapeListing(row: any): Listing {
   const claim_count = Array.isArray(row.claims) ? row.claims[0]?.count ?? 0 : 0;
@@ -196,10 +200,18 @@ export function useCreateListing(uid?: string) {
   return useMutation({
     mutationFn: async (input: NewListing): Promise<Listing> => {
       if (!uid) throw new Error('You must be signed in to post.');
+      // Attach the listing to the user's Market (created on signup / backfill).
+      const { data: market } = await supabase
+        .from('markets')
+        .select('id')
+        .eq('owner_id', uid)
+        .limit(1)
+        .maybeSingle();
       const { data, error } = await supabase
         .from('listings')
         .insert({
           owner_id: uid,
+          market_id: market?.id ?? null,
           kind: input.kind,
           title: input.title,
           description: input.description || null,
@@ -406,6 +418,89 @@ export function useProfileStats(id?: string) {
         postsShared: postsRes.count ?? 0,
         claimsCompleted: claimsRes.count ?? 0,
       };
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Markets (M1) — a user's lightweight local garden/storefront identity
+// ---------------------------------------------------------------------------
+
+/** The current user's own Market (one per user in M1). */
+export function useMyMarket(uid?: string) {
+  return useQuery({
+    queryKey: keys.myMarket(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<Market | null> => {
+      const { data, error } = await supabase
+        .from('markets')
+        .select('*')
+        .eq('owner_id', uid as string)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as Market | null;
+    },
+  });
+}
+
+/** A public Market profile by id (active markets are world-readable). */
+export function useMarket(id?: string) {
+  return useQuery({
+    queryKey: keys.market(id ?? ''),
+    enabled: isSupabaseConfigured && !!id,
+    queryFn: async (): Promise<Market | null> => {
+      const { data, error } = await supabase
+        .from('markets')
+        .select('*')
+        .eq('id', id as string)
+        .maybeSingle();
+      if (error) throw error;
+      return data as Market | null;
+    },
+  });
+}
+
+/** Active listings belonging to a Market. */
+export function useMarketListings(marketId?: string) {
+  return useQuery({
+    queryKey: keys.marketListings(marketId ?? ''),
+    enabled: isSupabaseConfigured && !!marketId,
+    queryFn: async (): Promise<Listing[]> => {
+      const { data, error } = await supabase
+        .from('listings')
+        .select(LISTING_SELECT)
+        .eq('market_id', marketId as string)
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(shapeListing);
+    },
+  });
+}
+
+export function useUpdateMarket(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      marketId: string;
+      name: string;
+      description: string;
+      avatar_url?: string | null;
+    }): Promise<void> => {
+      const patch: Record<string, unknown> = {
+        name: input.name,
+        description: input.description || null,
+      };
+      if (input.avatar_url !== undefined) patch.avatar_url = input.avatar_url;
+      const { error } = await supabase.from('markets').update(patch).eq('id', input.marketId);
+      if (error) throw error;
+    },
+    onSuccess: (_d, input) => {
+      qc.invalidateQueries({ queryKey: keys.myMarket(uid) });
+      qc.invalidateQueries({ queryKey: keys.market(input.marketId) });
     },
   });
 }

@@ -54,6 +54,11 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         <Text style={styles.title} numberOfLines={1}>
           {isWanted ? `Looking for ${listing.title}` : listing.title}
         </Text>
+        {listing.market?.name ? (
+          <Text style={styles.market} numberOfLines={1}>
+            🏡 {listing.market.name}
+          </Text>
+        ) : null}
         {listing.quantity ? (
           <Text style={styles.quantity} numberOfLines={1}>
             {listing.quantity}
@@ -109,6 +114,7 @@ const styles = StyleSheet.create({
   kindChipText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
   body: { padding: 10, gap: 3 },
   title: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  market: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
   quantity: { fontSize: 13, color: Colors.textSecondary },
   metaRow: { flexDirection: 'row', gap: 12, marginTop: 4 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 3 },

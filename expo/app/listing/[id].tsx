@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import {
   Alert,
   Dimensions,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -125,13 +126,20 @@ export default function ListingDetailScreen() {
 
           {listing.description ? <Text style={styles.description}>{listing.description}</Text> : null}
 
-          <View style={styles.owner}>
+          <Pressable
+            style={styles.owner}
+            disabled={!listing.market_id}
+            onPress={() => listing.market_id && router.push(`/market/${listing.market_id}`)}
+          >
             <Avatar uri={listing.owner?.avatar_url} name={listing.owner?.name} size={44} />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.ownerName}>{listing.owner?.name ?? 'A neighbor'}</Text>
-              <Text style={styles.ownerSub}>Sharing this surplus</Text>
+              <Text style={styles.ownerSub}>
+                {listing.market?.name ? `🏡 ${listing.market.name}` : 'Sharing this surplus'}
+              </Text>
             </View>
-          </View>
+            {listing.market_id ? <Text style={styles.visit}>Visit ›</Text> : null}
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -188,6 +196,7 @@ const styles = StyleSheet.create({
   },
   ownerName: { fontSize: 16, fontWeight: '700', color: Colors.text },
   ownerSub: { fontSize: 13, color: Colors.textSecondary },
+  visit: { fontSize: 14, fontWeight: '700', color: Colors.primary },
   footer: {
     position: 'absolute',
     left: 0,

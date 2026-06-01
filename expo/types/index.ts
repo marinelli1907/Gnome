@@ -46,9 +46,24 @@ export interface Profile {
   created_at: string;
 }
 
+export interface Market {
+  id: string;
+  owner_id: string;
+  name: string;
+  avatar_url: string | null;
+  description: string | null;
+  city: string | null;
+  county: string | null;
+  state: string | null;
+  zip: string | null;
+  status: string;
+  created_at: string;
+}
+
 export interface Listing {
   id: string;
   owner_id: string;
+  market_id: string | null;
   kind: ListingKind;
   fulfilled_by_listing_id: string | null;
   title: string;
@@ -64,6 +79,7 @@ export interface Listing {
   expires_at: string;
   // Joined / derived (not columns):
   owner?: Profile | null;
+  market?: { name: string } | null;
   distance_miles?: number | null;
   claim_count?: number;
 }
