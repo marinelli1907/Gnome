@@ -32,7 +32,7 @@ function shortValue(l: Listing, type: ListingType): string {
  * ListingCardV2 — the visual heart of the feed. Premium single-column card:
  * image, type badge, value, title, market, distance/freshness, primary CTA.
  */
-export default function ListingCard({ listing }: { listing: Listing }) {
+export default function ListingCard({ listing, promoted }: { listing: Listing; promoted?: boolean }) {
   const router = useRouter();
   const { userId } = useAuth();
   const cat = categoryFor(listing.category);
@@ -50,8 +50,11 @@ export default function ListingCard({ listing }: { listing: Listing }) {
     void logEvent('listing_card_opened', {
       userId: userId ?? null,
       listingId: listing.id,
-      metadata: { listing_type: type },
+      metadata: { listing_type: type, promoted: !!promoted },
     });
+    if (promoted) {
+      void logEvent('promoted_listing_opened', { userId: userId ?? null, listingId: listing.id });
+    }
     router.push(`/listing/${listing.id}`);
   };
 
@@ -72,6 +75,11 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         )}
         <View style={styles.badgeWrap}>
           <TypeBadge type={type} />
+          {promoted ? (
+            <View style={styles.promotedTag}>
+              <Text style={styles.promotedText}>Promoted</Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.valueChip}>
           <Text style={styles.valueChipText}>{shortValue(listing, type)}</Text>
@@ -134,7 +142,14 @@ const styles = StyleSheet.create({
   image: { width: '100%', height: 190, backgroundColor: Colors.backgroundSecondary },
   fallback: { alignItems: 'center', justifyContent: 'center' },
   fallbackEmoji: { fontSize: 64 },
-  badgeWrap: { position: 'absolute', top: 12, left: 12 },
+  badgeWrap: { position: 'absolute', top: 12, left: 12, gap: 6, alignItems: 'flex-start' },
+  promotedTag: {
+    backgroundColor: Colors.gold,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  promotedText: { fontSize: 11, fontFamily: fonts.bold, color: Colors.text },
   valueChip: {
     position: 'absolute',
     top: 12,

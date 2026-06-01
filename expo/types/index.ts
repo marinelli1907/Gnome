@@ -61,7 +61,10 @@ export interface PlanLimit {
   featured: boolean;
   delivery_eligible: boolean;
   price_cents: number;
+  included_boost_credits?: number;
 }
+
+export type PromotionSource = 'manual' | 'plan_credit' | 'paid' | 'sponsor';
 
 export interface Market {
   id: string;
@@ -100,6 +103,8 @@ export interface Listing {
   lng?: number | null;
   approx_lat?: number | null;
   approx_lng?: number | null;
+  is_featured?: boolean;
+  featured_until?: string | null;
   fulfilled_by_listing_id: string | null;
   title: string;
   description: string | null;

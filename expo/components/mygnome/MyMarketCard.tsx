@@ -5,7 +5,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { Avatar } from '@/components/ui';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
-import { useMarketListings, useMyMarket, usePlanLimits } from '@/lib/db';
+import { useBoostCreditsRemaining, useMarketListings, useMyMarket, usePlanLimits } from '@/lib/db';
 import type { MarketPlan } from '@/types';
 
 const PLAN_LABEL: Record<string, string> = {
@@ -20,6 +20,7 @@ export default function MyMarketCard({ uid }: { uid: string }) {
   const market = useMyMarket(uid);
   const listings = useMarketListings(market.data?.id);
   const limits = usePlanLimits();
+  const credits = useBoostCreditsRemaining(market.data?.id);
 
   if (!market.data) return null;
 
@@ -27,6 +28,8 @@ export default function MyMarketCard({ uid }: { uid: string }) {
   const plan: MarketPlan = (m.plan as MarketPlan) ?? 'free';
   const count = listings.data?.length ?? 0;
   const cap = limits.data?.[plan]?.max_active_listings ?? null;
+  const includedBoosts = limits.data?.[plan]?.included_boost_credits ?? 0;
+  const boostsLeft = credits.data ?? 0;
   const pct = cap ? Math.min(1, count / cap) : 0;
   const near = plan === 'free' && cap != null && count >= 8;
   const barColor = pct >= 1 ? Colors.error : pct >= 0.8 ? Colors.gold : Colors.primary;
@@ -51,6 +54,10 @@ export default function MyMarketCard({ uid }: { uid: string }) {
           <View style={styles.barTrack}>
             <View style={[styles.barFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: barColor }]} />
           </View>
+        )}
+
+        {includedBoosts > 0 && (
+          <Text style={styles.boosts}>✨ Boosts: {boostsLeft} of {includedBoosts} left this month</Text>
         )}
 
         <Pressable style={styles.editBtn} onPress={() => router.push(`/market/edit/${m.id}`)}>
@@ -81,6 +88,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 11, fontWeight: '700', color: Colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
   name: { fontSize: 17, fontWeight: '800', color: Colors.text, marginTop: 1 },
   meta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  boosts: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
   barTrack: { height: 6, borderRadius: 3, backgroundColor: Colors.backgroundSecondary, overflow: 'hidden' },
   barFill: { height: 6, borderRadius: 3 },
   editBtn: {

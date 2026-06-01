@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ListingCard from '@/components/ListingCard';
+import FeaturedRail from '@/components/FeaturedRail';
 import { EmptyState, ErrorState, Button } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
 import { fonts } from '@/constants/theme';
@@ -121,6 +122,8 @@ export default function BrowseScreen() {
           );
         })}
       </ScrollView>
+
+      <FeaturedRail filters={filters} />
     </View>
   );
 

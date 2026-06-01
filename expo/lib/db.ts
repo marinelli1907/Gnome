@@ -57,6 +57,8 @@ export const keys = {
   market: (id: string) => ['market', id] as const,
   marketListings: (id: string) => ['marketListings', id] as const,
   planLimits: () => ['planLimits'] as const,
+  featured: (filters?: unknown) => ['featured', filters] as const,
+  boostCredits: (marketId?: string) => ['boostCredits', marketId] as const,
 };
 
 // Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
@@ -64,7 +66,7 @@ export const keys = {
 const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
   'category,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
-  'fulfillment_type,approx_lat,approx_lng,status,created_at,expires_at';
+  'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,status,created_at,expires_at';
 const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count)`;
 
 function shapeListing(row: any): Listing {
@@ -559,6 +561,109 @@ export function useUpdateMarket(uid?: string) {
     onSuccess: (_d, input) => {
       qc.invalidateQueries({ queryKey: keys.myMarket(uid) });
       qc.invalidateQueries({ queryKey: keys.market(input.marketId) });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Promotions (M7) — Featured Near You + plan-credit boosts (no payments)
+// ---------------------------------------------------------------------------
+
+/** Active promotions' listings, filtered by radius + type; max 5 (rail hides <2). */
+export function useFeaturedListings(filters: BrowseFilters) {
+  return useQuery({
+    queryKey: keys.featured(filters),
+    enabled: isSupabaseConfigured,
+    queryFn: async (): Promise<Listing[]> => {
+      const { data, error } = await supabase
+        .from('listing_promotions')
+        .select(`id, ends_at, listing:listings(${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count))`)
+        .eq('status', 'active')
+        .gt('ends_at', new Date().toISOString())
+        .order('ends_at', { ascending: true })
+        .limit(30);
+      if (error) throw error;
+
+      const seen = new Set<string>();
+      let listings: Listing[] = [];
+      for (const row of (data ?? []) as any[]) {
+        const l = row.listing;
+        if (!l || l.status !== 'active') continue;
+        if (new Date(l.expires_at).getTime() <= Date.now()) continue;
+        if (seen.has(l.id)) continue;
+        seen.add(l.id);
+        listings.push(shapeListing(l));
+      }
+
+      if (filters.listingType !== 'all') {
+        listings = listings.filter((l) => l.listing_type === filters.listingType);
+      }
+      if (filters.coords) {
+        const max = radiusToMiles(filters.radius);
+        listings = listings
+          .map((l) => ({
+            ...l,
+            distance_miles:
+              l.approx_lat != null && l.approx_lng != null
+                ? distanceMiles(filters.coords as Coords, { lat: l.approx_lat, lng: l.approx_lng })
+                : null,
+          }))
+          .filter((l) => l.distance_miles == null || l.distance_miles <= max);
+      }
+      return listings.slice(0, 5);
+    },
+  });
+}
+
+/** Remaining included boost credits this month for a market (server-computed). */
+export function useBoostCreditsRemaining(marketId?: string) {
+  return useQuery({
+    queryKey: keys.boostCredits(marketId),
+    enabled: isSupabaseConfigured && !!marketId,
+    queryFn: async (): Promise<number> => {
+      const { data, error } = await supabase.rpc('market_boost_credits_remaining', {
+        p_market_id: marketId,
+      });
+      if (error) throw error;
+      return (data as number) ?? 0;
+    },
+  });
+}
+
+export function usePromoteListing(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      listingId: string;
+      marketId: string;
+      durationDays: number;
+      source: 'plan_credit' | 'manual';
+      priceCents?: number | null;
+    }): Promise<void> => {
+      const startsAt = new Date();
+      const endsAt = new Date(Date.now() + input.durationDays * 86_400_000);
+      const { error } = await supabase.from('listing_promotions').insert({
+        listing_id: input.listingId,
+        market_id: input.marketId,
+        source: input.source,
+        status: 'active',
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        price_cents: input.priceCents ?? null,
+        created_by: uid ?? null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_d, input) => {
+      void logEvent('promotion_created', { userId: uid, listingId: input.listingId, metadata: { source: input.source, days: input.durationDays } });
+      void logEvent('promotion_activated', { userId: uid, listingId: input.listingId, metadata: { source: input.source } });
+      if (input.source === 'plan_credit') {
+        void logEvent('plan_credit_redeemed', { userId: uid, listingId: input.listingId });
+      }
+      qc.invalidateQueries({ queryKey: ['featured'] });
+      qc.invalidateQueries({ queryKey: keys.boostCredits(input.marketId) });
+      qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+      qc.invalidateQueries({ queryKey: keys.listing(input.listingId) });
     },
   });
 }

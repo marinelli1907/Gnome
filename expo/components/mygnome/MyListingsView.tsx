@@ -106,6 +106,11 @@ export default function MyListingsView({ uid }: { uid: string }) {
                   <View style={styles.actions}>
                     {(g === 'Available' || g === 'Claimed') && (
                       <>
+                        {l.is_featured ? (
+                          <Text style={styles.featured}>✨ Featured</Text>
+                        ) : (
+                          <Pressable onPress={() => router.push(`/promote/${l.id}`)}><Text style={styles.link}>Promote</Text></Pressable>
+                        )}
                         <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
                         <Pressable onPress={() => markComplete(l)}><Text style={styles.link}>Mark Complete</Text></Pressable>
                         <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Remove</Text></Pressable>
@@ -144,4 +149,5 @@ const styles = StyleSheet.create({
   actions: { alignItems: 'flex-end', gap: 6 },
   link: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
   linkDanger: { color: Colors.error, fontWeight: '600', fontSize: 13 },
+  featured: { color: Colors.text, fontWeight: '700', fontSize: 13 },
 });

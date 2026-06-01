@@ -90,6 +90,10 @@ export default function RootLayout() {
                 name="upgrade"
                 options={{ presentation: 'modal', title: 'Upgrade', ...headerStyle }}
               />
+              <Stack.Screen
+                name="promote/[listingId]"
+                options={{ presentation: 'modal', title: 'Boost listing', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>
