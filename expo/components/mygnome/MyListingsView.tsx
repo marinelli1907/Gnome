@@ -2,6 +2,7 @@ import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Badge, Button, EmptyState } from '@/components/ui';
+import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
 import { categoryFor } from '@/constants/categories';
 import { useMyListings, useUpdateListingStatus } from '@/lib/db';
@@ -30,6 +31,15 @@ export default function MyListingsView({ uid }: { uid: string }) {
   const updateStatus = useUpdateListingStatus(uid);
 
   const listings = myListings.data ?? [];
+  if (myListings.isLoading) {
+    return (
+      <View style={{ gap: 10 }}>
+        <RowSkeleton />
+        <RowSkeleton />
+        <RowSkeleton />
+      </View>
+    );
+  }
   if (listings.length === 0) {
     return (
       <EmptyState

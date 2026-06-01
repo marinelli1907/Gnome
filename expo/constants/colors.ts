@@ -1,63 +1,58 @@
+// Gnome locked palette (Market Architecture v2 §22 / M5).
+// Deep Garden Green, Sage, Tomato, Harvest Gold, Warm Cream, Charcoal, Muted.
 const Colors = {
-  primary: '#2D6A4F',
-  primaryLight: '#40916C',
-  primaryDark: '#1B4332',
-  secondary: '#D4A373',
-  secondaryLight: '#E9C46A',
-  accent: '#BC4749',
-  accentLight: '#E07A5F',
+  primary: '#1B4332', // Deep Garden Green
+  primaryLight: '#2D6A4F',
+  primaryDark: '#143023',
 
-  background: '#FEFAE0',
-  backgroundSecondary: '#F4F1DE',
-  surface: '#FFFFFF',
+  secondary: '#87A96B', // Sage
+  secondaryLight: '#A7C088',
+  accent: '#BC4749', // Tomato
+  accentLight: '#D46A6A',
+
+  background: '#FEFAE0', // Warm Cream
+  backgroundSecondary: '#F4F1E4',
+  surface: '#FFFDF8', // Surface
   surfaceElevated: '#FFFFFF',
 
-  text: '#1B1B1B',
-  textSecondary: '#5C5C5C',
-  textTertiary: '#8E8E8E',
+  text: '#1F2421', // Charcoal
+  textSecondary: '#6B705C', // Muted
+  textTertiary: '#9A9E8C',
   textInverse: '#FFFFFF',
   textOnPrimary: '#FFFFFF',
 
-  border: '#E8E2D0',
-  borderLight: '#F0EBD8',
-  divider: '#EDE8D5',
+  border: '#DAD7CD',
+  borderLight: '#E7E4D7',
+  divider: '#E7E4D7',
 
-  success: '#2D6A4F',
+  success: '#1B4332',
   warning: '#E9C46A',
   error: '#BC4749',
-  info: '#457B9D',
+  info: '#5C7A6A',
 
-  free: '#2D6A4F',
-  sell: '#457B9D',
-  trade: '#D4A373',
+  free: '#1B4332',
+  sell: '#BC4749',
+  trade: '#87A96B',
 
-  shadow: 'rgba(27, 67, 50, 0.08)',
-  overlay: 'rgba(0, 0, 0, 0.5)',
+  shadow: 'rgba(20, 48, 35, 0.10)',
+  overlay: 'rgba(31, 36, 33, 0.5)',
 
-  tabBar: '#FFFFFF',
-  tabBarBorder: '#E8E2D0',
-  tabBarActive: '#2D6A4F',
-  tabBarInactive: '#8E8E8E',
+  tabBar: '#FFFDF8',
+  tabBarBorder: '#DAD7CD',
+  tabBarActive: '#1B4332',
+  tabBarInactive: '#9A9E8C',
 
-  cardShadow: 'rgba(27, 67, 50, 0.06)',
+  cardShadow: 'rgba(20, 48, 35, 0.07)',
 
-  chatBubbleUser: '#2D6A4F',
-  chatBubbleAI: '#F0EBD8',
+  chatBubbleUser: '#1B4332',
+  chatBubbleAI: '#EFEDE0',
   chatBubbleUserText: '#FFFFFF',
-  chatBubbleAIText: '#1B1B1B',
+  chatBubbleAIText: '#1F2421',
 
-  promoted: '#C97B2A',
-  promotedLight: '#F5E6CC',
-  promotedBg: 'rgba(201, 123, 42, 0.08)',
-  gold: '#D4A017',
-  goldLight: '#FFF3D0',
-  freshGreen: '#3A9D5C',
-  urgentOrange: '#E07A5F',
-  proTag: '#1B4332',
-  marketTag: '#7B5E2E',
-  chartLine: '#2D6A4F',
-  chartFill: 'rgba(45, 106, 79, 0.12)',
-  earningsBg: '#F7F5ED',
+  gold: '#E9C46A', // Harvest Gold
+  goldLight: '#FBF1D2',
+  freshGreen: '#2D6A4F',
+  urgentOrange: '#D46A6A',
 };
 
 export default Colors;

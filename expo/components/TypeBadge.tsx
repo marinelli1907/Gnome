@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { ListingType } from '@/types';
 import { TYPE_COLOR, TYPE_LABEL } from '@/lib/listingType';
+import { fonts } from '@/constants/theme';
 
 export default function TypeBadge({ type }: { type: ListingType }) {
   const color = TYPE_COLOR[type] ?? TYPE_COLOR.free;
@@ -14,5 +15,5 @@ export default function TypeBadge({ type }: { type: ListingType }) {
 
 const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  text: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  text: { fontSize: 11, fontFamily: fonts.bold, color: '#FFFFFF' },
 });

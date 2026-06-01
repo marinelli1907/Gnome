@@ -9,10 +9,10 @@ export const TYPE_LABEL: Record<ListingType, string> = {
 };
 
 export const TYPE_COLOR: Record<ListingType, string> = {
-  free: Colors.free,
-  trade: Colors.trade,
-  sale: Colors.sell,
-  wanted: Colors.accent,
+  free: Colors.primary, // Deep Garden Green
+  trade: Colors.secondary, // Sage
+  sale: Colors.accent, // Tomato
+  wanted: Colors.textSecondary, // Muted
 };
 
 export const TYPE_FILTERS: { value: 'all' | ListingType; label: string }[] = [

@@ -18,9 +18,17 @@ export const palette = {
   border: '#E8E2D0',
 } as const;
 
+// Loaded via @expo-google-fonts/inter in the root layout. Use these family names
+// in styles (RN custom fonts don't respond to fontWeight, so pick the family).
+export const fonts = {
+  regular: 'Inter_400Regular',
+  medium: 'Inter_500Medium',
+  semibold: 'Inter_600SemiBold',
+  bold: 'Inter_700Bold',
+} as const;
+
 export const typography = {
   fontFamily: 'Inter',
-  // weights used across the app
   weight: { regular: '400', medium: '500', semibold: '600', bold: '700', heavy: '800' },
   size: { xs: 12, sm: 13, md: 15, lg: 17, xl: 20, '2xl': 24, '3xl': 30 },
 } as const;

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Avatar, Badge, EmptyState } from '@/components/ui';
+import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
 import { useMyClaims } from '@/lib/db';
 import type { ClaimStatus } from '@/types';
@@ -20,6 +21,14 @@ export default function MyPickups({ uid }: { uid: string }) {
   const mine = useMyClaims(uid);
   const claims = mine.data ?? [];
 
+  if (mine.isLoading) {
+    return (
+      <View style={{ gap: 10 }}>
+        <RowSkeleton />
+        <RowSkeleton />
+      </View>
+    );
+  }
   if (claims.length === 0) {
     return (
       <EmptyState

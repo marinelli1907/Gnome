@@ -8,11 +8,14 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { List, Map as MapIcon } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
 import MapListings from '@/components/MapListings';
-import { EmptyState } from '@/components/ui';
+import { EmptyState, ErrorState, Button } from '@/components/ui';
+import { FeedSkeleton } from '@/components/Skeleton';
+import { fonts } from '@/constants/theme';
 import { TYPE_FILTERS } from '@/lib/listingType';
 import type { ListingType } from '@/types';
 import { CATEGORIES } from '@/constants/categories';
@@ -28,6 +31,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 
 export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [radius, setRadius] = useState<RadiusOption>(10);
   const [category, setCategory] = useState<string | null>(null);
@@ -138,21 +142,36 @@ export default function BrowseScreen() {
     </View>
   );
 
-  const empty = !isSupabaseConfigured ? (
-    <EmptyState
-      emoji="🔌"
-      title="Connect Supabase"
-      subtitle="Add your Supabase URL and anon key to a .env file, then restart Expo to load real listings."
-    />
-  ) : error ? (
-    <EmptyState emoji="⚠️" title="Couldn't load listings" subtitle={String((error as Error).message)} />
-  ) : (
-    <EmptyState
-      emoji="🌱"
-      title="No listings nearby yet"
-      subtitle="Be the first to share — widen the radius or post your own surplus from the Post tab."
-    />
-  );
+  const emptyComponent = () => {
+    if (isLoading) return <FeedSkeleton count={4} />;
+    if (!isSupabaseConfigured) {
+      return (
+        <EmptyState
+          emoji="🔌"
+          title="Connect Supabase"
+          subtitle="Add your Supabase URL and anon key to a .env file, then restart Expo to load real listings."
+        />
+      );
+    }
+    if (error) {
+      return (
+        <ErrorState
+          title="Couldn’t load nearby listings"
+          message="Check your connection and try again."
+          onRetry={() => refetch()}
+        />
+      );
+    }
+    return (
+      <EmptyState
+        emoji="🌱"
+        title="Nothing fresh nearby yet"
+        subtitle="Be the first grower in your area — share something from your garden."
+      >
+        <Button label="Create listing" onPress={() => router.push('/post')} style={{ marginTop: 12, paddingHorizontal: 28 }} />
+      </EmptyState>
+    );
+  };
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -165,16 +184,14 @@ export default function BrowseScreen() {
         <FlatList
           data={data ?? []}
           keyExtractor={(item) => item.id}
-          numColumns={2}
           ListHeaderComponent={Header}
-          columnWrapperStyle={styles.row}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
             <View style={styles.cardWrap}>
               <ListingCard listing={item} />
             </View>
           )}
-          ListEmptyComponent={isLoading ? null : empty}
+          ListEmptyComponent={emptyComponent}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
           }
@@ -200,7 +217,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  modeBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  modeBtnText: { color: Colors.primary, fontFamily: fonts.bold, fontSize: 13 },
   kindFilterRow: {
     flexDirection: 'row',
     backgroundColor: Colors.backgroundSecondary,
@@ -218,8 +235,8 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: Colors.surface },
   segmentText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   segmentTextActive: { color: Colors.primary, fontWeight: '700' },
-  brand: { fontSize: 28, fontWeight: '800', color: Colors.primaryDark },
-  tagline: { fontSize: 14, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
+  brand: { fontSize: 28, fontFamily: fonts.bold, color: Colors.primaryDark },
+  tagline: { fontSize: 14, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
   chipRow: { marginHorizontal: -16 },
   chipRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
   chip: {
@@ -231,8 +248,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
   chipTextActive: { color: Colors.textInverse },
-  row: { paddingHorizontal: 12, gap: 12 },
-  cardWrap: { flex: 1, marginBottom: 12 },
+  cardWrap: { paddingHorizontal: 16 },
 });

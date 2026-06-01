@@ -2,13 +2,29 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
+import { Text as RNText, TextInput as RNTextInput } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 import { AuthProvider } from '@/providers/AuthProvider';
+import OfflineBanner from '@/components/OfflineBanner';
 import Colors from '@/constants/colors';
 
 void SplashScreen.preventAutoHideAsync();
+
+// Default any text without an explicit fontFamily to Inter (regular). Components
+// that need a weight set the Inter_* family directly in their styles.
+const TextAny = RNText as unknown as { defaultProps?: { style?: unknown } };
+TextAny.defaultProps = { ...(TextAny.defaultProps ?? {}), style: { fontFamily: 'Inter_400Regular' } };
+const InputAny = RNTextInput as unknown as { defaultProps?: { style?: unknown } };
+InputAny.defaultProps = { ...(InputAny.defaultProps ?? {}), style: { fontFamily: 'Inter_400Regular' } };
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -20,9 +36,18 @@ const headerStyle = {
 };
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
   useEffect(() => {
-    void SplashScreen.hideAsync();
-  }, []);
+    if (fontsLoaded) void SplashScreen.hideAsync();
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -30,6 +55,7 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <AuthProvider>
             <StatusBar style="dark" />
+            <OfflineBanner />
             <Stack screenOptions={{ headerBackTitle: 'Back' }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen

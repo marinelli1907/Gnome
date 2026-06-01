@@ -14,8 +14,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Clock } from 'lucide-react-native';
 import { Avatar, Button, EmptyState } from '@/components/ui';
 import TypeBadge from '@/components/TypeBadge';
+import { Skeleton } from '@/components/Skeleton';
 import { ctaLabel, listingValueLabel } from '@/lib/listingType';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
@@ -43,7 +45,16 @@ export default function ListingDetailScreen() {
   }, [listing?.id, userId]);
 
   if (isLoading) {
-    return <View style={styles.screen} />;
+    return (
+      <View style={styles.screen}>
+        <Skeleton style={{ width: '100%', height: width * 0.8 }} />
+        <View style={{ padding: 20, gap: 12 }}>
+          <Skeleton style={{ width: '70%', height: 26, borderRadius: 6 }} />
+          <Skeleton style={{ width: '45%', height: 18, borderRadius: 6 }} />
+          <Skeleton style={{ width: '90%', height: 14, borderRadius: 6, marginTop: 8 }} />
+        </View>
+      </View>
+    );
   }
   if (!listing) {
     return (
@@ -174,8 +185,8 @@ const styles = StyleSheet.create({
   heroFallback: { alignItems: 'center', justifyContent: 'center' },
   body: { padding: 20 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { fontSize: 24, fontWeight: '800', color: Colors.text, flex: 1 },
-  value: { fontSize: 18, fontWeight: '800', color: Colors.text, marginTop: 6 },
+  title: { fontSize: 24, fontFamily: fonts.bold, color: Colors.text, flex: 1 },
+  value: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, marginTop: 6 },
   category: { fontSize: 15, color: Colors.textSecondary, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -190,7 +201,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  ownerName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  ownerName: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text },
   ownerSub: { fontSize: 13, color: Colors.textSecondary },
   visit: { fontSize: 14, fontWeight: '700', color: Colors.primary },
   footer: {

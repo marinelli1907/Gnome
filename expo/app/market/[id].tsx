@@ -1,10 +1,12 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Avatar, Button, EmptyState } from '@/components/ui';
+import { Avatar, Button, EmptyState, ErrorState } from '@/components/ui';
+import { FeedSkeleton } from '@/components/Skeleton';
 import ListingCard from '@/components/ListingCard';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMarket, useMarketListings, logEvent } from '@/lib/db';
 
@@ -24,15 +26,19 @@ export default function MarketScreen() {
 
   if (market.isLoading) {
     return (
-      <View style={[styles.screen, styles.center]}>
-        <ActivityIndicator color={Colors.primary} />
+      <View style={styles.screen}>
+        <FeedSkeleton count={3} />
       </View>
     );
   }
   if (market.error) {
     return (
       <View style={[styles.screen, styles.center]}>
-        <EmptyState emoji="⚠️" title="Couldn't load this garden" subtitle="Please try again in a moment." />
+        <ErrorState
+          title="Couldn’t load this garden"
+          message="Check your connection and try again."
+          onRetry={() => market.refetch()}
+        />
       </View>
     );
   }
@@ -72,9 +78,7 @@ export default function MarketScreen() {
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
-        numColumns={2}
         ListHeaderComponent={Header}
-        columnWrapperStyle={styles.row}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <View style={styles.cardWrap}>
@@ -100,9 +104,8 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   list: { paddingBottom: 32 },
   header: { alignItems: 'center', padding: 20, gap: 6 },
-  name: { fontSize: 24, fontWeight: '800', color: Colors.text, textAlign: 'center' },
-  desc: { fontSize: 15, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
-  countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontWeight: '600' },
-  row: { paddingHorizontal: 12, gap: 12 },
-  cardWrap: { flex: 1, marginBottom: 12 },
+  name: { fontSize: 24, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },
+  desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
+  countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
+  cardWrap: { paddingHorizontal: 16 },
 });

@@ -1,7 +1,8 @@
 import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Avatar, Badge, Button, EmptyState } from '@/components/ui';
+import { Avatar, Badge, Button, EmptyState, ErrorState } from '@/components/ui';
+import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
 import { formatPrice } from '@/lib/listingType';
 import { useIncomingClaims, useUpdateClaim } from '@/lib/db';
@@ -41,12 +42,30 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
     );
   };
 
+  if (incoming.isLoading) {
+    return (
+      <View style={{ gap: 10 }}>
+        <RowSkeleton />
+        <RowSkeleton />
+        <RowSkeleton />
+      </View>
+    );
+  }
+  if (incoming.error) {
+    return (
+      <ErrorState
+        title="Couldn’t load requests"
+        message="Check your connection and try again."
+        onRetry={() => incoming.refetch()}
+      />
+    );
+  }
   if (claims.length === 0) {
     return (
       <EmptyState
         emoji="🤝"
-        title="No claims to review"
-        subtitle="When a neighbor claims something you shared, it shows up here for you to approve."
+        title="No requests yet"
+        subtitle="When a neighbor requests something you shared, it shows up here for you to approve."
       />
     );
   }

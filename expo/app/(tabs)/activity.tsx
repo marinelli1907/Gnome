@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useIncomingClaims, useMyChats } from '@/lib/db';
 import { isUnread, useChatReads } from '@/lib/chatReads';
@@ -124,7 +125,7 @@ export default function MyGnomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
-  h1: { fontSize: 28, fontWeight: '800', color: Colors.text, paddingHorizontal: 16, paddingTop: 6 },
+  h1: { fontSize: 28, fontFamily: fonts.bold, color: Colors.text, paddingHorizontal: 16, paddingTop: 6 },
   segRow: { marginTop: 10, flexGrow: 0 },
   segRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
   seg: {
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   segActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  segText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  segText: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.textSecondary },
   segTextActive: { color: Colors.textInverse },
   badge: {
     minWidth: 18,

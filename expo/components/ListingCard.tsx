@@ -6,8 +6,11 @@ import { useRouter } from 'expo-router';
 import type { Listing, ListingType } from '@/types';
 import { categoryFor } from '@/constants/categories';
 import TypeBadge from '@/components/TypeBadge';
-import { listingValueLabel } from '@/lib/listingType';
+import { ctaLabel, formatPrice } from '@/lib/listingType';
+import { logEvent } from '@/lib/db';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 
 function timeLeft(expiresAt: string): string {
   const ms = new Date(expiresAt).getTime() - Date.now();
@@ -18,13 +21,24 @@ function timeLeft(expiresAt: string): string {
   return `${Math.max(1, hours)}h left`;
 }
 
+function shortValue(l: Listing, type: ListingType): string {
+  if (type === 'sale') return l.price_cents != null ? formatPrice(l.price_cents, l.unit) : 'For sale';
+  if (type === 'trade') return 'Trade';
+  if (type === 'wanted') return 'Wanted';
+  return 'Free';
+}
+
+/**
+ * ListingCardV2 — the visual heart of the feed. Premium single-column card:
+ * image, type badge, value, title, market, distance/freshness, primary CTA.
+ */
 export default function ListingCard({ listing }: { listing: Listing }) {
   const router = useRouter();
+  const { userId } = useAuth();
   const cat = categoryFor(listing.category);
   const photo = listing.photos?.[0];
   const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
   const isWanted = type === 'wanted';
-  const value = listingValueLabel(listing);
   const distance =
     listing.distance_miles != null
       ? listing.distance_miles < 0.1
@@ -32,60 +46,70 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         : `${listing.distance_miles.toFixed(1)} mi`
       : null;
 
+  const open = () => {
+    void logEvent('listing_card_opened', {
+      userId: userId ?? null,
+      listingId: listing.id,
+      metadata: { listing_type: type },
+    });
+    router.push(`/listing/${listing.id}`);
+  };
+
+  const onCta = () => {
+    if (type === 'free') open();
+    else router.push(`/request/${listing.id}`);
+  };
+
   return (
-    <Pressable
-      onPress={() => router.push(`/listing/${listing.id}`)}
-      style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]}
-    >
+    <Pressable onPress={open} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View style={styles.imageWrap}>
         {photo ? (
-          <Image source={{ uri: photo }} style={styles.image} contentFit="cover" transition={150} />
+          <Image source={{ uri: photo }} style={styles.image} contentFit="cover" transition={180} />
         ) : (
-          <View style={[styles.image, styles.imageFallback]}>
-            <Text style={{ fontSize: 44 }}>{cat.emoji}</Text>
+          <View style={[styles.image, styles.fallback]}>
+            <Text style={styles.fallbackEmoji}>{cat.emoji}</Text>
           </View>
         )}
-        <View style={styles.catChip}>
-          <Text style={styles.catChipText}>
-            {cat.emoji} {cat.label}
-          </Text>
-        </View>
-        <View style={styles.typeChip}>
+        <View style={styles.badgeWrap}>
           <TypeBadge type={type} />
         </View>
+        <View style={styles.valueChip}>
+          <Text style={styles.valueChipText}>{shortValue(listing, type)}</Text>
+        </View>
       </View>
+
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
           {isWanted ? `Looking for ${listing.title}` : listing.title}
         </Text>
-        <Text
-          style={[styles.value, type === 'sale' && styles.valueSale]}
-          numberOfLines={1}
-        >
-          {value}
-        </Text>
+
         {listing.market?.name ? (
           <Text style={styles.market} numberOfLines={1}>
             🏡 {listing.market.name}
           </Text>
         ) : null}
-        {listing.quantity ? (
-          <Text style={styles.quantity} numberOfLines={1}>
-            {listing.quantity}
-          </Text>
-        ) : null}
+
         <View style={styles.metaRow}>
           {distance ? (
             <View style={styles.meta}>
-              <MapPin size={12} color={Colors.textSecondary} />
+              <MapPin size={13} color={Colors.textSecondary} />
               <Text style={styles.metaText}>{distance}</Text>
             </View>
           ) : null}
           <View style={styles.meta}>
-            <Clock size={12} color={Colors.textSecondary} />
+            <Clock size={13} color={Colors.textSecondary} />
             <Text style={styles.metaText}>{timeLeft(listing.expires_at)}</Text>
           </View>
+          {type === 'trade' && listing.trade_for ? (
+            <Text style={styles.tradeFor} numberOfLines={1}>
+              · for {listing.trade_for}
+            </Text>
+          ) : null}
         </View>
+
+        <Pressable onPress={onCta} style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}>
+          <Text style={styles.ctaText}>{ctaLabel(type)}</Text>
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -93,34 +117,47 @@ export default function ListingCard({ listing }: { listing: Listing }) {
 
 const styles = StyleSheet.create({
   card: {
-    flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: 16,
-    overflow: 'hidden',
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: Colors.borderLight,
+    overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: Colors.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
+  pressed: { opacity: 0.96 },
   imageWrap: { position: 'relative' },
-  image: { width: '100%', aspectRatio: 1.2, backgroundColor: Colors.backgroundSecondary },
-  imageFallback: { alignItems: 'center', justifyContent: 'center' },
-  catChip: {
+  image: { width: '100%', height: 190, backgroundColor: Colors.backgroundSecondary },
+  fallback: { alignItems: 'center', justifyContent: 'center' },
+  fallbackEmoji: { fontSize: 64 },
+  badgeWrap: { position: 'absolute', top: 12, left: 12 },
+  valueChip: {
     position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(255,253,248,0.94)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
-  catChipText: { fontSize: 11, fontWeight: '700', color: Colors.text },
-  typeChip: { position: 'absolute', top: 8, right: 8 },
-  body: { padding: 10, gap: 3 },
-  title: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  value: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  valueSale: { color: Colors.sell },
-  market: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
-  quantity: { fontSize: 13, color: Colors.textSecondary },
-  metaRow: { flexDirection: 'row', gap: 12, marginTop: 4 },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  metaText: { fontSize: 12, color: Colors.textSecondary },
+  valueChipText: { fontSize: 14, fontFamily: fonts.bold, color: Colors.text },
+  body: { padding: 14, gap: 4 },
+  title: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text },
+  market: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.secondary },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2, flexWrap: 'wrap' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary },
+  tradeFor: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, flexShrink: 1 },
+  cta: {
+    marginTop: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  ctaText: { color: Colors.textInverse, fontSize: 15, fontFamily: fonts.bold },
 });

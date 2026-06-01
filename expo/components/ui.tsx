@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 
 // --- Button --------------------------------------------------------------
 export function Button({
@@ -103,7 +104,7 @@ export function Avatar({
         { width: size, height: size, borderRadius: size / 2 },
       ]}
     >
-      <Text style={{ color: Colors.textInverse, fontWeight: '700', fontSize: size * 0.4 }}>
+      <Text style={{ color: Colors.textInverse, fontFamily: fonts.bold, fontSize: size * 0.4 }}>
         {initial}
       </Text>
     </View>
@@ -115,6 +116,28 @@ export function Badge({ label, color = Colors.primary }: { label: string; color?
   return (
     <View style={[styles.badge, { backgroundColor: color + '1A' }]}>
       <Text style={[styles.badgeText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+// --- ErrorState (every error gets an action) ----------------------------
+export function ErrorState({
+  title = 'Something didn’t load',
+  message,
+  onRetry,
+  emoji = '🌧️',
+}: {
+  title?: string;
+  message: string;
+  onRetry?: () => void;
+  emoji?: string;
+}) {
+  return (
+    <View style={styles.empty}>
+      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptySub}>{message}</Text>
+      {onRetry ? <Button label="Try again" onPress={onRetry} style={{ marginTop: 12, paddingHorizontal: 32 }} /> : null}
     </View>
   );
 }
@@ -150,11 +173,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   btnBordered: { borderWidth: 1.5, borderColor: Colors.primary },
-  btnText: { fontSize: 16, fontWeight: '700' },
+  btnText: { fontSize: 16, fontFamily: fonts.bold },
   fieldWrap: { marginBottom: 16 },
   fieldLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     color: Colors.textSecondary,
     marginBottom: 6,
   },
@@ -167,6 +190,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: Colors.text,
+    fontFamily: fonts.regular,
   },
   avatarFallback: {
     backgroundColor: Colors.primaryLight,
@@ -179,12 +203,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'flex-start',
   },
-  badgeText: { fontSize: 12, fontWeight: '700' },
+  badgeText: { fontSize: 12, fontFamily: fonts.bold },
   empty: { alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
   emptyEmoji: { fontSize: 48 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, textAlign: 'center' },
+  emptyTitle: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },
   emptySub: {
     fontSize: 14,
+    fontFamily: fonts.regular,
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,

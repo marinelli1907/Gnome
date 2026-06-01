@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { EmptyState } from '@/components/ui';
+import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
 import { useMyEvents } from '@/lib/db';
 import type { GnomeEvent } from '@/types';
@@ -68,6 +69,15 @@ function when(iso: string): string {
 
 export default function ActivityFeed({ uid }: { uid: string }) {
   const events = useMyEvents(uid);
+  if (events.isLoading) {
+    return (
+      <View style={{ gap: 10 }}>
+        <RowSkeleton />
+        <RowSkeleton />
+        <RowSkeleton />
+      </View>
+    );
+  }
   const rows = (events.data ?? [])
     .map((e) => ({ e, d: describe(e) }))
     .filter((x): x is { e: GnomeEvent; d: { emoji: string; text: string } } => x.d !== null);
