@@ -53,6 +53,16 @@ export interface Profile {
 
 export type MarketPlan = 'free' | 'grower' | 'farm' | 'sponsor';
 
+export interface PlanLimit {
+  plan: MarketPlan;
+  max_active_listings: number;
+  max_photos: number;
+  analytics: boolean;
+  featured: boolean;
+  delivery_eligible: boolean;
+  price_cents: number;
+}
+
 export interface Market {
   id: string;
   owner_id: string;

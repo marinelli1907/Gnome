@@ -7,19 +7,47 @@ import type { GnomeEvent } from '@/types';
 
 // History only — no metrics, counts, or analytics. Community framing
 // (Shared / Received / Helped), never sales/orders/revenue.
+// Pure-telemetry events are not shown in the human history feed.
+const HIDDEN = new Set([
+  'claim_message_sent',
+  'listing_viewed',
+  'market_viewed',
+  'upgrade_prompt_viewed',
+  'upgrade_prompt_tapped',
+  'plan_limit_hit',
+  'sponsor_profile_viewed',
+]);
+
 function describe(ev: GnomeEvent): { emoji: string; text: string } | null {
   const title = (ev.metadata?.title as string) || 'a listing';
+  if (HIDDEN.has(ev.event_type)) return null;
   switch (ev.event_type) {
+    // M4 monetization event names
+    case 'listing_created_free':
+      return { emoji: '🧺', text: `Shared ${title}` };
+    case 'listing_created_trade':
+      return { emoji: '🔄', text: `Listed ${title} for trade` };
+    case 'listing_created_sale':
+      return { emoji: '🏷️', text: `Listed ${title} for sale` };
+    case 'listing_created_wanted':
+      return { emoji: '🔎', text: `Posted a want: ${title}` };
+    case 'listing_claim_started':
+      return { emoji: '🙌', text: `Requested ${title}` };
+    case 'listing_claim_approved':
+      return { emoji: '✅', text: `Approved a neighbor's request` };
+    case 'market_created':
+      return { emoji: '🏡', text: `Started your Market` };
+    // shared / legacy keys (history logged before M4 renames)
     case 'listing_created':
       return ev.metadata?.kind === 'wanted'
         ? { emoji: '🔎', text: `Posted a want: ${title}` }
         : { emoji: '🧺', text: `Shared ${title}` };
     case 'claim_made':
-      return { emoji: '🙌', text: `Claimed ${title}` };
+      return { emoji: '🙌', text: `Requested ${title}` };
     case 'claim_approved':
-      return { emoji: '✅', text: `Approved a neighbor's claim` };
+      return { emoji: '✅', text: `Approved a neighbor's request` };
     case 'claim_declined':
-      return { emoji: '✋', text: `Declined a claim` };
+      return { emoji: '✋', text: `Declined a request` };
     case 'listing_completed':
       return { emoji: '🎉', text: `Completed ${title} — shared with a neighbor` };
     case 'wanted_completed':
@@ -28,8 +56,6 @@ function describe(ev: GnomeEvent): { emoji: string; text: string } | null {
       return { emoji: '🌱', text: `A nearby offer matched your want` };
     case 'offer_matched_to_want':
       return { emoji: '🤝', text: `Offered to help with a want` };
-    case 'claim_message_sent':
-      return null; // too noisy for history
     default:
       return { emoji: '•', text: ev.event_type.replace(/_/g, ' ') };
   }

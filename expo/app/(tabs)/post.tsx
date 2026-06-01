@@ -19,7 +19,7 @@ import { CATEGORIES } from '@/constants/categories';
 import { TYPE_CHOICES } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
-import { useCreateListing, useMyMarket } from '@/lib/db';
+import { useCreateListing, useMyMarket, logEvent } from '@/lib/db';
 import { uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
 import type { ListingType } from '@/types';
@@ -179,7 +179,20 @@ export default function PostScreen() {
       reset();
       router.push(`/listing/${listing.id}`);
     } catch (e: any) {
-      Alert.alert('Could not post', e?.message ?? 'Please try again.');
+      const msg = e?.message ?? '';
+      if (/PLAN_LIMIT_REACHED/i.test(msg)) {
+        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type } });
+        Alert.alert(
+          'You’ve reached your Free limit',
+          'Free Markets can have up to 10 active listings. Upgrade to Grower for more.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'See upgrade', onPress: () => router.push('/upgrade') },
+          ],
+        );
+      } else {
+        Alert.alert('Could not post', msg || 'Please try again.');
+      }
     } finally {
       setBusy(false);
     }

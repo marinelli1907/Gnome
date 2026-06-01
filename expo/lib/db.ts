@@ -33,6 +33,7 @@ import type {
   GnomeEvent,
   Listing,
   Market,
+  PlanLimit,
   Profile,
   ProfileStats,
 } from '@/types';
@@ -55,6 +56,7 @@ export const keys = {
   myMarket: (uid?: string) => ['myMarket', uid] as const,
   market: (id: string) => ['market', id] as const,
   marketListings: (id: string) => ['marketListings', id] as const,
+  planLimits: () => ['planLimits'] as const,
 };
 
 const LISTING_SELECT = '*, owner:profiles(*), market:markets(name), claims(count)';
@@ -242,10 +244,10 @@ export function useCreateListing(uid?: string) {
       return shapeListing(data);
     },
     onSuccess: (listing) => {
-      void logEvent('listing_created', {
+      void logEvent(`listing_created_${listing.listing_type}`, {
         userId: uid,
         listingId: listing.id,
-        metadata: { kind: listing.kind, listing_type: listing.listing_type, title: listing.title },
+        metadata: { listing_type: listing.listing_type, title: listing.title },
       });
       if (listing.kind === 'offer') {
         // New offer -> server-side category+radius matching pushes to wanted owners.
@@ -298,10 +300,10 @@ export function useClaimListing(uid?: string) {
     },
     onSuccess: (claim, input) => {
       void notifyCounterparty('claim', claim.id);
-      void logEvent('claim_made', {
+      void logEvent('listing_claim_started', {
         userId: uid,
         listingId: input.listingId,
-        metadata: { title: input.title },
+        metadata: { title: input.title, claim_type: input.claimType ?? 'claim' },
       });
       qc.invalidateQueries({ queryKey: keys.listing(input.listingId) });
       qc.invalidateQueries({ queryKey: keys.myClaims(uid) });
@@ -327,7 +329,7 @@ export function useUpdateClaim(uid?: string) {
     onSuccess: (_d, input) => {
       if (input.status === 'approved') void notifyCounterparty('approved', input.claimId);
       if (input.status === 'approved' || input.status === 'declined') {
-        void logEvent(input.status === 'approved' ? 'claim_approved' : 'claim_declined', {
+        void logEvent(input.status === 'approved' ? 'listing_claim_approved' : 'claim_declined', {
           userId: uid,
           metadata: { claim_id: input.claimId, title: input.title },
         });
@@ -509,6 +511,22 @@ export function useMarketListings(marketId?: string) {
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []).map(shapeListing);
+    },
+  });
+}
+
+/** Plan limits (public read), keyed by plan. */
+export function usePlanLimits() {
+  return useQuery({
+    queryKey: keys.planLimits(),
+    enabled: isSupabaseConfigured,
+    staleTime: 60 * 60 * 1000, // pricing/limits rarely change
+    queryFn: async (): Promise<Record<string, PlanLimit>> => {
+      const { data, error } = await supabase.from('plan_limits').select('*');
+      if (error) throw error;
+      const map: Record<string, PlanLimit> = {};
+      for (const row of (data ?? []) as PlanLimit[]) map[row.plan] = row;
+      return map;
     },
   });
 }

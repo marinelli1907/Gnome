@@ -33,10 +33,14 @@ export default function ListingDetailScreen() {
   const claim = useClaimListing(userId ?? undefined);
 
   useEffect(() => {
-    if (listing && listing.kind === 'wanted') {
-      void logEvent('wanted_viewed', { userId: userId ?? null, listingId: listing.id });
+    if (listing) {
+      void logEvent('listing_viewed', {
+        userId: userId ?? null,
+        listingId: listing.id,
+        metadata: { listing_type: listing.listing_type },
+      });
     }
-  }, [listing?.id, listing?.kind, userId]);
+  }, [listing?.id, userId]);
 
   if (isLoading) {
     return <View style={styles.screen} />;

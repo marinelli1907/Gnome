@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,7 +6,7 @@ import { Avatar, Button, EmptyState } from '@/components/ui';
 import ListingCard from '@/components/ListingCard';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
-import { useMarket, useMarketListings } from '@/lib/db';
+import { useMarket, useMarketListings, logEvent } from '@/lib/db';
 
 export default function MarketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -15,6 +15,12 @@ export default function MarketScreen() {
   const { userId } = useAuth();
   const market = useMarket(id);
   const listings = useMarketListings(id);
+
+  useEffect(() => {
+    if (market.data) {
+      void logEvent('market_viewed', { userId: userId ?? null, metadata: { market_id: market.data.id } });
+    }
+  }, [market.data?.id, userId]);
 
   if (market.isLoading) {
     return (

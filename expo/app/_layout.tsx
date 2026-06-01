@@ -60,6 +60,10 @@ export default function RootLayout() {
                 name="request/[listingId]"
                 options={{ presentation: 'modal', title: 'Send a request', ...headerStyle }}
               />
+              <Stack.Screen
+                name="upgrade"
+                options={{ presentation: 'modal', title: 'Upgrade', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>
