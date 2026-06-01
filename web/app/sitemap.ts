@@ -1,32 +1,20 @@
 import type { MetadataRoute } from 'next';
-import { getActiveListings } from '@/lib/gnome';
-import { listingPath } from '@/lib/format';
+import { getAllActiveListingRefs, getAllActiveMarketRefs } from '@/lib/gnome';
+import { CATEGORIES } from '@/lib/categories';
+import { listingPath, marketPath } from '@/lib/format';
 
-export const revalidate = 300;
+export const revalidate = 600;
 
 const BASE = 'https://gnome.boonesystems.app';
-const CITIES = [
-  'richmond-heights',
-  'lyndhurst',
-  'mayfield-heights',
-  'south-euclid',
-  'cleveland-heights',
-];
+const AREAS = ['lyndhurst-oh', 'richmond-heights-oh', 'mayfield-heights-oh', 'south-euclid-oh'];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const listings = await getActiveListings({ limit: 200 });
+  const [listings, markets] = await Promise.all([getAllActiveListingRefs(), getAllActiveMarketRefs()]);
   return [
     { url: BASE, changeFrequency: 'daily', priority: 1 },
-    ...CITIES.map((c) => ({
-      url: `${BASE}/near/${c}`,
-      changeFrequency: 'daily' as const,
-      priority: 0.8,
-    })),
-    ...listings.map((l) => ({
-      url: `${BASE}${listingPath(l.id, l.title)}`,
-      lastModified: new Date(l.created_at),
-      changeFrequency: 'daily' as const,
-      priority: 0.6,
-    })),
+    ...AREAS.map((a) => ({ url: `${BASE}/near/${a}`, changeFrequency: 'daily' as const, priority: 0.8 })),
+    ...CATEGORIES.map((c) => ({ url: `${BASE}/category/${c.id}`, changeFrequency: 'weekly' as const, priority: 0.6 })),
+    ...markets.map((m) => ({ url: `${BASE}${marketPath(m.slug)}`, lastModified: new Date(m.created_at), changeFrequency: 'daily' as const, priority: 0.6 })),
+    ...listings.map((l) => ({ url: `${BASE}${listingPath(l.id, l.slug)}`, lastModified: new Date(l.created_at), changeFrequency: 'daily' as const, priority: 0.5 })),
   ];
 }

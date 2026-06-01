@@ -1,27 +1,37 @@
 import Link from 'next/link';
 import { categoryFor } from '@/lib/categories';
-import { listingPath, timeLeft } from '@/lib/format';
+import { areaLabel, formatPrice, listingPath, TYPE_LABEL, timeLeft } from '@/lib/format';
 import type { WebListing } from '@/lib/gnome';
 
-export default function ListingCard({ listing }: { listing: WebListing }) {
+function shortValue(l: WebListing): string {
+  if (l.listing_type === 'sale') return l.price_cents != null ? formatPrice(l.price_cents, l.unit) : 'For sale';
+  if (l.listing_type === 'trade') return 'Trade';
+  if (l.listing_type === 'wanted') return 'Wanted';
+  return 'Free';
+}
+
+export default function ListingCard({ listing, promoted }: { listing: WebListing; promoted?: boolean }) {
   const cat = categoryFor(listing.category);
   const photo = listing.photos?.[0];
+  const t = listing.listing_type;
   return (
-    <Link href={listingPath(listing.id, listing.title)} className="card">
-      {photo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img className="photo" src={photo} alt={listing.title} loading="lazy" />
-      ) : (
-        <div className="photo-fallback">{cat.emoji}</div>
-      )}
+    <Link className="card" href={listingPath(listing.id, listing.slug ?? listing.title)}>
+      <div className="imgwrap">
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photo} alt={listing.title} loading="lazy" />
+        ) : (
+          <div className="fallback">{cat.emoji}</div>
+        )}
+        <span className={`badge ${t}`}>{TYPE_LABEL[t]}</span>
+        {promoted ? <span className="promoted">Promoted</span> : null}
+        <span className="valuechip">{shortValue(listing)}</span>
+      </div>
       <div className="body">
-        <div className="cat">
-          {cat.emoji} {cat.label}
-        </div>
-        <div className="title">{listing.title}</div>
+        <div className="title">{t === 'wanted' ? `Looking for ${listing.title}` : listing.title}</div>
+        {listing.market_name ? <div className="market">🏡 {listing.market_name}</div> : null}
         <div className="meta">
-          {listing.quantity ? `${listing.quantity} · ` : ''}
-          {timeLeft(listing.expires_at)}
+          {areaLabel(listing.city, listing.state)} · {timeLeft(listing.expires_at)}
         </div>
       </div>
     </Link>
