@@ -25,7 +25,15 @@ export async function logEvent(
   }
 }
 import { distanceMiles, radiusToMiles, type Coords, type RadiusOption } from './location';
-import type { Claim, Listing, Profile, ProfileStats } from '@/types';
+import type {
+  Claim,
+  ChatSummary,
+  ClaimStatus,
+  GnomeEvent,
+  Listing,
+  Profile,
+  ProfileStats,
+} from '@/types';
 
 // ---------------------------------------------------------------------------
 // Query keys
@@ -40,6 +48,8 @@ export const keys = {
   profileStats: (id: string) => ['profileStats', id] as const,
   claimThread: (id: string) => ['claimThread', id] as const,
   claimMessages: (id: string) => ['claimMessages', id] as const,
+  myEvents: (uid?: string) => ['myEvents', uid] as const,
+  myChats: (uid?: string) => ['myChats', uid] as const,
 };
 
 const LISTING_SELECT = '*, owner:profiles(*), claims(count)';
@@ -206,21 +216,25 @@ export function useCreateListing(uid?: string) {
       return shapeListing(data);
     },
     onSuccess: (listing) => {
-      if (listing.kind === 'wanted') {
-        void logEvent('wanted_created', { userId: uid, listingId: listing.id });
-      } else {
+      void logEvent('listing_created', {
+        userId: uid,
+        listingId: listing.id,
+        metadata: { kind: listing.kind, title: listing.title },
+      });
+      if (listing.kind === 'offer') {
         // New offer -> server-side category+radius matching pushes to wanted owners.
         void notifyOfferCreated(listing.id);
         if (listing.fulfilled_by_listing_id) {
           void logEvent('offer_matched_to_want', {
             userId: uid,
             listingId: listing.id,
-            metadata: { wanted_id: listing.fulfilled_by_listing_id },
+            metadata: { wanted_id: listing.fulfilled_by_listing_id, title: listing.title },
           });
         }
       }
       qc.invalidateQueries({ queryKey: ['listings'] });
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+      qc.invalidateQueries({ queryKey: keys.myEvents(uid) });
     },
   });
 }
@@ -228,20 +242,26 @@ export function useCreateListing(uid?: string) {
 export function useClaimListing(uid?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (listingId: string): Promise<Claim> => {
+    mutationFn: async (input: { listingId: string; title?: string }): Promise<Claim> => {
       if (!uid) throw new Error('You must be signed in to claim.');
       const { data, error } = await supabase
         .from('claims')
-        .insert({ listing_id: listingId, claimer_id: uid })
+        .insert({ listing_id: input.listingId, claimer_id: uid })
         .select('*')
         .single();
       if (error) throw error;
       return data as Claim;
     },
-    onSuccess: (claim, listingId) => {
+    onSuccess: (claim, input) => {
       void notifyCounterparty('claim', claim.id);
-      qc.invalidateQueries({ queryKey: keys.listing(listingId) });
+      void logEvent('claim_made', {
+        userId: uid,
+        listingId: input.listingId,
+        metadata: { title: input.title },
+      });
+      qc.invalidateQueries({ queryKey: keys.listing(input.listingId) });
       qc.invalidateQueries({ queryKey: keys.myClaims(uid) });
+      qc.invalidateQueries({ queryKey: keys.myEvents(uid) });
     },
   });
 }
@@ -252,6 +272,7 @@ export function useUpdateClaim(uid?: string) {
     mutationFn: async (input: {
       claimId: string;
       status: 'approved' | 'declined' | 'cancelled';
+      title?: string;
     }): Promise<void> => {
       const { error } = await supabase
         .from('claims')
@@ -261,9 +282,16 @@ export function useUpdateClaim(uid?: string) {
     },
     onSuccess: (_d, input) => {
       if (input.status === 'approved') void notifyCounterparty('approved', input.claimId);
+      if (input.status === 'approved' || input.status === 'declined') {
+        void logEvent(input.status === 'approved' ? 'claim_approved' : 'claim_declined', {
+          userId: uid,
+          metadata: { claim_id: input.claimId, title: input.title },
+        });
+      }
       qc.invalidateQueries({ queryKey: keys.incomingClaims(uid) });
       qc.invalidateQueries({ queryKey: keys.myClaims(uid) });
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+      qc.invalidateQueries({ queryKey: keys.myEvents(uid) });
       qc.invalidateQueries({ queryKey: ['listings'] });
       qc.invalidateQueries({ queryKey: ['listing'] });
     },
@@ -277,6 +305,7 @@ export function useUpdateListingStatus(uid?: string) {
       listingId: string;
       status: 'completed' | 'removed' | 'active';
       kind?: ListingKind;
+      title?: string;
     }): Promise<void> => {
       const { error } = await supabase
         .from('listings')
@@ -294,9 +323,44 @@ export function useUpdateListingStatus(uid?: string) {
       }
     },
     onSuccess: (_d, input) => {
-      if (input.kind === 'wanted' && input.status === 'completed') {
-        void logEvent('wanted_completed', { userId: uid, listingId: input.listingId });
+      if (input.status === 'completed') {
+        void logEvent(input.kind === 'wanted' ? 'wanted_completed' : 'listing_completed', {
+          userId: uid,
+          listingId: input.listingId,
+          metadata: { title: input.title },
+        });
       }
+      qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+      qc.invalidateQueries({ queryKey: keys.listing(input.listingId) });
+      qc.invalidateQueries({ queryKey: keys.myEvents(uid) });
+      qc.invalidateQueries({ queryKey: ['listings'] });
+    },
+  });
+}
+
+/** Edit a listing's editable fields (owner only, enforced by RLS). */
+export function useUpdateListing(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      listingId: string;
+      title: string;
+      description: string;
+      quantity: string;
+      category: string;
+    }): Promise<void> => {
+      const { error } = await supabase
+        .from('listings')
+        .update({
+          title: input.title,
+          description: input.description || null,
+          quantity: input.quantity || null,
+          category: input.category,
+        })
+        .eq('id', input.listingId);
+      if (error) throw error;
+    },
+    onSuccess: (_d, input) => {
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
       qc.invalidateQueries({ queryKey: keys.listing(input.listingId) });
       qc.invalidateQueries({ queryKey: ['listings'] });
@@ -416,6 +480,102 @@ export function useReportClaim(claimId?: string, uid?: string) {
         .from('claim_reports')
         .insert({ claim_id: claimId, reporter_id: uid, reason: reason || null });
       if (error) throw error;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// My Gnome — Activity history + Messages list (V1.4)
+// ---------------------------------------------------------------------------
+
+/** Plain history of my own events (no analytics/metrics). */
+export function useMyEvents(uid?: string) {
+  return useQuery({
+    queryKey: keys.myEvents(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<GnomeEvent[]> => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('id, event_type, listing_id, metadata, created_at')
+        .eq('user_id', uid as string)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as GnomeEvent[];
+    },
+  });
+}
+
+/** All my active claim chats (owner or claimant side), newest message first. */
+export function useMyChats(uid?: string) {
+  return useQuery({
+    queryKey: keys.myChats(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    refetchInterval: 8000,
+    queryFn: async (): Promise<ChatSummary[]> => {
+      const ACTIVE = ['approved', 'completed'];
+      const [mineRes, inRes] = await Promise.all([
+        supabase
+          .from('claims')
+          .select('id, status, created_at, listing:listings(title, owner:profiles(name))')
+          .eq('claimer_id', uid as string)
+          .in('status', ACTIVE),
+        supabase
+          .from('claims')
+          .select('id, status, created_at, claimer:profiles(name), listing:listings!inner(title, owner_id)')
+          .eq('listing.owner_id', uid as string)
+          .in('status', ACTIVE),
+      ]);
+      if (mineRes.error) throw mineRes.error;
+      if (inRes.error) throw inRes.error;
+
+      const summaries: Record<string, ChatSummary> = {};
+      for (const c of (mineRes.data ?? []) as any[]) {
+        summaries[c.id] = {
+          claimId: c.id,
+          status: c.status,
+          listingTitle: c.listing?.title ?? 'Listing',
+          otherName: c.listing?.owner?.name ?? 'the owner',
+          lastBody: null,
+          lastAt: c.created_at,
+          lastSenderId: null,
+        };
+      }
+      for (const c of (inRes.data ?? []) as any[]) {
+        summaries[c.id] = {
+          claimId: c.id,
+          status: c.status,
+          listingTitle: c.listing?.title ?? 'Listing',
+          otherName: c.claimer?.name ?? 'a neighbor',
+          lastBody: null,
+          lastAt: c.created_at,
+          lastSenderId: null,
+        };
+      }
+
+      const ids = Object.keys(summaries);
+      if (ids.length) {
+        const { data: msgs } = await supabase
+          .from('claim_messages')
+          .select('claim_id, body, created_at, sender_id')
+          .in('claim_id', ids)
+          .order('created_at', { ascending: false });
+        const seen = new Set<string>();
+        for (const m of (msgs ?? []) as any[]) {
+          if (seen.has(m.claim_id)) continue; // ordered desc -> first is newest
+          seen.add(m.claim_id);
+          const s = summaries[m.claim_id];
+          if (s) {
+            s.lastBody = m.body;
+            s.lastAt = m.created_at;
+            s.lastSenderId = m.sender_id;
+          }
+        }
+      }
+
+      return Object.values(summaries).sort(
+        (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime(),
+      );
     },
   });
 }

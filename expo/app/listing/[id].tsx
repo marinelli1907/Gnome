@@ -68,11 +68,14 @@ export default function ListingDetailScreen() {
       router.push('/sign-in');
       return;
     }
-    claim.mutate(listing.id, {
-      onSuccess: () =>
-        Alert.alert('Claim sent!', 'The owner will get a notification to approve your claim.'),
-      onError: (e: any) => Alert.alert('Could not claim', e?.message ?? 'Try again.'),
-    });
+    claim.mutate(
+      { listingId: listing.id, title: listing.title },
+      {
+        onSuccess: () =>
+          Alert.alert('Claim sent!', 'The owner will get a notification to approve your claim.'),
+        onError: (e: any) => Alert.alert('Could not claim', e?.message ?? 'Try again.'),
+      },
+    );
   };
 
   const photos = listing.photos ?? [];

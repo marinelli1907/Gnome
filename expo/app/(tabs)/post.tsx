@@ -36,26 +36,31 @@ export default function PostScreen() {
     kind?: string;
     category?: string;
     title?: string;
+    quantity?: string;
+    description?: string;
     fulfilledBy?: string;
   }>();
 
   const [kind, setKind] = useState<ListingKind>(params.kind === 'wanted' ? 'wanted' : 'offer');
   const [title, setTitle] = useState(params.title ?? '');
-  const [quantity, setQuantity] = useState('');
-  const [description, setDescription] = useState('');
+  const [quantity, setQuantity] = useState(params.quantity ?? '');
+  const [description, setDescription] = useState(params.description ?? '');
   const [category, setCategory] = useState<string>(params.category ?? 'vegetables');
   const [assets, setAssets] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
   const [busy, setBusy] = useState(false);
 
-  // Re-apply prefill when the user re-enters via "I Have This" with new params.
-  const seed = params.fulfilledBy ?? '';
+  // Re-apply prefill when entering via "I Have This" or Repost (new params).
+  const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.kind ?? ''}`;
   useEffect(() => {
-    if (params.fulfilledBy) {
-      setKind('offer');
-      setFulfilledBy(params.fulfilledBy);
+    if (params.fulfilledBy || params.title || params.category) {
+      if (params.kind === 'wanted') setKind('wanted');
+      else if (params.kind === 'offer' || params.fulfilledBy) setKind('offer');
       if (params.title) setTitle(params.title);
       if (params.category) setCategory(params.category);
+      if (params.quantity) setQuantity(params.quantity);
+      if (params.description) setDescription(params.description);
+      setFulfilledBy(params.fulfilledBy ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed]);

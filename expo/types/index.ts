@@ -95,3 +95,22 @@ export interface ProfileStats {
   postsShared: number;
   claimsCompleted: number;
 }
+
+export interface GnomeEvent {
+  id: string;
+  event_type: string;
+  listing_id: string | null;
+  metadata: Record<string, any> | null;
+  created_at: string;
+}
+
+/** One row in the My Gnome → Messages list (a claim-scoped chat). */
+export interface ChatSummary {
+  claimId: string;
+  status: ClaimStatus;
+  listingTitle: string;
+  otherName: string;
+  lastBody: string | null;
+  lastAt: string;
+  lastSenderId: string | null;
+}

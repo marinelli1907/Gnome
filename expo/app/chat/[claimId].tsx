@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -22,6 +22,7 @@ import {
   useReportClaim,
   useSendMessage,
 } from '@/lib/db';
+import { markChatRead } from '@/lib/chatReads';
 import type { ClaimMessage } from '@/types';
 
 const RATE_LIMIT_MS = 2000; // client-side: 1 message / 2 seconds
@@ -38,6 +39,12 @@ export default function PickupChatScreen() {
 
   const [text, setText] = useState('');
   const lastSentAt = useRef(0);
+
+  // Mark this chat read locally when opened and as new messages arrive.
+  const msgCount = messages.data?.length ?? 0;
+  useEffect(() => {
+    if (claimId) void markChatRead(claimId);
+  }, [claimId, msgCount]);
 
   const claim = thread.data;
   const status = claim?.status;

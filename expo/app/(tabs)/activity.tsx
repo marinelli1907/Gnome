@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -8,42 +7,44 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Avatar, Badge, Button, EmptyState } from '@/components/ui';
+import { Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
-import {
-  useIncomingClaims,
-  useMyClaims,
-  useUpdateClaim,
-} from '@/lib/db';
-import type { ClaimStatus } from '@/types';
+import { useIncomingClaims, useMyChats } from '@/lib/db';
+import { isUnread, useChatReads } from '@/lib/chatReads';
+import ClaimsToReview from '@/components/mygnome/ClaimsToReview';
+import MyListingsView from '@/components/mygnome/MyListingsView';
+import MyPickups from '@/components/mygnome/MyPickups';
+import MessagesView from '@/components/mygnome/MessagesView';
+import ActivityFeed from '@/components/mygnome/ActivityFeed';
 
-const STATUS_COLOR: Record<ClaimStatus, string> = {
-  pending: Colors.warning,
-  approved: Colors.success,
-  declined: Colors.error,
-  cancelled: Colors.textTertiary,
-  completed: Colors.textTertiary,
-  expired: Colors.textTertiary,
-};
+type Tab = 'claims' | 'listings' | 'pickups' | 'messages' | 'activity';
 
-export default function ActivityScreen() {
+export default function MyGnomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const qc = useQueryClient();
   const { userId } = useAuth();
+  const [tab, setTab] = useState<Tab>('claims');
+
+  // Shared data for the badge counts + Messages view.
   const incoming = useIncomingClaims(userId ?? undefined);
-  const mine = useMyClaims(userId ?? undefined);
-  const updateClaim = useUpdateClaim(userId ?? undefined);
+  const chatsQ = useMyChats(userId ?? undefined);
+  const { reads, reload } = useChatReads();
+
+  // Refresh local read-state whenever this tab regains focus (e.g. after a chat).
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   if (!userId) {
     return (
       <View style={[styles.gate, { paddingTop: insets.top }]}>
         <EmptyState
-          emoji="🔔"
-          title="Sign in to see activity"
-          subtitle="Track claims on your listings and the items you've claimed."
+          emoji="🏡"
+          title="Your Gnome home base"
+          subtitle="Sign in to review claims, manage what you've shared, and message neighbors."
         >
           <Button label="Sign in / Sign up" onPress={() => router.push('/sign-in')} style={{ marginTop: 12 }} />
         </EmptyState>
@@ -51,140 +52,101 @@ export default function ActivityScreen() {
     );
   }
 
-  const act = (claimId: string, status: 'approved' | 'declined' | 'cancelled') => {
-    updateClaim.mutate(
-      { claimId, status },
-      { onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.') },
+  const chats = chatsQ.data ?? [];
+  const pendingCount = (incoming.data ?? []).filter((c) => c.status === 'pending').length;
+  const unreadCount = chats.filter((c) => isUnread(c, userId, reads)).length;
+
+  const SEGMENTS: { key: Tab; label: string; badge?: number }[] = [
+    { key: 'claims', label: 'Claims', badge: pendingCount },
+    { key: 'listings', label: 'Listings' },
+    { key: 'pickups', label: 'Pickups' },
+    { key: 'messages', label: 'Messages', badge: unreadCount },
+    { key: 'activity', label: 'Activity' },
+  ];
+
+  const onRefresh = () => {
+    void reload();
+    ['incomingClaims', 'myListings', 'myClaims', 'myChats', 'myEvents'].forEach((k) =>
+      qc.invalidateQueries({ queryKey: [k] }),
     );
   };
-
-  const pendingIncoming = (incoming.data ?? []).filter((c) => c.status === 'pending');
-  const otherIncoming = (incoming.data ?? []).filter((c) => c.status !== 'pending');
-
-  const refreshing = incoming.isRefetching || mine.isRefetching;
-  const onRefresh = () => {
-    incoming.refetch();
-    mine.refetch();
-  };
+  const refreshing =
+    incoming.isRefetching || chatsQ.isRefetching;
 
   return (
-    <ScrollView
-      style={[styles.screen, { paddingTop: insets.top }]}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
-      }
-    >
-      <Text style={styles.h1}>Activity</Text>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
+      <Text style={styles.h1}>My Gnome</Text>
 
-      <Text style={styles.section}>Claims on your listings</Text>
-      {pendingIncoming.length === 0 && otherIncoming.length === 0 ? (
-        <Text style={styles.muted}>No one has claimed your listings yet.</Text>
-      ) : (
-        <>
-          {pendingIncoming.map((c) => (
-            <View key={c.id} style={styles.card}>
-              <View style={styles.cardHead}>
-                <Avatar uri={c.claimer?.avatar_url} name={c.claimer?.name} size={36} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{c.claimer?.name ?? 'A neighbor'}</Text>
-                  <Text style={styles.cardSub} numberOfLines={1}>
-                    wants “{c.listing?.title}”
-                  </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.segRow}
+        contentContainerStyle={styles.segRowContent}
+      >
+        {SEGMENTS.map((s) => {
+          const active = tab === s.key;
+          return (
+            <Pressable
+              key={s.key}
+              onPress={() => setTab(s.key)}
+              style={[styles.seg, active && styles.segActive]}
+            >
+              <Text style={[styles.segText, active && styles.segTextActive]}>{s.label}</Text>
+              {s.badge ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{s.badge}</Text>
                 </View>
-                <Badge label="Pending" color={STATUS_COLOR.pending} />
-              </View>
-              <View style={styles.actions}>
-                <Button label="Approve" onPress={() => act(c.id, 'approved')} style={{ flex: 1 }} />
-                <Button label="Decline" variant="secondary" onPress={() => act(c.id, 'declined')} style={{ flex: 1 }} />
-              </View>
-            </View>
-          ))}
-          {otherIncoming.map((c) => (
-            <View key={c.id} style={styles.cardRow}>
-              <Avatar uri={c.claimer?.avatar_url} name={c.claimer?.name} size={32} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{c.claimer?.name ?? 'A neighbor'}</Text>
-                <Text style={styles.cardSub} numberOfLines={1}>{c.listing?.title}</Text>
-              </View>
-              <View style={styles.rightCol}>
-                <Badge label={cap(c.status)} color={STATUS_COLOR[c.status]} />
-                {messageable(c.status) && (
-                  <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
-                    <Text style={styles.msgLink}>Message</Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
-          ))}
-        </>
-      )}
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
-      <Text style={[styles.section, { marginTop: 28 }]}>Items you&apos;ve claimed</Text>
-      {(mine.data ?? []).length === 0 ? (
-        <Text style={styles.muted}>You haven&apos;t claimed anything yet. Browse to find surplus near you.</Text>
-      ) : (
-        (mine.data ?? []).map((c) => (
-          <View key={c.id} style={styles.cardRow}>
-            <Avatar uri={c.listing?.owner?.avatar_url} name={c.listing?.owner?.name} size={32} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{c.listing?.title ?? 'Listing'}</Text>
-              <Text style={styles.cardSub}>from {c.listing?.owner?.name ?? 'a neighbor'}</Text>
-            </View>
-            <View style={styles.rightCol}>
-              <Badge label={cap(c.status)} color={STATUS_COLOR[c.status]} />
-              {messageable(c.status) && (
-                <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
-                  <Text style={styles.msgLink}>Message</Text>
-                </Pressable>
-              )}
-            </View>
-          </View>
-        ))
-      )}
-    </ScrollView>
+      <ScrollView
+        contentContainerStyle={styles.body}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+        }
+      >
+        {tab === 'claims' && <ClaimsToReview uid={userId} />}
+        {tab === 'listings' && <MyListingsView uid={userId} />}
+        {tab === 'pickups' && <MyPickups uid={userId} />}
+        {tab === 'messages' && <MessagesView uid={userId} chats={chats} reads={reads} />}
+        {tab === 'activity' && <ActivityFeed uid={userId} />}
+      </ScrollView>
+    </View>
   );
-}
-
-function cap(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-// Chat is available once a claim is approved, and stays readable when completed.
-function messageable(status: ClaimStatus) {
-  return status === 'approved' || status === 'completed';
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
-  content: { padding: 16, paddingBottom: 40 },
-  h1: { fontSize: 28, fontWeight: '800', color: Colors.text, marginBottom: 8 },
-  section: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 10 },
-  muted: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  cardRow: {
+  h1: { fontSize: 28, fontWeight: '800', color: Colors.text, paddingHorizontal: 16, paddingTop: 6 },
+  segRow: { marginTop: 10, flexGrow: 0 },
+  segRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
+  seg: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.border,
   },
-  rightCol: { alignItems: 'flex-end', gap: 6 },
-  msgLink: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  cardSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1 },
-  actions: { flexDirection: 'row', gap: 10 },
+  segActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  segText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  segTextActive: { color: Colors.textInverse },
+  badge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: Colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  body: { padding: 16, paddingBottom: 40 },
 });

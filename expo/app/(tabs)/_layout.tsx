@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Sprout, PlusCircle, Bell, User } from 'lucide-react-native';
+import { Sprout, PlusCircle, Home, User } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import Colors from '@/constants/colors';
@@ -45,8 +45,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="activity"
         options={{
-          title: 'Activity',
-          tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
+          title: 'My Gnome',
+          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
       />
       <Tabs.Screen
