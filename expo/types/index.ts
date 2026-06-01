@@ -46,16 +46,23 @@ export interface Profile {
   created_at: string;
 }
 
+export type MarketPlan = 'free' | 'grower' | 'farm' | 'sponsor';
+
 export interface Market {
   id: string;
   owner_id: string;
   name: string;
+  slug?: string | null;
+  market_type?: string;
+  plan?: MarketPlan;
   avatar_url: string | null;
+  banner_url?: string | null;
   description: string | null;
   city: string | null;
   county: string | null;
   state: string | null;
   zip: string | null;
+  verified?: boolean;
   status: string;
   created_at: string;
 }
