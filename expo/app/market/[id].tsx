@@ -1,14 +1,15 @@
 import React, { useEffect } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, Button, EmptyState, ErrorState } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
 import ListingCard from '@/components/ListingCard';
+import Reputation from '@/components/Reputation';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useMarket, useMarketListings, logEvent } from '@/lib/db';
+import { useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
 
 export default function MarketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -17,6 +18,8 @@ export default function MarketScreen() {
   const { userId } = useAuth();
   const market = useMarket(id);
   const listings = useMarketListings(id);
+  const rep = useMarketReputation(id);
+  const report = useReport(userId ?? undefined);
 
   useEffect(() => {
     if (market.data) {
@@ -54,6 +57,28 @@ export default function MarketScreen() {
   const isOwner = userId === m.owner_id;
   const items = listings.data ?? [];
 
+  const onReport = () => {
+    if (!userId) {
+      router.push('/sign-in');
+      return;
+    }
+    Alert.alert('Report this Market?', 'Flag this Market for review. This is stored privately.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Report',
+        style: 'destructive',
+        onPress: () =>
+          report.mutate(
+            { targetType: 'market', targetId: m.id, reason: '' },
+            {
+              onSuccess: () => Alert.alert('Thanks', 'This Market has been reported.'),
+              onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.'),
+            },
+          ),
+      },
+    ]);
+  };
+
   const Header = (
     <View style={styles.header}>
       <Avatar uri={m.avatar_url} name={m.name} size={72} />
@@ -70,6 +95,16 @@ export default function MarketScreen() {
       <Text style={styles.countLine}>
         {items.length} active listing{items.length === 1 ? '' : 's'}
       </Text>
+      {rep.data ? (
+        <View style={styles.repWrap}>
+          <Reputation rep={rep.data} />
+        </View>
+      ) : null}
+      {!isOwner && (
+        <Pressable onPress={onReport} hitSlop={8} style={styles.reportBtn}>
+          <Text style={styles.reportText}>Report this Market</Text>
+        </Pressable>
+      )}
     </View>
   );
 
@@ -107,5 +142,8 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
+  repWrap: { alignSelf: 'stretch', marginTop: 16 },
+  reportBtn: { marginTop: 16, padding: 8 },
+  reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
   cardWrap: { paddingHorizontal: 16 },
 });

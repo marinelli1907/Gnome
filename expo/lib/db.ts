@@ -33,9 +33,11 @@ import type {
   GnomeEvent,
   Listing,
   Market,
+  MarketReputation,
   PlanLimit,
   Profile,
   ProfileStats,
+  ReportTargetType,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,7 @@ export const keys = {
   planLimits: () => ['planLimits'] as const,
   featured: (filters?: unknown) => ['featured', filters] as const,
   boostCredits: (marketId?: string) => ['boostCredits', marketId] as const,
+  marketReputation: (marketId?: string) => ['marketReputation', marketId] as const,
 };
 
 // Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
@@ -537,6 +540,39 @@ export function usePlanLimits() {
       const map: Record<string, PlanLimit> = {};
       for (const row of (data ?? []) as PlanLimit[]) map[row.plan] = row;
       return map;
+    },
+  });
+}
+
+/** Objective reputation for a market (from the public_markets view). */
+export function useMarketReputation(id?: string) {
+  return useQuery({
+    queryKey: keys.marketReputation(id ?? ''),
+    enabled: isSupabaseConfigured && !!id,
+    queryFn: async (): Promise<MarketReputation | null> => {
+      const { data, error } = await supabase
+        .from('public_markets')
+        .select('member_since,listings_shared,listings_sold,trades_completed,response_rate')
+        .eq('id', id as string)
+        .maybeSingle();
+      if (error) throw error;
+      return data as MarketReputation | null;
+    },
+  });
+}
+
+/** File a safety report/flag (listing/market/claim/message/user). */
+export function useReport(uid?: string) {
+  return useMutation({
+    mutationFn: async (input: { targetType: ReportTargetType; targetId: string; reason?: string }): Promise<void> => {
+      if (!uid) throw new Error('Sign in to report.');
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: uid,
+        target_type: input.targetType,
+        target_id: input.targetId,
+        reason: input.reason || null,
+      });
+      if (error) throw error;
     },
   });
 }

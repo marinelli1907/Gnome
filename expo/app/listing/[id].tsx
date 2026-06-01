@@ -15,13 +15,14 @@ import { MapPin, Clock } from 'lucide-react-native';
 import { Avatar, Button, EmptyState } from '@/components/ui';
 import TypeBadge from '@/components/TypeBadge';
 import { Skeleton } from '@/components/Skeleton';
+import Reputation from '@/components/Reputation';
 import { ctaLabel, listingValueLabel } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
-import { useClaimListing, useListing, useMyClaims, logEvent } from '@/lib/db';
+import { useClaimListing, useListing, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
 
 const { width } = Dimensions.get('window');
 
@@ -33,6 +34,8 @@ export default function ListingDetailScreen() {
   const { data: listing, isLoading } = useListing(id);
   const myClaims = useMyClaims(userId ?? undefined);
   const claim = useClaimListing(userId ?? undefined);
+  const rep = useMarketReputation(listing?.market_id ?? undefined);
+  const report = useReport(userId ?? undefined);
 
   useEffect(() => {
     if (listing) {
@@ -74,6 +77,28 @@ export default function ListingDetailScreen() {
 
   // Trade / Sale / Wanted go through the shared request sheet; Free claims inline.
   const openRequest = () => router.push(`/request/${listing.id}`);
+
+  const onReportListing = () => {
+    if (!userId) {
+      router.push('/sign-in');
+      return;
+    }
+    Alert.alert('Report this listing?', 'Flag this listing for review. This is stored privately.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Report',
+        style: 'destructive',
+        onPress: () =>
+          report.mutate(
+            { targetType: 'listing', targetId: listing.id, reason: '' },
+            {
+              onSuccess: () => Alert.alert('Thanks', 'This listing has been reported.'),
+              onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.'),
+            },
+          ),
+      },
+    ]);
+  };
 
   const onClaim = () => {
     if (!userId) {
@@ -149,6 +174,18 @@ export default function ListingDetailScreen() {
             </View>
             {listing.market_id ? <Text style={styles.visit}>Visit ›</Text> : null}
           </Pressable>
+
+          {rep.data ? (
+            <View style={{ marginTop: 10 }}>
+              <Reputation rep={rep.data} compact />
+            </View>
+          ) : null}
+
+          {!isOwner ? (
+            <Pressable onPress={onReportListing} hitSlop={6} style={styles.reportRow}>
+              <Text style={styles.reportText}>Report this listing</Text>
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -204,6 +241,8 @@ const styles = StyleSheet.create({
   ownerName: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text },
   ownerSub: { fontSize: 13, color: Colors.textSecondary },
   visit: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  reportRow: { marginTop: 18, alignSelf: 'flex-start', paddingVertical: 4 },
+  reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
   footer: {
     position: 'absolute',
     left: 0,

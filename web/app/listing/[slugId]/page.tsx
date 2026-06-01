@@ -4,7 +4,7 @@ import AppLink from '../../components/AppLink';
 import ListingCard from '../../components/ListingCard';
 import { categoryFor } from '@/lib/categories';
 import { appCtaLabel, areaLabel, idFromSlugId, listingValue, marketPath, TYPE_LABEL } from '@/lib/format';
-import { getActiveListings, getListingById } from '@/lib/gnome';
+import { getActiveListings, getListingById, getMarketBySlug } from '@/lib/gnome';
 
 export const revalidate = 60;
 
@@ -51,6 +51,13 @@ export default async function ListingPage({ params }: Params) {
   }
 
   const l = listing;
+  const market = l.market_slug ? await getMarketBySlug(l.market_slug) : null;
+  const repBits: string[] = [];
+  if (market) {
+    if (market.member_since) repBits.push(`Since ${new Date(market.member_since).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`);
+    if (market.listings_shared) repBits.push(`${market.listings_shared} shared`);
+    if (market.response_rate != null) repBits.push(`responds ${market.response_rate}% in 2 days`);
+  }
   const cat = categoryFor(l.category);
   const where = areaLabel(l.city, l.state);
   const photos = l.photos ?? [];
@@ -107,6 +114,7 @@ export default async function ListingPage({ params }: Params) {
               </div>
             </Link>
           )}
+          {repBits.length > 0 ? <div className="rep-compact">{repBits.join(' · ')}</div> : null}
 
           <div className="cta-stack">
             {l.market_id ? (

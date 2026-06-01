@@ -19,7 +19,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import {
   useClaimMessages,
   useClaimThread,
-  useReportClaim,
+  useReport,
   useSendMessage,
 } from '@/lib/db';
 import { markChatRead } from '@/lib/chatReads';
@@ -35,7 +35,7 @@ export default function PickupChatScreen() {
   const thread = useClaimThread(claimId);
   const messages = useClaimMessages(claimId);
   const send = useSendMessage(claimId, userId ?? undefined);
-  const report = useReportClaim(claimId, userId ?? undefined);
+  const report = useReport(userId ?? undefined);
 
   const [text, setText] = useState('');
   const lastSentAt = useRef(0);
@@ -104,10 +104,13 @@ export default function PickupChatScreen() {
           text: 'Report',
           style: 'destructive',
           onPress: () =>
-            report.mutate('', {
-              onSuccess: () => Alert.alert('Thanks', 'This conversation has been reported.'),
-              onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.'),
-            }),
+            report.mutate(
+              { targetType: 'claim', targetId: claimId, reason: '' },
+              {
+                onSuccess: () => Alert.alert('Thanks', 'This conversation has been reported.'),
+                onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.'),
+              },
+            ),
         },
       ],
     );

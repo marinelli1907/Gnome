@@ -76,6 +76,20 @@ export default async function MarketPage({ params }: Params) {
 
       {m.description ? <p className="desc" style={{ maxWidth: 720 }}>{m.description}</p> : null}
 
+      <div className="rep">
+        <div className="rep-stats">
+          <div><strong>{m.listings_shared}</strong><span>Shared</span></div>
+          <div><strong>{m.listings_sold}</strong><span>Sold</span></div>
+          <div><strong>{m.trades_completed}</strong><span>Traded</span></div>
+        </div>
+        {m.response_rate != null ? (
+          <div className="rep-resp">↩︎ Responds to {m.response_rate}% of requests within 2 days</div>
+        ) : null}
+        {m.member_since ? (
+          <div className="rep-since">🌱 Member since {new Date(m.member_since).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</div>
+        ) : null}
+      </div>
+
       <div className="type-counts">
         {(['free', 'trade', 'sale', 'wanted'] as const).map((t) =>
           counts[t] ? <span key={t} className={`tag type-${t}`}>{counts[t]} {TYPE_LABEL[t]}</span> : null,

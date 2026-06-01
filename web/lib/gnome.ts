@@ -55,6 +55,11 @@ export interface WebMarket {
   facebook_url: string | null;
   created_at: string;
   active_listing_count: number;
+  member_since: string | null;
+  listings_shared: number;
+  listings_sold: number;
+  trades_completed: number;
+  response_rate: number | null;
 }
 
 const LISTING_COLS =
@@ -130,7 +135,7 @@ export async function getMarketListings(marketId: string, limit = 60): Promise<W
 
 // --- Markets --------------------------------------------------------------
 const MARKET_COLS =
-  'id,slug,name,description,market_type,status,avatar_url,banner_url,city,county,state,verified,sponsor_visible,website_url,instagram_url,facebook_url,created_at,active_listing_count';
+  'id,slug,name,description,market_type,status,avatar_url,banner_url,city,county,state,verified,sponsor_visible,website_url,instagram_url,facebook_url,created_at,active_listing_count,member_since,listings_shared,listings_sold,trades_completed,response_rate';
 
 export async function getFeaturedMarkets(limit = 8): Promise<WebMarket[]> {
   return rest<WebMarket>('public_markets', {

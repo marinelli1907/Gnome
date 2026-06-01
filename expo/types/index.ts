@@ -66,6 +66,16 @@ export interface PlanLimit {
 
 export type PromotionSource = 'manual' | 'plan_credit' | 'paid' | 'sponsor';
 
+export type ReportTargetType = 'listing' | 'market' | 'claim' | 'message' | 'user';
+
+export interface MarketReputation {
+  member_since: string | null;
+  listings_shared: number;
+  listings_sold: number;
+  trades_completed: number;
+  response_rate: number | null;
+}
+
 export interface Market {
   id: string;
   owner_id: string;
