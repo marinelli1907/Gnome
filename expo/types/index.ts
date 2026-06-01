@@ -26,6 +26,9 @@ export type ClaimStatus =
 
 export type ListingKind = 'offer' | 'wanted';
 
+// M2: listing_type is the source of truth (kind is a derived/deprecated mirror).
+export type ListingType = 'free' | 'trade' | 'sale' | 'wanted';
+
 export interface Profile {
   id: string;
   name: string;
@@ -72,6 +75,13 @@ export interface Listing {
   owner_id: string;
   market_id: string | null;
   kind: ListingKind;
+  listing_type: ListingType;
+  price_cents: number | null;
+  currency: string | null;
+  trade_for: string | null;
+  unit: string | null;
+  inventory_count: number | null;
+  fulfillment_type?: string;
   fulfilled_by_listing_id: string | null;
   title: string;
   description: string | null;

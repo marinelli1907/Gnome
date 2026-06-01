@@ -16,24 +16,39 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, X } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
 import { CATEGORIES } from '@/constants/categories';
+import { TYPE_CHOICES } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
-import { useCreateListing } from '@/lib/db';
+import { useCreateListing, useMyMarket } from '@/lib/db';
 import { uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
-import type { ListingKind } from '@/types';
+import type { ListingType } from '@/types';
 
 const MAX_PHOTOS = 5;
+
+const HEADING: Record<ListingType, string> = {
+  free: 'Share your surplus',
+  trade: 'Offer a trade',
+  sale: 'List something for sale',
+  wanted: 'Post what you need',
+};
+
+const NOTE: Record<ListingType, string> = {
+  free: 'Listings expire after 7 days. Free to share — no payments.',
+  trade: 'Listings expire after 7 days. Arrange the swap in person.',
+  sale: 'Expires after 7 days. Payments happen offline, in person — Gnome never handles money.',
+  wanted: 'Wanted posts expire after 30 days. Neighbors with a match can offer it to you.',
+};
 
 export default function PostScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userId } = useAuth();
   const createListing = useCreateListing(userId ?? undefined);
+  const myMarket = useMyMarket(userId ?? undefined);
 
-  // Params arrive from the "I Have This" flow on a Wanted post.
   const params = useLocalSearchParams<{
-    kind?: string;
+    type?: string;
     category?: string;
     title?: string;
     quantity?: string;
@@ -41,21 +56,30 @@ export default function PostScreen() {
     fulfilledBy?: string;
   }>();
 
-  const [kind, setKind] = useState<ListingKind>(params.kind === 'wanted' ? 'wanted' : 'offer');
+  const initialType = (['free', 'trade', 'sale', 'wanted'] as const).includes(params.type as ListingType)
+    ? (params.type as ListingType)
+    : 'free';
+
+  const [type, setType] = useState<ListingType>(initialType);
   const [title, setTitle] = useState(params.title ?? '');
   const [quantity, setQuantity] = useState(params.quantity ?? '');
   const [description, setDescription] = useState(params.description ?? '');
   const [category, setCategory] = useState<string>(params.category ?? 'vegetables');
   const [assets, setAssets] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [price, setPrice] = useState('');
+  const [unit, setUnit] = useState('');
+  const [inventory, setInventory] = useState('');
+  const [tradeFor, setTradeFor] = useState('');
   const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
   const [busy, setBusy] = useState(false);
 
-  // Re-apply prefill when entering via "I Have This" or Repost (new params).
-  const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.kind ?? ''}`;
+  const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}`;
   useEffect(() => {
-    if (params.fulfilledBy || params.title || params.category) {
-      if (params.kind === 'wanted') setKind('wanted');
-      else if (params.kind === 'offer' || params.fulfilledBy) setKind('offer');
+    if (params.fulfilledBy || params.title || params.category || params.type) {
+      if (params.type && (['free', 'trade', 'sale', 'wanted'] as const).includes(params.type as ListingType)) {
+        setType(params.type as ListingType);
+      }
+      if (params.fulfilledBy) setType('free');
       if (params.title) setTitle(params.title);
       if (params.category) setCategory(params.category);
       if (params.quantity) setQuantity(params.quantity);
@@ -71,7 +95,7 @@ export default function PostScreen() {
         <EmptyState
           emoji="🔑"
           title="Sign in to post"
-          subtitle="You need an account to share surplus or post a want. Browsing stays free."
+          subtitle="You need an account to share, trade, sell, or request. Browsing stays free."
         >
           <Button label="Sign in / Sign up" onPress={() => router.push('/sign-in')} style={{ marginTop: 12 }} />
         </EmptyState>
@@ -79,7 +103,7 @@ export default function PostScreen() {
     );
   }
 
-  const isWanted = kind === 'wanted';
+  const isWanted = type === 'wanted';
 
   const pickImages = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -89,42 +113,67 @@ export default function PostScreen() {
       quality: 0.6,
       base64: true,
     });
-    if (!result.canceled) {
-      setAssets((prev) => [...prev, ...result.assets].slice(0, MAX_PHOTOS));
-    }
+    if (!result.canceled) setAssets((prev) => [...prev, ...result.assets].slice(0, MAX_PHOTOS));
   };
 
-  const removeAsset = (uri: string) =>
-    setAssets((prev) => prev.filter((a) => a.uri !== uri));
+  const removeAsset = (uri: string) => setAssets((prev) => prev.filter((a) => a.uri !== uri));
 
   const reset = () => {
     setTitle('');
     setQuantity('');
     setDescription('');
     setAssets([]);
+    setPrice('');
+    setUnit('');
+    setInventory('');
+    setTradeFor('');
     setFulfilledBy(null);
   };
 
   const submit = async () => {
     if (!title.trim()) {
-      Alert.alert(
-        isWanted ? 'What are you looking for?' : 'Add a title',
-        isWanted ? 'e.g. "Fresh basil"' : 'What are you sharing? e.g. "Cherry tomatoes"',
-      );
+      Alert.alert(isWanted ? 'What are you looking for?' : 'Add a title', 'Give your listing a short title.');
       return;
     }
+    let priceCents: number | null = null;
+    if (type === 'sale') {
+      const dollars = parseFloat(price);
+      if (!Number.isFinite(dollars) || dollars <= 0) {
+        Alert.alert('Add a price', 'Sale listings need a price greater than $0.');
+        return;
+      }
+      priceCents = Math.round(dollars * 100);
+    }
+    let inventoryCount: number | null = null;
+    if (inventory.trim()) {
+      const n = parseInt(inventory, 10);
+      if (!Number.isFinite(n) || n <= 0) {
+        Alert.alert('Check the amount', 'Quantity available must be a whole number above 0.');
+        return;
+      }
+      inventoryCount = n;
+    }
+    if (type === 'trade' && !tradeFor.trim()) {
+      Alert.alert('What would you like?', 'Tell neighbors what you’d trade for.');
+      return;
+    }
+
     setBusy(true);
     try {
       const photos = assets.length ? await uploadListingImages(userId, assets) : [];
       const coords = await getCurrentCoords();
       const listing = await createListing.mutateAsync({
-        kind,
+        listingType: type,
         title: title.trim(),
         description: description.trim(),
         category,
         quantity: quantity.trim(),
         photos,
         coords,
+        priceCents,
+        unit: unit.trim() || null,
+        inventoryCount,
+        tradeFor: tradeFor.trim() || null,
         fulfilledByListingId: fulfilledBy,
       });
       reset();
@@ -137,45 +186,47 @@ export default function PostScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: Colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 12 }]}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Kind choice — no role screen, just what you're doing right now. */}
-        <View style={styles.kindRow}>
-          <Pressable
-            onPress={() => setKind('offer')}
-            disabled={!!fulfilledBy}
-            style={[styles.kindBtn, !isWanted && styles.kindBtnActive, !!fulfilledBy && isWanted && styles.kindBtnDisabled]}
-          >
-            <Text style={styles.kindEmoji}>🧺</Text>
-            <Text style={[styles.kindText, !isWanted && styles.kindTextActive]}>I have extra</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setKind('wanted')}
-            disabled={!!fulfilledBy}
-            style={[styles.kindBtn, isWanted && styles.kindBtnActive, !!fulfilledBy && styles.kindBtnDisabled]}
-          >
-            <Text style={styles.kindEmoji}>🔎</Text>
-            <Text style={[styles.kindText, isWanted && styles.kindTextActive]}>I&apos;m looking for</Text>
-          </Pressable>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: Colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 12 }]} keyboardShouldPersistTaps="handled">
+        {/* Step 1: what kind of listing? */}
+        <View style={styles.typeGrid}>
+          {TYPE_CHOICES.map((c) => {
+            const active = type === c.value;
+            const locked = !!fulfilledBy && c.value !== 'free';
+            return (
+              <Pressable
+                key={c.value}
+                disabled={locked}
+                onPress={() => setType(c.value)}
+                style={[styles.typeBtn, active && styles.typeBtnActive, locked && styles.typeBtnDisabled]}
+              >
+                <Text style={styles.typeEmoji}>{c.emoji}</Text>
+                <Text style={[styles.typeText, active && styles.typeTextActive]}>{c.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
+
+        {/* Step 3 surfaced early: where it posts (the user's Market). */}
+        {myMarket.data ? (
+          <Pressable style={styles.marketLine} onPress={() => router.push(`/market/edit/${myMarket.data!.id}`)}>
+            <Text style={styles.marketText} numberOfLines={1}>Posting to 🏡 {myMarket.data.name}</Text>
+            <Text style={styles.marketEdit}>Rename</Text>
+          </Pressable>
+        ) : null}
 
         {fulfilledBy ? (
           <View style={styles.banner}>
             <Text style={styles.bannerText}>
-              You&apos;re creating an offer in response to a Wanted post. Once posted,
-              the neighbor who wanted it can claim your offer.
+              You&apos;re offering this in response to a Wanted post. Once posted, the
+              neighbor who wanted it can claim it.
             </Text>
           </View>
         ) : null}
 
-        <Text style={styles.heading}>{isWanted ? 'Post what you need' : 'Share your surplus'}</Text>
+        <Text style={styles.heading}>{HEADING[type]}</Text>
 
+        {/* Photos */}
         <View style={styles.photoRow}>
           {assets.map((a) => (
             <View key={a.uri} style={styles.photo}>
@@ -188,65 +239,74 @@ export default function PostScreen() {
           {assets.length < MAX_PHOTOS && (
             <Pressable style={styles.addPhoto} onPress={pickImages}>
               <Camera size={24} color={Colors.primary} />
-              <Text style={styles.addPhotoText}>
-                {isWanted ? 'Add photo (optional)' : 'Add photo'}
-              </Text>
+              <Text style={styles.addPhotoText}>{isWanted ? 'Add photo (optional)' : 'Add photo'}</Text>
             </Pressable>
           )}
         </View>
 
+        {/* Common */}
         <Field
-          label={isWanted ? 'What are you looking for?' : 'What are you sharing?'}
+          label={isWanted ? 'What are you looking for?' : 'Title'}
           value={title}
           onChangeText={setTitle}
           placeholder={isWanted ? 'Fresh basil' : 'Cherry tomatoes'}
         />
         <Field
-          label={isWanted ? 'How much do you need? (optional)' : 'Quantity'}
+          label={isWanted ? 'How much do you need? (optional)' : 'Quantity (optional)'}
           value={quantity}
           onChangeText={setQuantity}
           placeholder={isWanted ? 'A handful for pesto' : 'About 2 lbs / a full basket'}
         />
+
+        {/* Type-specific */}
+        {type === 'sale' && (
+          <View style={styles.typeFields}>
+            <View style={styles.rowFields}>
+              <View style={{ flex: 1 }}>
+                <Field label="Price ($)" value={price} onChangeText={setPrice} placeholder="5" keyboardType="decimal-pad" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field label="Per unit (optional)" value={unit} onChangeText={setUnit} placeholder="lb, dozen, bunch" autoCapitalize="none" />
+              </View>
+            </View>
+            <Field label="Quantity available (optional)" value={inventory} onChangeText={setInventory} placeholder="12" keyboardType="number-pad" />
+            <Text style={styles.hint}>Payment is arranged in person — Gnome never handles money.</Text>
+          </View>
+        )}
+        {type === 'trade' && (
+          <Field
+            label="What would you like in return?"
+            value={tradeFor}
+            onChangeText={setTradeFor}
+            placeholder="Eggs, herbs, or anything from your garden"
+          />
+        )}
 
         <Text style={styles.fieldLabel}>Category</Text>
         <View style={styles.catWrap}>
           {CATEGORIES.map((c) => {
             const active = category === c.id;
             return (
-              <Pressable
-                key={c.id}
-                onPress={() => setCategory(c.id)}
-                style={[styles.catChip, active && styles.catChipActive]}
-              >
-                <Text style={[styles.catText, active && styles.catTextActive]}>
-                  {c.emoji} {c.label}
-                </Text>
+              <Pressable key={c.id} onPress={() => setCategory(c.id)} style={[styles.catChip, active && styles.catChipActive]}>
+                <Text style={[styles.catText, active && styles.catTextActive]}>{c.emoji} {c.label}</Text>
               </Pressable>
             );
           })}
         </View>
 
         <Field
-          label="Details (optional)"
+          label={isWanted ? 'Request details (optional)' : 'Details (optional)'}
           value={description}
           onChangeText={setDescription}
-          placeholder={
-            isWanted
-              ? 'Making sauce this weekend — happy to swap or just grateful!'
-              : 'Picked this morning, porch pickup, come grab them!'
-          }
+          placeholder={isWanted ? 'Making sauce this weekend — happy to swap!' : 'Picked this morning, porch pickup, come grab them!'}
           multiline
           numberOfLines={3}
           style={styles.multiline}
         />
 
-        <Text style={styles.note}>
-          {isWanted
-            ? 'Wanted posts expire after 30 days. Neighbors with a match can offer it to you.'
-            : 'Listings expire after 7 days. Free to share — no payments.'}
-        </Text>
+        <Text style={styles.note}>{NOTE[type]}</Text>
         <Button
-          label={isWanted ? 'Post want' : fulfilledBy ? 'Create offer' : 'Post listing'}
+          label={isWanted ? 'Post want' : type === 'sale' ? 'List for sale' : type === 'trade' ? 'Post trade' : 'Post listing'}
           onPress={submit}
           loading={busy}
         />
@@ -258,9 +318,10 @@ export default function PostScreen() {
 const styles = StyleSheet.create({
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   container: { padding: 20, paddingBottom: 40 },
-  kindRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  kindBtn: {
-    flex: 1,
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  typeBtn: {
+    width: '47%',
+    flexGrow: 1,
     alignItems: 'center',
     gap: 4,
     paddingVertical: 14,
@@ -269,17 +330,24 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
   },
-  kindBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
-  kindBtnDisabled: { opacity: 0.5 },
-  kindEmoji: { fontSize: 22 },
-  kindText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  kindTextActive: { color: Colors.primary },
-  banner: {
-    backgroundColor: Colors.secondary + '22',
+  typeBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
+  typeBtnDisabled: { opacity: 0.4 },
+  typeEmoji: { fontSize: 22 },
+  typeText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  typeTextActive: { color: Colors.primary },
+  marketLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.backgroundSecondary,
     borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
   },
+  marketText: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.text },
+  marketEdit: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  banner: { backgroundColor: Colors.secondary + '22', borderRadius: 12, padding: 12, marginBottom: 16 },
   bannerText: { fontSize: 13, color: Colors.text, lineHeight: 19 },
   heading: { fontSize: 24, fontWeight: '800', color: Colors.text, marginBottom: 16 },
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
@@ -309,16 +377,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   addPhotoText: { fontSize: 10, color: Colors.primary, fontWeight: '600', textAlign: 'center' },
+  typeFields: { gap: 0 },
+  rowFields: { flexDirection: 'row', gap: 12 },
+  hint: { fontSize: 12, color: Colors.textTertiary, marginTop: -6, marginBottom: 8 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 8 },
   catWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  catChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
+  catChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   catChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   catText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   catTextActive: { color: Colors.textInverse },

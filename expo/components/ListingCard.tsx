@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { MapPin, Clock } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import type { Listing } from '@/types';
+import type { Listing, ListingType } from '@/types';
 import { categoryFor } from '@/constants/categories';
+import TypeBadge from '@/components/TypeBadge';
+import { listingValueLabel } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 
 function timeLeft(expiresAt: string): string {
@@ -20,7 +22,9 @@ export default function ListingCard({ listing }: { listing: Listing }) {
   const router = useRouter();
   const cat = categoryFor(listing.category);
   const photo = listing.photos?.[0];
-  const isWanted = listing.kind === 'wanted';
+  const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
+  const isWanted = type === 'wanted';
+  const value = listingValueLabel(listing);
   const distance =
     listing.distance_miles != null
       ? listing.distance_miles < 0.1
@@ -46,13 +50,19 @@ export default function ListingCard({ listing }: { listing: Listing }) {
             {cat.emoji} {cat.label}
           </Text>
         </View>
-        <View style={[styles.kindChip, { backgroundColor: isWanted ? Colors.accent : Colors.primary }]}>
-          <Text style={styles.kindChipText}>{isWanted ? 'Wanted' : 'Available'}</Text>
+        <View style={styles.typeChip}>
+          <TypeBadge type={type} />
         </View>
       </View>
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
           {isWanted ? `Looking for ${listing.title}` : listing.title}
+        </Text>
+        <Text
+          style={[styles.value, type === 'sale' && styles.valueSale]}
+          numberOfLines={1}
+        >
+          {value}
         </Text>
         {listing.market?.name ? (
           <Text style={styles.market} numberOfLines={1}>
@@ -103,17 +113,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   catChipText: { fontSize: 11, fontWeight: '700', color: Colors.text },
-  kindChip: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  kindChipText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  typeChip: { position: 'absolute', top: 8, right: 8 },
   body: { padding: 10, gap: 3 },
   title: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  value: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  valueSale: { color: Colors.sell },
   market: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
   quantity: { fontSize: 13, color: Colors.textSecondary },
   metaRow: { flexDirection: 'row', gap: 12, marginTop: 4 },

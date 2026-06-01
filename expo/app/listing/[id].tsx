@@ -12,9 +12,12 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Clock } from 'lucide-react-native';
-import { Avatar, Badge, Button, EmptyState } from '@/components/ui';
+import { Avatar, Button, EmptyState } from '@/components/ui';
+import TypeBadge from '@/components/TypeBadge';
+import { ctaLabel, listingValueLabel } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { categoryFor } from '@/constants/categories';
+import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { useClaimListing, useListing, useMyClaims, logEvent } from '@/lib/db';
 
@@ -48,7 +51,9 @@ export default function ListingDetailScreen() {
 
   const cat = categoryFor(listing.category);
   const isOwner = userId === listing.owner_id;
-  const isWanted = listing.kind === 'wanted';
+  const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
+  const isWanted = type === 'wanted';
+  const value = listingValueLabel(listing);
   const existingClaim = (myClaims.data ?? []).find((c) => c.listing_id === listing.id);
   const isActive = listing.status === 'active';
 
@@ -56,13 +61,19 @@ export default function ListingDetailScreen() {
     router.push({
       pathname: '/post',
       params: {
-        kind: 'offer',
+        type: 'free',
         category: listing.category,
         title: `Offer: ${listing.title}`,
         fulfilledBy: listing.id,
       },
     });
   };
+
+  const onComingSoon = () =>
+    Alert.alert(
+      `${ctaLabel(type)} — coming soon`,
+      'Trade and purchase requests arrive in the next update. Browsing and free claims work now.',
+    );
 
   const onClaim = () => {
     if (!userId) {
@@ -101,11 +112,9 @@ export default function ListingDetailScreen() {
             <Text style={styles.title}>
               {isWanted ? `Looking for ${listing.title}` : listing.title}
             </Text>
-            <Badge
-              label={isWanted ? 'Wanted' : cap(listing.status)}
-              color={isWanted ? Colors.accent : isActive ? Colors.success : Colors.textTertiary}
-            />
+            <TypeBadge type={type} />
           </View>
+          <Text style={[styles.value, type === 'sale' && { color: Colors.sell }]}>{value}</Text>
           <Text style={styles.category}>
             {cat.emoji} {cat.label}
             {listing.quantity ? `  ·  ${listing.quantity}` : ''}
@@ -148,20 +157,21 @@ export default function ListingDetailScreen() {
           <Text style={styles.footerNote}>
             {isWanted
               ? "This is your Wanted post. We'll notify you when a neighbor offers a match."
-              : 'This is your listing. Manage claims in the Activity tab.'}
+              : 'This is your listing. Manage it in My Gnome.'}
           </Text>
-        ) : isWanted ? (
-          isActive ? (
-            <Button label="I Have This" onPress={onIHaveThis} />
-          ) : (
-            <Text style={styles.footerNote}>This want is no longer active.</Text>
-          )
-        ) : existingClaim ? (
-          <Button label={`Claim ${cap(existingClaim.status)}`} onPress={() => router.push('/activity')} variant="secondary" />
-        ) : isActive ? (
-          <Button label="Claim this" onPress={onClaim} loading={claim.isPending} />
-        ) : (
+        ) : !isActive ? (
           <Text style={styles.footerNote}>This listing is no longer available.</Text>
+        ) : type === 'wanted' ? (
+          <Button label="I Have This" onPress={onIHaveThis} />
+        ) : type === 'free' ? (
+          existingClaim ? (
+            <Button label={`Claim ${cap(existingClaim.status)}`} onPress={() => router.push('/activity')} variant="secondary" />
+          ) : (
+            <Button label="Claim this" onPress={onClaim} loading={claim.isPending} />
+          )
+        ) : (
+          // Trade / Sale request flows land in M3.
+          <Button label={ctaLabel(type)} onPress={onComingSoon} />
         )}
       </View>
     </View>
@@ -180,6 +190,7 @@ const styles = StyleSheet.create({
   body: { padding: 20 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { fontSize: 24, fontWeight: '800', color: Colors.text, flex: 1 },
+  value: { fontSize: 18, fontWeight: '800', color: Colors.text, marginTop: 6 },
   category: { fontSize: 15, color: Colors.textSecondary, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },

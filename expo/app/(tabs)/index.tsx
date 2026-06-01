@@ -13,6 +13,8 @@ import { List, Map as MapIcon } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
 import MapListings from '@/components/MapListings';
 import { EmptyState } from '@/components/ui';
+import { TYPE_FILTERS } from '@/lib/listingType';
+import type { ListingType } from '@/types';
 import { CATEGORIES } from '@/constants/categories';
 import Colors from '@/constants/colors';
 import { useListings } from '@/lib/db';
@@ -29,7 +31,7 @@ export default function BrowseScreen() {
   const [coords, setCoords] = useState<Coords | null>(null);
   const [radius, setRadius] = useState<RadiusOption>(10);
   const [category, setCategory] = useState<string | null>(null);
-  const [kindFilter, setKindFilter] = useState<'all' | 'offer' | 'wanted'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | ListingType>('all');
   const [mode, setMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
@@ -37,8 +39,8 @@ export default function BrowseScreen() {
   }, []);
 
   const filters = useMemo(
-    () => ({ coords, radius, category, kind: kindFilter }),
-    [coords, radius, category, kindFilter],
+    () => ({ coords, radius, category, listingType: typeFilter }),
+    [coords, radius, category, typeFilter],
   );
   const { data, isLoading, refetch, isRefetching, error } = useListings(filters);
 
@@ -62,26 +64,27 @@ export default function BrowseScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.kindFilterRow}>
-        {([
-          { v: 'all', label: 'All' },
-          { v: 'offer', label: 'Available' },
-          { v: 'wanted', label: 'Wanted' },
-        ] as const).map((opt) => {
-          const active = kindFilter === opt.v;
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.chipRow}
+        contentContainerStyle={styles.chipRowContent}
+      >
+        {TYPE_FILTERS.map((opt) => {
+          const active = typeFilter === opt.value;
           return (
             <Pressable
-              key={opt.v}
-              onPress={() => setKindFilter(opt.v)}
-              style={[styles.segment, active && styles.segmentActive]}
+              key={opt.value}
+              onPress={() => setTypeFilter(opt.value)}
+              style={[styles.chip, active && styles.chipActive]}
             >
-              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
                 {opt.label}
               </Text>
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       <ScrollView
         horizontal

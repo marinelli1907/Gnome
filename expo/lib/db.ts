@@ -5,7 +5,7 @@ import {
 } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { notifyCounterparty, notifyOfferCreated, notifyMessage } from './notifications';
-import type { ClaimMessage, ListingKind } from '@/types';
+import type { ClaimMessage, ListingKind, ListingType } from '@/types';
 
 /** Best-effort analytics event. Never throws into the UI. */
 export async function logEvent(
@@ -71,7 +71,7 @@ export interface BrowseFilters {
   coords: Coords | null;
   radius: RadiusOption;
   category: string | null;
-  kind: 'all' | ListingKind;
+  listingType: 'all' | ListingType;
 }
 
 export function useListings(filters: BrowseFilters) {
@@ -87,7 +87,7 @@ export function useListings(filters: BrowseFilters) {
         .order('created_at', { ascending: false })
         .limit(200);
       if (filters.category) q = q.eq('category', filters.category);
-      if (filters.kind !== 'all') q = q.eq('kind', filters.kind);
+      if (filters.listingType !== 'all') q = q.eq('listing_type', filters.listingType);
 
       const { data, error } = await q;
       if (error) throw error;
@@ -185,13 +185,18 @@ export function useMyClaims(uid?: string) {
 // Mutations
 // ---------------------------------------------------------------------------
 export interface NewListing {
-  kind: ListingKind;
+  listingType: ListingType;
   title: string;
   description: string;
   category: string;
   quantity: string;
   photos: string[];
   coords: Coords | null;
+  // type-specific
+  priceCents?: number | null;
+  unit?: string | null;
+  inventoryCount?: number | null;
+  tradeFor?: string | null;
   fulfilledByListingId?: string | null;
 }
 
@@ -207,17 +212,25 @@ export function useCreateListing(uid?: string) {
         .eq('owner_id', uid)
         .limit(1)
         .maybeSingle();
+      // listing_type is source of truth; send a derived `kind` mirror too so it's
+      // correct even before the 0006 sync trigger is applied.
+      const derivedKind: ListingKind = input.listingType === 'wanted' ? 'wanted' : 'offer';
       const { data, error } = await supabase
         .from('listings')
         .insert({
           owner_id: uid,
           market_id: market?.id ?? null,
-          kind: input.kind,
+          listing_type: input.listingType,
+          kind: derivedKind,
           title: input.title,
           description: input.description || null,
           category: input.category,
           quantity: input.quantity || null,
           photos: input.photos,
+          price_cents: input.priceCents ?? null,
+          unit: input.unit || null,
+          inventory_count: input.inventoryCount ?? null,
+          trade_for: input.tradeFor || null,
           lat: input.coords?.lat ?? null,
           lng: input.coords?.lng ?? null,
           fulfilled_by_listing_id: input.fulfilledByListingId ?? null,
@@ -231,7 +244,7 @@ export function useCreateListing(uid?: string) {
       void logEvent('listing_created', {
         userId: uid,
         listingId: listing.id,
-        metadata: { kind: listing.kind, title: listing.title },
+        metadata: { kind: listing.kind, listing_type: listing.listing_type, title: listing.title },
       });
       if (listing.kind === 'offer') {
         // New offer -> server-side category+radius matching pushes to wanted owners.

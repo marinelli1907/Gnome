@@ -62,7 +62,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
     router.push({
       pathname: '/post',
       params: {
-        kind: l.kind,
+        type: l.listing_type ?? (l.kind === 'wanted' ? 'wanted' : 'free'),
         category: l.category,
         title: l.title,
         quantity: l.quantity ?? '',
