@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Sprout, PlusCircle, Home, User } from 'lucide-react-native';
+import { Sprout, Map as MapIcon, PlusCircle, Home, User } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import Colors from '@/constants/colors';
@@ -33,6 +33,13 @@ export default function TabLayout() {
         options={{
           title: 'Browse',
           tabBarIcon: ({ color, size }) => <Sprout color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="map"
+        options={{
+          title: 'Map',
+          tabBarIcon: ({ color, size }) => <MapIcon color={color} size={size} />,
         }}
       />
       <Tabs.Screen

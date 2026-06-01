@@ -94,14 +94,18 @@ export interface Listing {
   unit: string | null;
   inventory_count: number | null;
   fulfillment_type?: string;
+  // Exact lat/lng are write-only via the public API (revoked SELECT for privacy);
+  // the app reads coarse approx_lat/approx_lng only.
+  lat?: number | null;
+  lng?: number | null;
+  approx_lat?: number | null;
+  approx_lng?: number | null;
   fulfilled_by_listing_id: string | null;
   title: string;
   description: string | null;
   category: string;
   quantity: string | null;
   photos: string[];
-  lat: number | null;
-  lng: number | null;
   status: ListingStatus;
   delivery_available?: boolean; // future (V2 delivery), dormant in V1
   created_at: string;

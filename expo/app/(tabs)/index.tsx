@@ -10,9 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { List, Map as MapIcon } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
-import MapListings from '@/components/MapListings';
 import { EmptyState, ErrorState, Button } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
 import { fonts } from '@/constants/theme';
@@ -36,7 +34,6 @@ export default function BrowseScreen() {
   const [radius, setRadius] = useState<RadiusOption>(10);
   const [category, setCategory] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | ListingType>('all');
-  const [mode, setMode] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
     void getCurrentCoords().then(setCoords);
@@ -50,23 +47,8 @@ export default function BrowseScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <View style={styles.brandRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>🍅 Gnome</Text>
-          <Text style={styles.tagline}>Fresh surplus from neighbors near you</Text>
-        </View>
-        <Pressable
-          onPress={() => setMode(mode === 'list' ? 'map' : 'list')}
-          style={styles.modeBtn}
-        >
-          {mode === 'list' ? (
-            <MapIcon size={18} color={Colors.primary} />
-          ) : (
-            <List size={18} color={Colors.primary} />
-          )}
-          <Text style={styles.modeBtnText}>{mode === 'list' ? 'Map' : 'List'}</Text>
-        </Pressable>
-      </View>
+      <Text style={styles.brand}>🍅 Gnome</Text>
+      <Text style={styles.tagline}>Fresh surplus from neighbors near you</Text>
 
       <ScrollView
         horizontal
@@ -175,28 +157,21 @@ export default function BrowseScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {mode === 'map' ? (
-        <>
-          {Header}
-          <MapListings listings={data ?? []} center={coords} />
-        </>
-      ) : (
-        <FlatList
-          data={data ?? []}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={Header}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <View style={styles.cardWrap}>
-              <ListingCard listing={item} />
-            </View>
-          )}
-          ListEmptyComponent={emptyComponent}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
-          }
-        />
-      )}
+      <FlatList
+        data={data ?? []}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={Header}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <View style={styles.cardWrap}>
+            <ListingCard listing={item} />
+          </View>
+        )}
+        ListEmptyComponent={emptyComponent}
+        refreshControl={
+          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
+        }
+      />
     </View>
   );
 }

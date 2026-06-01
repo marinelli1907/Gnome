@@ -59,7 +59,13 @@ export const keys = {
   planLimits: () => ['planLimits'] as const,
 };
 
-const LISTING_SELECT = '*, owner:profiles(*), market:markets(name), claims(count)';
+// Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
+// revoked from anon/authenticated for privacy; the app reads approx_* only).
+const LISTING_FIELDS =
+  'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
+  'category,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
+  'fulfillment_type,approx_lat,approx_lng,status,created_at,expires_at';
+const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count)`;
 
 function shapeListing(row: any): Listing {
   const claim_count = Array.isArray(row.claims) ? row.claims[0]?.count ?? 0 : 0;
@@ -103,8 +109,8 @@ export function useListings(filters: BrowseFilters) {
           .map((l) => ({
             ...l,
             distance_miles:
-              l.lat != null && l.lng != null
-                ? distanceMiles(filters.coords as Coords, { lat: l.lat, lng: l.lng })
+              l.approx_lat != null && l.approx_lng != null
+                ? distanceMiles(filters.coords as Coords, { lat: l.approx_lat, lng: l.approx_lng })
                 : null,
           }))
           .filter((l) => l.distance_miles == null || l.distance_miles <= max)

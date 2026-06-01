@@ -1,29 +1,49 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { EmptyState } from '@/components/ui';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { MapPin } from 'lucide-react-native';
+import ListingCard from '@/components/ListingCard';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import type { Listing } from '@/types';
 import type { Coords } from '@/lib/location';
 
-// Base / web implementation. react-native-maps is native-only, so Metro loads
-// MapListings.native.tsx on iOS/Android and this file everywhere else.
 export interface MapListingsProps {
   listings: Listing[];
   center: Coords | null;
+  onSelect?: (l: Listing) => void;
 }
 
-export default function MapListings(_props: MapListingsProps) {
+// react-native-maps is native-only. On web (and Expo Go preview) we don't crash
+// or block — we show a clear note and fall back to the listings as cards.
+export default function MapListings({ listings }: MapListingsProps) {
   return (
-    <View style={styles.fill}>
-      <EmptyState
-        emoji="🗺️"
-        title="Map view is on mobile"
-        subtitle="Open Gnome on your phone to see listings on a map. Use the list view here on the web."
-      />
-    </View>
+    <ScrollView style={styles.fill} contentContainerStyle={styles.content}>
+      <View style={styles.notice}>
+        <MapPin size={18} color={Colors.primary} />
+        <Text style={styles.noticeText}>
+          The live map is on the Gnome mobile app. Here are the nearby listings.
+        </Text>
+      </View>
+      {listings.map((l) => (
+        <ListingCard key={l.id} listing={l} />
+      ))}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, justifyContent: 'center', backgroundColor: Colors.background },
+  fill: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 16 },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  noticeText: { flex: 1, fontSize: 13, fontFamily: fonts.medium, color: Colors.textSecondary },
 });
