@@ -158,7 +158,9 @@ export function useIncomingClaims(uid?: string) {
     queryFn: async (): Promise<Claim[]> => {
       const { data, error } = await supabase
         .from('claims')
-        .select('*, claimer:profiles(*), listing:listings!inner(*)')
+        // claims has two FKs to profiles (claimer_id + dormant assigned_fulfiller_id),
+        // so disambiguate the claimer embed by FK constraint name.
+        .select('*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings!inner(*)')
         .eq('listing.owner_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -567,7 +569,7 @@ export function useClaimThread(claimId?: string) {
     queryFn: async (): Promise<Claim | null> => {
       const { data, error } = await supabase
         .from('claims')
-        .select('*, claimer:profiles(*), listing:listings(*, owner:profiles(*))')
+        .select('*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings(*, owner:profiles(*))')
         .eq('id', claimId as string)
         .maybeSingle();
       if (error) throw error;
@@ -667,7 +669,7 @@ export function useMyChats(uid?: string) {
           .in('status', ACTIVE),
         supabase
           .from('claims')
-          .select('id, status, created_at, claimer:profiles(name), listing:listings!inner(title, owner_id)')
+          .select('id, status, created_at, claimer:profiles!claims_claimer_id_fkey(name), listing:listings!inner(title, owner_id)')
           .eq('listing.owner_id', uid as string)
           .in('status', ACTIVE),
       ]);
