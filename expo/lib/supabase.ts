@@ -26,6 +26,9 @@ export const supabase = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      // PKCE so the native OAuth redirect returns a `?code=` we exchange for a
+      // session (see AuthProvider.signInWithGoogle).
+      flowType: 'pkce',
     },
   },
 );

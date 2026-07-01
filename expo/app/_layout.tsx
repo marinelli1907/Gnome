@@ -15,6 +15,7 @@ import {
 } from '@expo-google-fonts/inter';
 import { AuthProvider } from '@/providers/AuthProvider';
 import OfflineBanner from '@/components/OfflineBanner';
+import { useNotificationRouting } from '@/lib/useNotificationRouting';
 import Colors from '@/constants/colors';
 
 void SplashScreen.preventAutoHideAsync();
@@ -42,6 +43,9 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  // Route notification taps (cold start + warm) to the relevant screen.
+  useNotificationRouting();
 
   useEffect(() => {
     if (fontsLoaded) void SplashScreen.hideAsync();

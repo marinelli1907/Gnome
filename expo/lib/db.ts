@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   useMutation,
   useQuery,
@@ -729,7 +730,9 @@ export function useClaimMessages(claimId?: string) {
   return useQuery({
     queryKey: keys.claimMessages(claimId ?? ''),
     enabled: isSupabaseConfigured && !!claimId,
-    refetchInterval: 5000, // lightweight polling; no realtime/typing in V1.2
+    // Realtime (useClaimMessagesRealtime) drives immediacy; this slow poll is a
+    // safety net if the socket drops or the table isn't in the publication yet.
+    refetchInterval: 15000,
     queryFn: async (): Promise<ClaimMessage[]> => {
       const { data, error } = await supabase
         .from('claim_messages')
@@ -740,6 +743,37 @@ export function useClaimMessages(claimId?: string) {
       return (data ?? []) as ClaimMessage[];
     },
   });
+}
+
+/**
+ * Subscribe to new messages on this claim over Supabase Realtime and refresh the
+ * thread the instant one arrives. RLS on `claim_messages` scopes the stream to
+ * the two parties of an approved claim, so no extra auth is needed. Requires the
+ * table to be in the `supabase_realtime` publication (migration 0014).
+ */
+export function useClaimMessagesRealtime(claimId?: string) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!isSupabaseConfigured || !claimId) return;
+    const channel = supabase
+      .channel(`claim_messages:${claimId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'claim_messages',
+          filter: `claim_id=eq.${claimId}`,
+        },
+        () => {
+          void qc.invalidateQueries({ queryKey: keys.claimMessages(claimId) });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [claimId, qc]);
 }
 
 export function useSendMessage(claimId?: string, uid?: string) {

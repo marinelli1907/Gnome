@@ -18,6 +18,7 @@ import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   useClaimMessages,
+  useClaimMessagesRealtime,
   useClaimThread,
   useReport,
   useSendMessage,
@@ -34,6 +35,7 @@ export default function PickupChatScreen() {
   const { userId } = useAuth();
   const thread = useClaimThread(claimId);
   const messages = useClaimMessages(claimId);
+  useClaimMessagesRealtime(claimId); // live updates; polling is the fallback
   const send = useSendMessage(claimId, userId ?? undefined);
   const report = useReport(userId ?? undefined);
 

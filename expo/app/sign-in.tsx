@@ -16,12 +16,29 @@ import Colors from '@/constants/colors';
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn, signUp, configured } = useAuth();
+  const { signIn, signUp, signInWithGoogle, configured } = useAuth();
   const [mode, setMode] = useState<'in' | 'up'>('up');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const onGoogle = async () => {
+    if (!configured) {
+      Alert.alert('Supabase not connected', 'Add your Supabase keys to .env to enable accounts.');
+      return;
+    }
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle();
+      if (router.canGoBack()) router.back();
+    } catch (e: any) {
+      Alert.alert('Google sign-in failed', e?.message ?? 'Please try again.');
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!configured) {
@@ -103,6 +120,27 @@ export default function SignInScreen() {
           loading={busy}
         />
 
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <Pressable
+          onPress={onGoogle}
+          disabled={googleBusy || busy}
+          style={({ pressed }) => [
+            styles.googleBtn,
+            (googleBusy || busy) && styles.googleBtnDisabled,
+            pressed && styles.googleBtnPressed,
+          ]}
+        >
+          <Text style={styles.googleG}>G</Text>
+          <Text style={styles.googleText}>
+            {googleBusy ? 'Connecting…' : 'Continue with Google'}
+          </Text>
+        </Pressable>
+
         <Pressable onPress={() => setMode(mode === 'up' ? 'in' : 'up')} style={styles.toggle}>
           <Text style={styles.toggleText}>
             {mode === 'up' ? 'Already have an account? Sign in' : 'New here? Create an account'}
@@ -132,6 +170,24 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   noticeText: { color: Colors.text, fontSize: 13, lineHeight: 19 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  dividerText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  googleBtnDisabled: { opacity: 0.5 },
+  googleBtnPressed: { opacity: 0.7 },
+  googleG: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
+  googleText: { fontSize: 15, fontWeight: '700', color: Colors.text },
   toggle: { marginTop: 18, alignItems: 'center' },
   toggleText: { color: Colors.primary, fontWeight: '600', fontSize: 14 },
 });
