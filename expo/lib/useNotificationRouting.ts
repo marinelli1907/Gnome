@@ -9,6 +9,7 @@
 // We handle both a cold start (app launched by tapping a notification) and warm
 // taps (app already running). Best-effort: routing failures never crash the app.
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 
@@ -50,15 +51,19 @@ export function useNotificationRouting(ready: boolean): void {
   const handledColdStart = useRef(false);
 
   useEffect(() => {
-    if (!ready) return;
+    // Remote push doesn't exist on web — the native module isn't linked there
+    // and getLastNotificationResponseAsync throws (mirrors lib/notifications.ts).
+    if (!ready || Platform.OS === 'web') return;
 
     // Cold start: launched by tapping a notification. Only once the nav is ready.
     if (!handledColdStart.current) {
       handledColdStart.current = true;
-      void Notifications.getLastNotificationResponseAsync().then((response) => {
-        const data = response?.notification.request.content.data as PushData | undefined;
-        if (data) routeFor(data);
-      });
+      void Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          const data = response?.notification.request.content.data as PushData | undefined;
+          if (data) routeFor(data);
+        })
+        .catch(() => {});
     }
 
     // Warm taps while the app is running.
