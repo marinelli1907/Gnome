@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,19 +10,41 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '@/providers/AuthProvider';
 import { Button, Field } from '@/components/ui';
 import Colors from '@/constants/colors';
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn, signUp, signInWithGoogle, configured } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInWithApple, configured } = useAuth();
   const [mode, setMode] = useState<'in' | 'up'>('up');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
+    }
+  }, []);
+
+  const onApple = async () => {
+    if (!configured) {
+      Alert.alert('Supabase not connected', 'Add your Supabase keys to .env to enable accounts.');
+      return;
+    }
+    try {
+      await signInWithApple();
+      if (router.canGoBack()) router.back();
+    } catch (e: any) {
+      if (e?.code === 'ERR_REQUEST_CANCELED') return; // user dismissed the sheet
+      Alert.alert('Apple sign-in failed', e?.message ?? 'Please try again.');
+    }
+  };
 
   const onGoogle = async () => {
     if (!configured) {
@@ -141,6 +163,16 @@ export default function SignInScreen() {
           </Text>
         </Pressable>
 
+        {appleAvailable && (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+            cornerRadius={12}
+            style={styles.appleBtn}
+            onPress={onApple}
+          />
+        )}
+
         <Pressable onPress={() => setMode(mode === 'up' ? 'in' : 'up')} style={styles.toggle}>
           <Text style={styles.toggleText}>
             {mode === 'up' ? 'Already have an account? Sign in' : 'New here? Create an account'}
@@ -188,6 +220,7 @@ const styles = StyleSheet.create({
   googleBtnPressed: { opacity: 0.7 },
   googleG: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
   googleText: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  appleBtn: { height: 50, marginTop: 10 },
   toggle: { marginTop: 18, alignItems: 'center' },
   toggleText: { color: Colors.primary, fontWeight: '600', fontSize: 14 },
 });

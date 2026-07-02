@@ -135,12 +135,14 @@ async function main() {
     console.log('Reset: prior seed listings marked removed.');
   }
 
-  // Skip titles that already exist for this owner (active or otherwise).
+  // Skip titles that still exist for this owner. Exclude 'removed' so --reset
+  // (which soft-removes the prior set just above) actually re-inserts them.
   const { data: existing, error: existErr } = await admin
     .from('listings')
     .select('title')
     .eq('owner_id', owner.id)
-    .in('title', titles);
+    .in('title', titles)
+    .neq('status', 'removed');
   if (existErr) throw existErr;
   const have = new Set((existing ?? []).map((r) => r.title));
 
@@ -170,6 +172,10 @@ async function main() {
     return;
   }
 
+  // Single multi-row insert on purpose: the 0008 plan-limit trigger counts
+  // active listings with a query that can't see the other rows of its own
+  // command, so a batch bypasses the free-plan cap (a per-row loop would stop at
+  // 10). That's the intended behavior for a seed account.
   const { data: inserted, error: insErr } = await admin
     .from('listings')
     .insert(rows)

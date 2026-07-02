@@ -74,6 +74,15 @@ export interface MarketReputation {
   listings_sold: number;
   trades_completed: number;
   response_rate: number | null;
+  /** Owner's auth email is confirmed (0015). Optional until the view is migrated. */
+  verified_email?: boolean;
+}
+
+/** One row in Settings → Blocked neighbors (user_blocks + blocked profile). */
+export interface BlockedNeighbor {
+  blocked_id: string;
+  created_at: string;
+  blocked: Pick<Profile, 'id' | 'name' | 'avatar_url'> | null;
 }
 
 export interface Market {

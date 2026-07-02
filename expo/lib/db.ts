@@ -27,6 +27,7 @@ export async function logEvent(
 }
 import { distanceMiles, radiusToMiles, type Coords, type RadiusOption } from './location';
 import type {
+  BlockedNeighbor,
   Claim,
   ChatSummary,
   ClaimStatus,
@@ -63,6 +64,7 @@ export const keys = {
   featured: (filters?: unknown) => ['featured', filters] as const,
   boostCredits: (marketId?: string) => ['boostCredits', marketId] as const,
   marketReputation: (marketId?: string) => ['marketReputation', marketId] as const,
+  myBlocks: (uid?: string) => ['myBlocks', uid] as const,
 };
 
 // Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
@@ -77,6 +79,21 @@ function shapeListing(row: any): Listing {
   const claim_count = Array.isArray(row.claims) ? row.claims[0]?.count ?? 0 : 0;
   const { claims, ...rest } = row;
   return { ...rest, claim_count } as Listing;
+}
+
+/**
+ * Owner ids the current viewer has blocked. RLS returns only the viewer's own
+ * block rows (anonymous → none). Best-effort: if the table doesn't exist yet
+ * (0016 not applied), browsing must keep working — return an empty set.
+ */
+async function fetchMyBlockedSet(): Promise<Set<string>> {
+  try {
+    const { data, error } = await supabase.from('user_blocks').select('blocked_id');
+    if (error) return new Set();
+    return new Set((data ?? []).map((b: { blocked_id: string }) => b.blocked_id));
+  } catch {
+    return new Set();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -104,10 +121,10 @@ export function useListings(filters: BrowseFilters) {
       if (filters.category) q = q.eq('category', filters.category);
       if (filters.listingType !== 'all') q = q.eq('listing_type', filters.listingType);
 
-      const { data, error } = await q;
+      const [{ data, error }, blocked] = await Promise.all([q, fetchMyBlockedSet()]);
       if (error) throw error;
 
-      let listings = (data ?? []).map(shapeListing);
+      let listings = (data ?? []).map(shapeListing).filter((l) => !blocked.has(l.owner_id));
 
       if (filters.coords) {
         const max = radiusToMiles(filters.radius);
@@ -553,7 +570,7 @@ export function useMarketReputation(id?: string) {
     queryFn: async (): Promise<MarketReputation | null> => {
       const { data, error } = await supabase
         .from('public_markets')
-        .select('member_since,listings_shared,listings_sold,trades_completed,response_rate')
+        .select('member_since,listings_shared,listings_sold,trades_completed,response_rate,verified_email')
         .eq('id', id as string)
         .maybeSingle();
       if (error) throw error;
@@ -573,6 +590,86 @@ export function useReport(uid?: string) {
         target_id: input.targetId,
         reason: input.reason || null,
       });
+      if (error) throw error;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Safety: block / unblock neighbors (0016) + beta feedback (0017)
+// ---------------------------------------------------------------------------
+
+/** Neighbors I've blocked, for Settings management. Two FKs to profiles → the
+ *  embed must name the constraint (see the claims PGRST201 lesson). */
+export function useMyBlocks(uid?: string) {
+  return useQuery({
+    queryKey: keys.myBlocks(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<BlockedNeighbor[]> => {
+      const { data, error } = await supabase
+        .from('user_blocks')
+        .select('blocked_id, created_at, blocked:profiles!user_blocks_blocked_id_fkey(id,name,avatar_url)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as BlockedNeighbor[];
+    },
+  });
+}
+
+export function useBlockUser(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (blockedId: string): Promise<void> => {
+      if (!uid) throw new Error('Sign in to block.');
+      if (blockedId === uid) throw new Error('You cannot block yourself.');
+      // ignoreDuplicates => ON CONFLICT DO NOTHING. A merge (DO UPDATE) would hit
+      // RLS: user_blocks has no UPDATE policy, so re-blocking would error.
+      const { error } = await supabase
+        .from('user_blocks')
+        .upsert(
+          { blocker_id: uid, blocked_id: blockedId },
+          { onConflict: 'blocker_id,blocked_id', ignoreDuplicates: true },
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.myBlocks(uid) });
+      qc.invalidateQueries({ queryKey: ['listings'] });
+      qc.invalidateQueries({ queryKey: ['featured'] });
+    },
+  });
+}
+
+export function useUnblockUser(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (blockedId: string): Promise<void> => {
+      if (!uid) throw new Error('Sign in first.');
+      const { error } = await supabase
+        .from('user_blocks')
+        .delete()
+        .eq('blocker_id', uid)
+        .eq('blocked_id', blockedId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.myBlocks(uid) });
+      qc.invalidateQueries({ queryKey: ['listings'] });
+      qc.invalidateQueries({ queryKey: ['featured'] });
+    },
+  });
+}
+
+/** Beta feedback (write-only; reviewed server-side like reports). */
+export function useSendFeedback(uid?: string) {
+  return useMutation({
+    mutationFn: async (body: string): Promise<void> => {
+      if (!uid) throw new Error('Sign in to send feedback.');
+      const trimmed = body.trim();
+      if (!trimmed) throw new Error('Feedback is empty.');
+      const { error } = await supabase
+        .from('feedback')
+        .insert({ user_id: uid, body: trimmed.slice(0, 2000) });
       if (error) throw error;
     },
   });
@@ -621,6 +718,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
         .limit(30);
       if (error) throw error;
 
+      const blocked = await fetchMyBlockedSet();
       const seen = new Set<string>();
       let listings: Listing[] = [];
       for (const row of (data ?? []) as any[]) {
@@ -628,6 +726,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
         if (!l || l.status !== 'active') continue;
         if (new Date(l.expires_at).getTime() <= Date.now()) continue;
         if (seen.has(l.id)) continue;
+        if (blocked.has(l.owner_id)) continue;
         seen.add(l.id);
         listings.push(shapeListing(l));
       }

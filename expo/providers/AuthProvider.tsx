@@ -7,6 +7,8 @@ import React, {
   useState,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -22,6 +24,7 @@ interface AuthContextValue {
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -84,6 +87,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (exchangeError) throw exchangeError;
   }, []);
 
+  const signInWithApple = useCallback(async () => {
+    // Native Sign in with Apple → Supabase via signInWithIdToken. Apple wants a
+    // SHA-256 nonce in the request and Supabase verifies against the raw one.
+    const rawNonce = Crypto.randomUUID();
+    const hashedNonce = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      rawNonce,
+    );
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce: hashedNonce,
+    });
+    if (!credential.identityToken) throw new Error('Apple sign-in did not return a token.');
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'apple',
+      token: credential.identityToken,
+      nonce: rawNonce,
+    });
+    if (error) throw error;
+
+    // Apple shares the name only on the FIRST authorization; the profile trigger
+    // has no metadata to use, so persist it now (best-effort).
+    const given = credential.fullName?.givenName;
+    if (given && data.user) {
+      const full = [given, credential.fullName?.familyName].filter(Boolean).join(' ');
+      try {
+        await supabase.from('profiles').update({ name: full }).eq('id', data.user.id);
+      } catch {
+        // non-fatal — user can rename their garden/profile later
+      }
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
@@ -97,9 +136,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUp,
       signIn,
       signInWithGoogle,
+      signInWithApple,
       signOut,
     }),
-    [session, loading, signUp, signIn, signInWithGoogle, signOut],
+    [session, loading, signUp, signIn, signInWithGoogle, signInWithApple, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

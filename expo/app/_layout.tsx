@@ -44,8 +44,8 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  // Route notification taps (cold start + warm) to the relevant screen.
-  useNotificationRouting();
+  // Route notification taps (cold start + warm) once the navigator is mounted.
+  useNotificationRouting(fontsLoaded);
 
   useEffect(() => {
     if (fontsLoaded) void SplashScreen.hideAsync();
@@ -97,6 +97,10 @@ export default function RootLayout() {
               <Stack.Screen
                 name="promote/[listingId]"
                 options={{ presentation: 'modal', title: 'Boost listing', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="settings"
+                options={{ title: 'Settings', ...headerStyle }}
               />
             </Stack>
           </AuthProvider>

@@ -101,9 +101,12 @@ export default function RequestScreen() {
           ]);
         },
         onError: (e: any) => {
-          const msg = /duplicate|unique/i.test(e?.message ?? '')
+          const raw = e?.message ?? '';
+          const msg = /duplicate|unique/i.test(raw)
             ? 'You’ve already sent a request for this listing.'
-            : e?.message ?? 'Please try again.';
+            : /BLOCKED_USER/i.test(raw)
+              ? 'You can’t send requests to this neighbor.'
+              : raw || 'Please try again.';
           Alert.alert('Could not send', msg);
         },
       },

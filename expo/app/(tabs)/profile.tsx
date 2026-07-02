@@ -65,6 +65,11 @@ export default function ProfileScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>
 
+      <Pressable style={[styles.link, { marginTop: 10 }]} onPress={() => router.push('/settings')}>
+        <Text style={styles.linkText}>Settings, feedback & blocked neighbors</Text>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
       <Pressable style={styles.signOut} onPress={() => signOut()}>
         <LogOut size={18} color={Colors.error} />
         <Text style={styles.signOutText}>Sign out</Text>

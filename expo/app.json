@@ -17,6 +17,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.boonesystems.gnome",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Gnome uses your location to show surplus produce listings near you.",
         "NSPhotoLibraryUsageDescription": "Gnome needs access to your photos so you can add pictures to your listings.",
@@ -54,7 +55,8 @@
           "photosPermission": "Gnome needs access to your photos so you can add pictures to your listings."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true

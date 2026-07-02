@@ -41,11 +41,18 @@ function routeFor(data: PushData): void {
   }
 }
 
-export function useNotificationRouting(): void {
+/**
+ * @param ready pass false until the root navigator is mounted (e.g. fonts
+ * loaded). Cold-start routing must not run before the <Stack> exists, or the
+ * initial router.push is dropped and the deep link is lost.
+ */
+export function useNotificationRouting(ready: boolean): void {
   const handledColdStart = useRef(false);
 
   useEffect(() => {
-    // Cold start: launched by tapping a notification.
+    if (!ready) return;
+
+    // Cold start: launched by tapping a notification. Only once the nav is ready.
     if (!handledColdStart.current) {
       handledColdStart.current = true;
       void Notifications.getLastNotificationResponseAsync().then((response) => {
@@ -60,5 +67,5 @@ export function useNotificationRouting(): void {
       if (data) routeFor(data);
     });
     return () => sub.remove();
-  }, []);
+  }, [ready]);
 }
