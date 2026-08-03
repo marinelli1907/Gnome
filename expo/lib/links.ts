@@ -5,7 +5,7 @@
 //                               client-computed slug is always compatible.
 import type { Listing, Market } from '@/types';
 
-export const WEB_BASE = 'https://gnome.boonesystems.com';
+export const WEB_BASE = 'https://gnomefarmersmarket.com';
 
 /** Mirror of web/lib/format.ts slugify — cosmetic only, id stays canonical. */
 export function slugify(input: string): string {

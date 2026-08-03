@@ -77,7 +77,7 @@ the `notify` function skips blocked pairs on wanted-matches. Needs 0016/0017.
 
 ## 7. Share links → public website
 **Code:** `lib/links.ts` (`listingShareUrl`/`marketShareUrl` →
-`https://gnome.boonesystems.com/...`); Share actions on listing + market pages.
+`https://gnomefarmersmarket.com/...`); Share actions on listing + market pages.
 URLs match the web routes (`/listing/[slug]-[id]`, `/market/[slug]`).
 
 ## 8. Seed listings (empty-marketplace fix)
