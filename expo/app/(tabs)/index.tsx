@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,7 +20,7 @@ import { TYPE_FILTERS } from '@/lib/listingType';
 import type { ListingType } from '@/types';
 import { CATEGORIES } from '@/constants/categories';
 import Colors from '@/constants/colors';
-import { useListings } from '@/lib/db';
+import { useListings, logEvent } from '@/lib/db';
 import {
   getCurrentCoords,
   RADIUS_OPTIONS,
@@ -124,6 +125,25 @@ export default function BrowseScreen() {
       </ScrollView>
 
       <FeaturedRail filters={filters} />
+
+      {/* Seed Drop — first-party seed shop. Web-only by design (keeps the app
+          payment-free); physical goods, so linking out is App Store-safe. */}
+      <Pressable
+        style={styles.seedDrop}
+        onPress={() => {
+          void logEvent('seed_drop_tapped', {});
+          void Linking.openURL('https://gnomefarmersmarket.com/seeds');
+        }}
+      >
+        <Text style={styles.seedDropEmoji}>🌱</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.seedDropTitle}>The Gnome Seed Drop</Text>
+          <Text style={styles.seedDropSub}>
+            Seeds picked for your zone & season, shipped to your door
+          </Text>
+        </View>
+        <Text style={styles.seedDropGo}>›</Text>
+      </Pressable>
     </View>
   );
 
@@ -217,6 +237,23 @@ const styles = StyleSheet.create({
   tagline: { fontSize: 14, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
   chipRow: { marginHorizontal: -16 },
   chipRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
+  seedDrop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 6,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: Colors.primary + '10',
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  seedDropEmoji: { fontSize: 24 },
+  seedDropTitle: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
+  seedDropSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
+  seedDropGo: { fontSize: 22, color: Colors.primary, fontFamily: fonts.bold },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 7,

@@ -21,7 +21,7 @@ const CORS = {
 // Keep in sync with expo/constants/categories.ts and web/lib/categories.ts.
 const CATEGORY_IDS = [
   'vegetables', 'fruit', 'herbs', 'eggs', 'seeds', 'plants',
-  'flowers', 'compost', 'honey', 'farm_fresh', 'other',
+  'flowers', 'compost', 'honey', 'farm_fresh', 'supplies', 'decor', 'other',
 ] as const;
 
 const ALLOWED_MEDIA = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;

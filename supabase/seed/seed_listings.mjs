@@ -71,6 +71,10 @@ const SEED = [
     description: 'Naturally leavened, baked Saturday morning. Reserve yours.' },
   { type: 'sale', category: 'plants', title: 'Heirloom tomato seedlings', priceCents: 300, unit: 'each', inventoryCount: 20, spot: 'lyndhurst',
     description: 'Brandywine, Cherokee Purple, San Marzano. Sturdy 4" starts, $3 each.' },
+  { type: 'sale', category: 'decor', title: 'Hand-painted garden gnome', priceCents: 1500, unit: 'each', inventoryCount: 3, spot: 'richmondHeights',
+    description: 'Little guardians for your garden beds, painted and sealed for outdoors. $15 each.' },
+  { type: 'free', category: 'supplies', title: 'Extra terracotta pots', quantity: 'about a dozen', spot: 'mayfield',
+    description: 'Downsized the container garden — 6" and 8" pots, some weathered, all usable.' },
 
   // --- Trade --------------------------------------------------------------
   { type: 'trade', category: 'herbs', title: 'Trade fresh basil for eggs', tradeFor: 'a dozen eggs', quantity: 'big bunch', spot: 'richmondHeights',
