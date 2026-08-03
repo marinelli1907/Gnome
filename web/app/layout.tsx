@@ -54,8 +54,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="nav-cta">
               <span className="nav-links">
                 <Link href="/near/richmond-heights-oh">Browse</Link>
+                <Link href="/garden">Garden Planner ✨</Link>
                 <Link href="/seeds">Seed Drop 🌱</Link>
               </span>
+              <Link className="btn btn-primary btn-sm" href="/sell">Sell</Link>
               <a className="btn btn-secondary btn-sm" href={IOS}>Get the app</a>
             </nav>
           </div>
@@ -75,6 +77,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <h4>Explore</h4>
                 <ul>
                   <li><Link href="/near/richmond-heights-oh">Browse near you</Link></li>
+                  <li><Link href="/garden">AI Garden Planner</Link></li>
                   <li><Link href="/seeds">The Seed Drop</Link></li>
                   <li><Link href="/category/vegetables">Vegetables</Link></li>
                   <li><Link href="/category/eggs">Eggs</Link></li>
@@ -84,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div>
                 <h4>For growers</h4>
                 <ul>
+                  <li><Link href="/sell">Sell on Gnome</Link></li>
                   <li><a href={IOS}>Get the app</a></li>
                   <li><a href={IOS}>Start your Market</a></li>
                   <li><Link href="/category/supplies">Garden supplies</Link></li>
@@ -101,9 +105,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </div>
             <div className="legal">
-              Gnome by Boone Systems LLC · Browse local Markets on the web; sharing, trading,
-              buying and selling happen in the free Gnome app. Payments between neighbors are
-              arranged directly with sellers. Sellers are responsible for following local food laws.
+              Gnome by Boone Systems LLC · Browse and sell on the web or in the free Gnome app.
+              Payments between neighbors are arranged directly with sellers. Sellers are
+              responsible for following local food laws.
             </div>
           </div>
         </footer>

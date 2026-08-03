@@ -52,6 +52,15 @@ export default function BrowseScreen() {
       <Text style={styles.brand}>🍅 Gnome</Text>
       <Text style={styles.tagline}>Fresh surplus from neighbors near you</Text>
 
+      <Pressable style={styles.plannerBanner} onPress={() => router.push('/garden')}>
+        <Text style={styles.plannerEmoji}>✨</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.plannerTitle}>Garden Planner</Text>
+          <Text style={styles.plannerSub}>What should you plant this week? Ask the AI.</Text>
+        </View>
+        <Text style={styles.plannerArrow}>→</Text>
+      </Pressable>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -234,6 +243,22 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   segmentTextActive: { color: Colors.primary, fontWeight: '700' },
   brand: { fontSize: 28, fontFamily: fonts.bold, color: Colors.primaryDark },
+  plannerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  plannerEmoji: { fontSize: 22 },
+  plannerTitle: { fontFamily: fonts.bold, fontSize: 15, color: Colors.primary },
+  plannerSub: { fontFamily: fonts.regular, fontSize: 12.5, color: Colors.textSecondary },
+  plannerArrow: { fontFamily: fonts.bold, fontSize: 18, color: Colors.primary },
   tagline: { fontSize: 14, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
   chipRow: { marginHorizontal: -16 },
   chipRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },

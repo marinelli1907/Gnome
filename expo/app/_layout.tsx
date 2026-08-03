@@ -102,6 +102,10 @@ export default function RootLayout() {
                 name="settings"
                 options={{ title: 'Settings', ...headerStyle }}
               />
+              <Stack.Screen
+                name="garden"
+                options={{ title: 'Garden Planner', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>

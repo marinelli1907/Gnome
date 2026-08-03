@@ -34,3 +34,25 @@ export async function draftListingFromPhoto(input: {
   if (!data?.draft) throw new Error(data?.error ?? 'No draft came back — try again.');
   return data.draft as ListingDraft;
 }
+
+// --- Garden planner — client for the `garden-planner` Edge Function. --------
+export interface PlannerTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export async function askGardenPlanner(input: {
+  location: string;
+  messages: PlannerTurn[];
+}): Promise<string> {
+  if (!isSupabaseConfigured) throw new Error('Not connected.');
+  const { data, error } = await supabase.functions.invoke('garden-planner', {
+    body: { location: input.location, messages: input.messages },
+  });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? 'The planner isn’t available right now.');
+  }
+  if (!data?.reply) throw new Error(data?.error ?? 'No plan came back — try again.');
+  return data.reply as string;
+}
