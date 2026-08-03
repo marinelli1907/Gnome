@@ -118,7 +118,9 @@ Deno.serve(async (req: Request) => {
     return json({ draft });
   } catch (e) {
     console.error('draft-listing error:', e);
-    return json({ error: 'Drafting failed — try again in a moment.' }, 500);
+    // Surface the upstream cause during beta — invaluable for debugging,
+    // and nothing here is more sensitive than an HTTP status + message.
+    return json({ error: 'Drafting failed — try again in a moment.', detail: String(e).slice(0, 300) }, 500);
   }
 });
 
