@@ -11,7 +11,7 @@ const DESC =
 const IOS = process.env.NEXT_PUBLIC_IOS_APP_URL || 'https://apps.apple.com/';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://gnome.boonesystems.app'),
+  metadataBase: new URL('https://gnome.boonesystems.com'),
   title: { default: 'Gnome — A farmers market in your pocket', template: '%s | Gnome' },
   description: DESC,
   applicationName: SITE,

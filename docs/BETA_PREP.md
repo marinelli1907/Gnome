@@ -77,7 +77,7 @@ the `notify` function skips blocked pairs on wanted-matches. Needs 0016/0017.
 
 ## 7. Share links → public website
 **Code:** `lib/links.ts` (`listingShareUrl`/`marketShareUrl` →
-`https://gnome.boonesystems.app/...`); Share actions on listing + market pages.
+`https://gnome.boonesystems.com/...`); Share actions on listing + market pages.
 URLs match the web routes (`/listing/[slug]-[id]`, `/market/[slug]`).
 
 ## 8. Seed listings (empty-marketplace fix)
@@ -93,6 +93,21 @@ export SUPABASE_SERVICE_ROLE_KEY="<service_role key>"
 export SEED_OWNER_EMAIL="<an existing Gnome account>"
 node seed_listings.mjs            # or: node seed_listings.mjs --reset
 ```
+
+## 9. AI listing drafts — "snap a photo, we write the listing"
+**Code:** `supabase/functions/draft-listing/index.ts` (Claude `claude-opus-5`,
+vision + structured JSON output, effort=low for speed; refuses gracefully),
+`expo/lib/ai.ts`, ✨ button on `app/(tabs)/post.tsx` (appears once a photo is
+added; fills only empty fields; logs `ai_draft_used`). This is the OfferUp-beating
+seller UX: photo → title/category/description (+ price for sales) in seconds.
+
+**You must:**
+```bash
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # console.anthropic.com
+supabase functions deploy draft-listing
+```
+Cost note: ~1 vision call per draft on claude-opus-5 (input-heavy, ~cents per
+draft); verify_jwt is ON so only signed-in users can trigger it.
 
 ---
 

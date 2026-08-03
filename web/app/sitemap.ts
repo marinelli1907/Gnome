@@ -5,7 +5,7 @@ import { listingPath, marketPath } from '@/lib/format';
 
 export const revalidate = 600;
 
-const BASE = 'https://gnome.boonesystems.app';
+const BASE = 'https://gnome.boonesystems.com';
 const AREAS = ['lyndhurst-oh', 'richmond-heights-oh', 'mayfield-heights-oh', 'south-euclid-oh'];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
