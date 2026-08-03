@@ -18,6 +18,7 @@ import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   useClaimMessages,
+  useClaimMessagesRealtime,
   useClaimThread,
   useReport,
   useSendMessage,
@@ -34,6 +35,7 @@ export default function PickupChatScreen() {
   const { userId } = useAuth();
   const thread = useClaimThread(claimId);
   const messages = useClaimMessages(claimId);
+  useClaimMessagesRealtime(claimId); // live updates; polling is the fallback
   const send = useSendMessage(claimId, userId ?? undefined);
   const report = useReport(userId ?? undefined);
 
@@ -89,7 +91,11 @@ export default function PickupChatScreen() {
     send.mutate(body, {
       onError: (e: any) => {
         setText(body); // restore on failure
-        Alert.alert('Could not send', e?.message ?? 'Try again.');
+        const raw = e?.message ?? '';
+        const msg = /BLOCKED_USER/i.test(raw)
+          ? 'You can no longer message this neighbor.'
+          : raw || 'Try again.';
+        Alert.alert('Could not send', msg);
       },
     });
   };

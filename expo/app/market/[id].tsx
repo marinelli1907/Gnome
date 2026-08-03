@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, Button, EmptyState, ErrorState } from '@/components/ui';
@@ -9,7 +9,8 @@ import Reputation from '@/components/Reputation';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { useBlockUser, useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { marketShareUrl } from '@/lib/links';
 
 export default function MarketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -20,6 +21,7 @@ export default function MarketScreen() {
   const listings = useMarketListings(id);
   const rep = useMarketReputation(id);
   const report = useReport(userId ?? undefined);
+  const block = useBlockUser(userId ?? undefined);
 
   useEffect(() => {
     if (market.data) {
@@ -56,6 +58,43 @@ export default function MarketScreen() {
   const m = market.data;
   const isOwner = userId === m.owner_id;
   const items = listings.data ?? [];
+
+  const shareUrl = marketShareUrl(m);
+  const onShare = () => {
+    if (!shareUrl) return;
+    void Share.share(
+      Platform.OS === 'ios'
+        ? { message: `${m.name} on Gnome`, url: shareUrl }
+        : { message: `${m.name} on Gnome — ${shareUrl}` },
+    );
+  };
+
+  const onBlockOwner = () => {
+    if (!userId) {
+      router.push('/sign-in');
+      return;
+    }
+    Alert.alert(
+      `Block ${m.name}?`,
+      "You won't see their listings, and neither of you can send requests or messages to the other. You can unblock in Settings.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () =>
+            block.mutate(m.owner_id, {
+              onSuccess: () => {
+                // Leave the blocked Market so its listings aren't still on screen.
+                if (router.canGoBack()) router.back();
+                Alert.alert('Blocked', `You won't see listings from ${m.name} anymore.`);
+              },
+              onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.'),
+            }),
+        },
+      ],
+    );
+  };
 
   const onReport = () => {
     if (!userId) {
@@ -100,11 +139,23 @@ export default function MarketScreen() {
           <Reputation rep={rep.data} />
         </View>
       ) : null}
-      {!isOwner && (
-        <Pressable onPress={onReport} hitSlop={8} style={styles.reportBtn}>
-          <Text style={styles.reportText}>Report this Market</Text>
-        </Pressable>
-      )}
+      <View style={styles.actionsRow}>
+        {shareUrl ? (
+          <Pressable onPress={onShare} hitSlop={8} style={styles.reportBtn}>
+            <Text style={styles.shareText}>Share</Text>
+          </Pressable>
+        ) : null}
+        {!isOwner && (
+          <>
+            <Pressable onPress={onReport} hitSlop={8} style={styles.reportBtn}>
+              <Text style={styles.reportText}>Report</Text>
+            </Pressable>
+            <Pressable onPress={onBlockOwner} hitSlop={8} style={styles.reportBtn}>
+              <Text style={styles.reportText}>Block</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
     </View>
   );
 
@@ -143,7 +194,9 @@ const styles = StyleSheet.create({
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
   repWrap: { alignSelf: 'stretch', marginTop: 16 },
+  actionsRow: { flexDirection: 'row', gap: 14, alignItems: 'center' },
   reportBtn: { marginTop: 16, padding: 8 },
   reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
+  shareText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.primary },
   cardWrap: { paddingHorizontal: 16 },
 });

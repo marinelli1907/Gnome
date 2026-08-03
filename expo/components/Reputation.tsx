@@ -16,6 +16,7 @@ export default function Reputation({ rep, compact }: { rep: MarketReputation; co
   if (compact) {
     const bits: string[] = [];
     if (since) bits.push(`Since ${since}`);
+    if (rep.verified_email) bits.push('✓ email verified');
     if (rep.listings_shared) bits.push(`${rep.listings_shared} shared`);
     if (rep.response_rate != null) bits.push(`responds ${rep.response_rate}% in 2 days`);
     if (bits.length === 0) return null;
@@ -32,6 +33,7 @@ export default function Reputation({ rep, compact }: { rep: MarketReputation; co
       {rep.response_rate != null ? (
         <Text style={styles.resp}>↩︎ Responds to {rep.response_rate}% of requests within 2 days</Text>
       ) : null}
+      {rep.verified_email ? <Text style={styles.verified}>✉️ Email verified</Text> : null}
       {since ? <Text style={styles.since}>🌱 Member since {since}</Text> : null}
     </View>
   );
@@ -63,5 +65,6 @@ const styles = StyleSheet.create({
   statN: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text },
   statLabel: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary },
   resp: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.primary, textAlign: 'center' },
+  verified: { fontSize: 12, fontFamily: fonts.medium, color: Colors.textSecondary, textAlign: 'center' },
   since: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textTertiary, textAlign: 'center' },
 });

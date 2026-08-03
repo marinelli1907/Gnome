@@ -13,13 +13,14 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, X } from 'lucide-react-native';
+import { Camera, Sparkles, X } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
 import { CATEGORIES } from '@/constants/categories';
 import { TYPE_CHOICES } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyMarket, logEvent } from '@/lib/db';
+import { draftListingFromPhoto } from '@/lib/ai';
 import { uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
 import type { ListingType } from '@/types';
@@ -72,6 +73,7 @@ export default function PostScreen() {
   const [tradeFor, setTradeFor] = useState('');
   const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
 
   const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}`;
   useEffect(() => {
@@ -117,6 +119,39 @@ export default function PostScreen() {
   };
 
   const removeAsset = (uri: string) => setAssets((prev) => prev.filter((a) => a.uri !== uri));
+
+  // ✨ Snap a photo → Claude drafts the listing. Fills only fields the user
+  // hasn't typed in yet — never clobbers their words. Best-effort: on any
+  // failure they just keep filling the form by hand.
+  const draftWithAi = async () => {
+    const photo = assets.find((a) => a.base64);
+    if (!photo?.base64) {
+      Alert.alert('Add a photo first', 'Pick a photo and I’ll draft the listing from it.');
+      return;
+    }
+    setAiBusy(true);
+    try {
+      const draft = await draftListingFromPhoto({
+        base64: photo.base64,
+        mimeType: photo.mimeType,
+        listingType: type,
+      });
+      if (!title.trim() && draft.title) setTitle(draft.title);
+      if (!description.trim() && draft.description) setDescription(draft.description);
+      if (draft.category) setCategory(draft.category);
+      if (type === 'sale') {
+        if (!price.trim() && draft.suggested_price_cents != null) {
+          setPrice((draft.suggested_price_cents / 100).toFixed(2).replace(/\.00$/, ''));
+        }
+        if (!unit.trim() && draft.suggested_unit) setUnit(draft.suggested_unit);
+      }
+      void logEvent('ai_draft_used', { userId, metadata: { listing_type: type } });
+    } catch (e: any) {
+      Alert.alert('Couldn’t draft it', e?.message ?? 'Try again, or just fill it in yourself.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const reset = () => {
     setTitle('');
@@ -257,6 +292,19 @@ export default function PostScreen() {
           )}
         </View>
 
+        {!isWanted && assets.some((a) => a.base64) && (
+          <Pressable
+            style={[styles.aiBtn, aiBusy && styles.aiBtnBusy]}
+            onPress={draftWithAi}
+            disabled={aiBusy}
+          >
+            <Sparkles size={16} color={Colors.primary} />
+            <Text style={styles.aiBtnText}>
+              {aiBusy ? 'Looking at your photo…' : 'Draft it for me from the photo'}
+            </Text>
+          </Pressable>
+        )}
+
         {/* Common */}
         <Field
           label={isWanted ? 'What are you looking for?' : 'Title'}
@@ -390,6 +438,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   addPhotoText: { fontSize: 10, color: Colors.primary, fontWeight: '600', textAlign: 'center' },
+  aiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '10',
+    marginTop: -8,
+    marginBottom: 20,
+  },
+  aiBtnBusy: { opacity: 0.6 },
+  aiBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
   typeFields: { gap: 0 },
   rowFields: { flexDirection: 'row', gap: 12 },
   hint: { fontSize: 12, color: Colors.textTertiary, marginTop: -6, marginBottom: 8 },

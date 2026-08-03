@@ -1,0 +1,13 @@
+{
+  "name": "gnome-seed",
+  "private": true,
+  "type": "module",
+  "description": "Seed example listings for the Gnome NE-Ohio beta (run manually with a service-role key).",
+  "scripts": {
+    "seed": "node seed_listings.mjs",
+    "seed:reset": "node seed_listings.mjs --reset"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  }
+}

@@ -9,6 +9,8 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   // Pin tracing to this app (a stray lockfile in $HOME otherwise confuses Next).
   outputFileTracingRoot: __dirname,
+  // Self-contained server bundle for the VPS deploy (see web/deploy/).
+  output: 'standalone',
 };
 
 export default nextConfig;

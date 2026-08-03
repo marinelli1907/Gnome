@@ -1,0 +1,165 @@
+'use client';
+
+// AI garden planner chat. Signed-in only (the edge function is JWT-gated as the
+// cost gate), so the page doubles as a warm sign-up funnel: the plan is the hook.
+import { useEffect, useRef, useState } from 'react';
+import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import { SignInCard, useSession } from '../components/auth';
+
+interface Turn { role: 'user' | 'assistant'; content: string }
+
+const STARTERS = [
+  'What should I plant right now?',
+  'Plan a 4×8 raised bed for salads',
+  'What can I still start from seed this month?',
+  'Low-effort crops for a beginner?',
+];
+
+// Tiny markdown renderer for the planner's replies (### headers, - bullets,
+// **bold**). Deliberately minimal — anything unrecognized renders as a paragraph.
+function Markdown({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/);
+  return (
+    <>
+      {blocks.map((block, bi) => {
+        const lines = block.split('\n').filter((l) => l.trim().length > 0);
+        if (lines.length === 0) return null;
+        if (lines.every((l) => /^\s*[-*]\s+/.test(l))) {
+          return (
+            <ul key={bi}>
+              {lines.map((l, li) => <li key={li}>{inline(l.replace(/^\s*[-*]\s+/, ''))}</li>)}
+            </ul>
+          );
+        }
+        return lines.map((l, li) => {
+          const h = l.match(/^(#{1,4})\s+(.*)$/);
+          if (h) return <h4 key={`${bi}-${li}`}>{inline(h[2])}</h4>;
+          return <p key={`${bi}-${li}`}>{inline(l)}</p>;
+        });
+      })}
+    </>
+  );
+}
+function inline(s: string) {
+  const parts = s.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) =>
+    p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p,
+  );
+}
+
+export default function GardenClient() {
+  const { session, ready } = useSession();
+  const uid = session?.user?.id;
+
+  const [location, setLocation] = useState('');
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!uid) return;
+    supabaseBrowser()
+      .from('profiles')
+      .select('city,state')
+      .eq('id', uid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.city) setLocation((l) => l || `${data.city}, ${data.state ?? 'OH'}`);
+      });
+  }, [uid]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [turns, busy]);
+
+  async function ask(question: string) {
+    const q = question.trim();
+    if (!q || busy) return;
+    if (!location.trim()) {
+      setError('First tell the planner where your garden is (city + state).');
+      return;
+    }
+    setError(null);
+    const nextTurns: Turn[] = [...turns, { role: 'user', content: q }];
+    setTurns(nextTurns);
+    setInput('');
+    setBusy(true);
+    try {
+      const { data, error } = await supabaseBrowser().functions.invoke('garden-planner', {
+        body: { location: location.trim(), messages: nextTurns },
+      });
+      if (error) {
+        const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+        throw new Error(body?.error ?? 'The planner isn’t available right now.');
+      }
+      if (!data?.reply) throw new Error(data?.error ?? 'No plan came back — try again.');
+      setTurns([...nextTurns, { role: 'assistant', content: data.reply }]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The planner hit a snag — try again.');
+      setTurns(turns); // roll the question back so it can be retried
+      setInput(q);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!ready) return <div className="empty"><p>Loading…</p></div>;
+
+  if (!session) {
+    return (
+      <SignInCard
+        title="Sign in to use the garden planner"
+        blurb="Free while Gnome is in beta. One code by email and you'll get a planting plan for your exact town and week."
+      />
+    );
+  }
+
+  return (
+    <div className="planner">
+      <div className="field">
+        <label>Where’s your garden?</label>
+        <input
+          value={location}
+          placeholder="Richmond Heights, OH"
+          onChange={(e) => setLocation(e.target.value)}
+        />
+      </div>
+
+      {turns.length === 0 && (
+        <div className="chips planner-starters">
+          {STARTERS.map((s) => (
+            <button key={s} type="button" className="chip" onClick={() => void ask(s)}>{s}</button>
+          ))}
+        </div>
+      )}
+
+      <div className="chatlog">
+        {turns.map((t, i) => (
+          <div key={i} className={`bubble ${t.role}`}>
+            {t.role === 'assistant' ? <Markdown text={t.content} /> : t.content}
+          </div>
+        ))}
+        {busy && <div className="bubble assistant thinking">Checking your zone and the calendar… 🌱</div>}
+        <div ref={endRef} />
+      </div>
+
+      {error && <p className="autherror">{error}</p>}
+
+      <form
+        className="authrow"
+        onSubmit={(e) => { e.preventDefault(); void ask(input); }}
+      >
+        <input
+          value={input}
+          placeholder={turns.length === 0 ? 'Ask anything about your garden…' : 'Ask a follow-up…'}
+          onChange={(e) => setInput(e.target.value)}
+        />
+        <button className="btn btn-primary btn-sm" disabled={busy || !input.trim()}>
+          {busy ? '…' : 'Ask'}
+        </button>
+      </form>
+    </div>
+  );
+}

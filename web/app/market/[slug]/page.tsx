@@ -85,6 +85,7 @@ export default async function MarketPage({ params }: Params) {
         {m.response_rate != null ? (
           <div className="rep-resp">↩︎ Responds to {m.response_rate}% of requests within 2 days</div>
         ) : null}
+        {m.verified_email ? <div className="rep-since">✉️ Email verified</div> : null}
         {m.member_since ? (
           <div className="rep-since">🌱 Member since {new Date(m.member_since).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</div>
         ) : null}

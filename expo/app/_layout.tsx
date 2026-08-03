@@ -15,6 +15,7 @@ import {
 } from '@expo-google-fonts/inter';
 import { AuthProvider } from '@/providers/AuthProvider';
 import OfflineBanner from '@/components/OfflineBanner';
+import { useNotificationRouting } from '@/lib/useNotificationRouting';
 import Colors from '@/constants/colors';
 
 void SplashScreen.preventAutoHideAsync();
@@ -42,6 +43,9 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  // Route notification taps (cold start + warm) once the navigator is mounted.
+  useNotificationRouting(fontsLoaded);
 
   useEffect(() => {
     if (fontsLoaded) void SplashScreen.hideAsync();
@@ -93,6 +97,14 @@ export default function RootLayout() {
               <Stack.Screen
                 name="promote/[listingId]"
                 options={{ presentation: 'modal', title: 'Boost listing', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="settings"
+                options={{ title: 'Settings', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="garden"
+                options={{ title: 'Garden Planner', ...headerStyle }}
               />
             </Stack>
           </AuthProvider>

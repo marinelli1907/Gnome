@@ -122,13 +122,29 @@ async function handleOfferCreated(admin: any, listingId: string) {
     .neq('owner_id', offer.owner_id)
     .gte('created_at', sinceIso);
 
-  const matches = (wanted ?? []).filter((w: any) => {
+  let matches = (wanted ?? []).filter((w: any) => {
     // Always match the explicitly linked wanted post ("I Have This"); otherwise
     // require it to be within the match radius (skip if either side lacks coords).
     if (offer.fulfilled_by_listing_id && w.id === offer.fulfilled_by_listing_id) return true;
     if (offer.lat == null || offer.lng == null || w.lat == null || w.lng == null) return false;
     return milesBetween(offer.lat, offer.lng, w.lat, w.lng) <= MATCH_RADIUS_MILES;
   });
+
+  // Don't push wanted owners who have a block relationship (either direction)
+  // with the offer's owner — a block must silence match notifications too.
+  if (matches.length) {
+    const { data: blocks } = await admin
+      .from('user_blocks')
+      .select('blocker_id, blocked_id')
+      .or(`blocker_id.eq.${offer.owner_id},blocked_id.eq.${offer.owner_id}`);
+    if (blocks?.length) {
+      const blockedWith = new Set<string>();
+      for (const b of blocks) {
+        blockedWith.add(b.blocker_id === offer.owner_id ? b.blocked_id : b.blocker_id);
+      }
+      matches = matches.filter((w: any) => !blockedWith.has(w.owner_id));
+    }
+  }
 
   let sent = 0;
   for (const w of matches) {

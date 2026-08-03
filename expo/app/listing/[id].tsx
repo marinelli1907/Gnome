@@ -2,8 +2,10 @@ import React, { useEffect } from 'react';
 import {
   Alert,
   Dimensions,
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -22,7 +24,8 @@ import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
-import { useClaimListing, useListing, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { useBlockUser, useClaimListing, useListing, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { listingShareUrl } from '@/lib/links';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +39,7 @@ export default function ListingDetailScreen() {
   const claim = useClaimListing(userId ?? undefined);
   const rep = useMarketReputation(listing?.market_id ?? undefined);
   const report = useReport(userId ?? undefined);
+  const block = useBlockUser(userId ?? undefined);
 
   useEffect(() => {
     if (listing) {
@@ -100,6 +104,39 @@ export default function ListingDetailScreen() {
     ]);
   };
 
+  const onShare = () => {
+    const url = listingShareUrl(listing);
+    void Share.share(
+      Platform.OS === 'ios'
+        ? { message: `${listing.title} on Gnome`, url }
+        : { message: `${listing.title} on Gnome — ${url}` },
+    );
+  };
+
+  const onBlockOwner = () => {
+    if (!userId) {
+      router.push('/sign-in');
+      return;
+    }
+    const who = listing.owner?.name ?? 'this neighbor';
+    Alert.alert(
+      `Block ${who}?`,
+      "You won't see their listings, and neither of you can send requests or messages to the other. You can unblock in Settings.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () =>
+            block.mutate(listing.owner_id, {
+              onSuccess: () => Alert.alert('Blocked', `You won't see listings from ${who} anymore.`),
+              onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.'),
+            }),
+        },
+      ],
+    );
+  };
+
   const onClaim = () => {
     if (!userId) {
       router.push('/sign-in');
@@ -110,7 +147,14 @@ export default function ListingDetailScreen() {
       {
         onSuccess: () =>
           Alert.alert('Claim sent!', 'The owner will get a notification to approve your claim.'),
-        onError: (e: any) => Alert.alert('Could not claim', e?.message ?? 'Try again.'),
+        onError: (e: any) => {
+          const msg = e?.message ?? '';
+          if (/BLOCKED_USER/i.test(msg)) {
+            Alert.alert('Not available', 'You can’t send requests to this neighbor.');
+          } else {
+            Alert.alert('Could not claim', msg || 'Try again.');
+          }
+        },
       },
     );
   };
@@ -181,11 +225,21 @@ export default function ListingDetailScreen() {
             </View>
           ) : null}
 
-          {!isOwner ? (
-            <Pressable onPress={onReportListing} hitSlop={6} style={styles.reportRow}>
-              <Text style={styles.reportText}>Report this listing</Text>
+          <View style={styles.actionsRow}>
+            <Pressable onPress={onShare} hitSlop={6} style={styles.reportRow}>
+              <Text style={styles.shareText}>Share</Text>
             </Pressable>
-          ) : null}
+            {!isOwner ? (
+              <>
+                <Pressable onPress={onReportListing} hitSlop={6} style={styles.reportRow}>
+                  <Text style={styles.reportText}>Report</Text>
+                </Pressable>
+                <Pressable onPress={onBlockOwner} hitSlop={6} style={styles.reportRow}>
+                  <Text style={styles.reportText}>Block</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
         </View>
       </ScrollView>
 
@@ -241,8 +295,10 @@ const styles = StyleSheet.create({
   ownerName: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text },
   ownerSub: { fontSize: 13, color: Colors.textSecondary },
   visit: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  actionsRow: { flexDirection: 'row', gap: 22, alignItems: 'center' },
   reportRow: { marginTop: 18, alignSelf: 'flex-start', paddingVertical: 4 },
   reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
+  shareText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.primary },
   footer: {
     position: 'absolute',
     left: 0,
