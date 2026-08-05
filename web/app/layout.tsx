@@ -1,9 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Inter } from 'next/font/google';
+import { Fraunces, Inter } from 'next/font/google';
 import './globals.css';
+import { GnomeMark } from './components/art';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
+// Display face: a soft, seed-catalog serif for headlines only.
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  display: 'swap',
+  style: ['normal', 'italic'],
+  variable: '--font-display',
+});
 
 const SITE = 'Gnome';
 const BASE = 'https://gnomefarmersmarket.com';
@@ -40,7 +48,7 @@ const JSON_LD = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.className}>
+    <html lang="en" className={`${inter.className} ${fraunces.variable}`}>
       <body>
         <script
           type="application/ld+json"
@@ -49,7 +57,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="site-header">
           <div className="container inner">
             <Link href="/" className="brand">
-              🍅 Gnome <span>a farmers market in your pocket</span>
+              <GnomeMark size={30} className="brand-mark" /> Gnome{' '}
+              <span>a farmers market in your pocket</span>
             </Link>
             <nav className="nav-cta">
               <span className="nav-links">
@@ -67,7 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="container">
             <div className="footer-cols">
               <div>
-                <div className="footer-brand">🍅 Gnome</div>
+                <div className="footer-brand"><GnomeMark size={24} className="brand-mark" /> Gnome</div>
                 <p className="footer-tag">
                   The neighborhood farmers market — fresh from the garden next door,
                   in Northeast Ohio.
