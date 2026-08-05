@@ -263,3 +263,120 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 .bubble.assistant ul { margin: 6px 0; padding-left: 20px; }
 .bubble.assistant li { margin: 3px 0; }
 .bubble.thinking { color: var(--muted); font-style: italic; }
+
+/* ---------- Personality pass (v3): almanac serif, art, texture, motion ---------- */
+
+/* Display face for headlines — Fraunces via next/font (--font-display). */
+h1, h2, .hero2-copy h1, .section h2, .section-head h2, .band-copy h2,
+.final-band h2, .split h2, .detail h1, .market-title h1, .authcard h2,
+.empty h2 {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.hero2-copy h1 { font-size: 56px; font-weight: 550; line-height: 1.04; }
+.hero2-copy h1 em { font-style: italic; font-weight: 600; }
+.section h2, .section-head h2 { font-size: 28px; }
+.brand, .footer-brand { display: inline-flex; align-items: center; gap: 8px; }
+.brand-mark { flex: none; }
+
+/* Paper grain over the whole page (SVG turbulence, ~invisible but felt). */
+body {
+  background-image:
+    radial-gradient(1100px 500px at 85% -80px, rgba(233,196,106,.16), transparent 60%),
+    radial-gradient(900px 420px at -120px 300px, rgba(135,169,107,.12), transparent 60%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12 0 0 0 0 0.16 0 0 0 0 0.10 0 0 0 0.035 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+}
+
+/* Hero composition: sun behind, gnome in front of the cards. */
+.hero2-visual { grid-template-columns: 1fr; position: relative; }
+.hero-sun {
+  position: absolute; top: -34px; right: -6px; z-index: 0;
+  animation: sun-spin 90s linear infinite;
+}
+@keyframes sun-spin { to { transform: rotate(360deg); } }
+.hero-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; position: relative; z-index: 1; padding-right: 108px; }
+.hero-gnome {
+  position: absolute; right: -14px; bottom: -34px; z-index: 2;
+  filter: drop-shadow(0 10px 18px rgba(20,48,35,.18));
+  transform-origin: 50% 95%;
+  animation: gnome-sway 5.5s ease-in-out infinite;
+}
+@keyframes gnome-sway {
+  0%, 100% { transform: rotate(-2.2deg); }
+  50% { transform: rotate(2.4deg); }
+}
+
+/* Seed-packet cards: double border + dashed inner rule + stamp corner. */
+.hero-card {
+  border: 2px solid var(--green);
+  border-radius: 14px;
+  box-shadow: 4px 5px 0 rgba(27,67,50,.16);
+  position: relative;
+  padding: 16px 14px 12px;
+}
+.hero-card::before {
+  content: '';
+  position: absolute; inset: 5px;
+  border: 1.5px dashed rgba(27,67,50,.28);
+  border-radius: 9px;
+  pointer-events: none;
+}
+.hero-card::after {
+  content: 'GNOME · NE OHIO';
+  position: absolute; top: 9px; right: 10px;
+  font-size: 8px; font-weight: 800; letter-spacing: .08em;
+  color: rgba(27,67,50,.38);
+}
+.hero-card-emoji { font-size: 44px; }
+
+/* Category tiles: sticker hover + playful tilt on alternates. */
+.cat-tile { box-shadow: 3px 4px 0 rgba(27,67,50,.10); border-width: 1.5px; }
+.cat-tile:hover { transform: translateY(-3px) rotate(-1deg); border-color: var(--green); box-shadow: 5px 7px 0 rgba(27,67,50,.16); }
+.cat-tile:nth-child(even):hover { transform: translateY(-3px) rotate(1deg); }
+
+/* Buttons: tactile press. */
+.btn { transition: transform .08s ease, box-shadow .08s ease; box-shadow: 0 3px 0 rgba(20,48,35,.25); }
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(20,48,35,.25); }
+.btn-light, .btn-ghost { box-shadow: 0 3px 0 rgba(0,0,0,.18); }
+
+/* Vine divider above section titles. */
+.vine { display: block; margin: 0 0 6px; }
+
+/* Steps: gold numbered coins + serif titles. */
+.step { border-width: 1.5px; box-shadow: 3px 4px 0 rgba(27,67,50,.08); }
+.step .n { font-size: 26px; }
+.step h3 { font-family: var(--font-display), Georgia, serif; font-size: 18px; font-weight: 600; }
+
+/* Bands: deepen with gradient + inner glow; gnome peeks over the final band. */
+.band { background: linear-gradient(115deg, #143023, var(--green) 55%, var(--green-light)); }
+.final-band {
+  position: relative;
+  background:
+    radial-gradient(600px 200px at 50% -60px, rgba(233,196,106,.25), transparent 70%),
+    linear-gradient(160deg, #143023, var(--green));
+  overflow: visible;
+  margin-top: 84px;
+}
+.final-gnome {
+  position: absolute; top: -76px; left: 50%; transform: translateX(-50%);
+  filter: drop-shadow(0 6px 10px rgba(20,48,35,.3));
+}
+
+/* Cards site-wide: slightly livelier hover. */
+.card:hover { transform: translateY(-3px) rotate(-.3deg); box-shadow: 0 10px 26px rgba(20,48,35,.13); }
+
+/* Chips: sprout-green hover fill. */
+.chip { transition: all .1s ease; }
+.chip:hover { background: rgba(45,106,79,.08); transform: translateY(-1px); }
+
+/* Kicker: gold stamp look. */
+.kicker { background: rgba(233,196,106,.28); color: #6b5417; }
+
+@media (max-width: 860px) {
+  .hero2-copy h1 { font-size: 42px; }
+  .hero-cards { padding-right: 40px; }
+  .hero-gnome { right: -8px; bottom: -24px; width: 150px; height: auto; }
+  .hero-sun { width: 52px; height: 52px; top: -20px; }
+}

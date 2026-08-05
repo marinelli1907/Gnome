@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { GnomeMascot, Sun, Vine } from './components/art';
 import ListingCard from './components/ListingCard';
 import MarketCard from './components/MarketCard';
 import { CATEGORIES } from '@/lib/categories';
@@ -59,13 +60,17 @@ export default async function HomePage() {
           </ul>
         </div>
         <div className="hero2-visual" aria-hidden>
-          {HERO_CARDS.map((c, i) => (
-            <div key={c.title} className={`hero-card hc-${i}`}>
-              <div className="hero-card-emoji">{c.emoji}</div>
-              <div className="hero-card-title">{c.title}</div>
-              <span className={`tag type-${c.tone}`}>{c.tag}</span>
-            </div>
-          ))}
+          <Sun className="hero-sun" />
+          <div className="hero-cards">
+            {HERO_CARDS.map((c, i) => (
+              <div key={c.title} className={`hero-card hc-${i}`}>
+                <div className="hero-card-emoji">{c.emoji}</div>
+                <div className="hero-card-title">{c.title}</div>
+                <span className={`tag type-${c.tone}`}>{c.tag}</span>
+              </div>
+            ))}
+          </div>
+          <GnomeMascot className="hero-gnome" />
         </div>
       </section>
 
@@ -98,6 +103,7 @@ export default async function HomePage() {
 
       {/* ------------------------------------------- categories */}
       <section className="container section">
+        <Vine className="vine" />
         <div className="section-head">
           <h2>What’s growing near you</h2>
         </div>
@@ -124,6 +130,7 @@ export default async function HomePage() {
 
       {/* ------------------------------------------- how it works */}
       <section className="container section">
+        <Vine className="vine" />
         <div className="section-head"><h2>How Gnome works</h2></div>
         <div className="steps">
           {STEPS.map((s) => (
@@ -178,6 +185,7 @@ export default async function HomePage() {
 
       {/* ------------------------------------------- areas + final CTA */}
       <section className="container section">
+        <Vine className="vine" />
         <div className="section-head"><h2>Now growing in Northeast Ohio</h2></div>
         <div className="chips">
           {AREAS.map((a) => <Link key={a.slug} className="chip" href={`/near/${a.slug}`}>📍 {a.label}</Link>)}
@@ -186,6 +194,7 @@ export default async function HomePage() {
 
       <section className="container">
         <div className="final-band">
+          <GnomeMascot size={92} className="final-gnome" />
           <h2>Got extra tomatoes?</h2>
           <p>Someone nearby wants them. That’s the whole idea.</p>
           <div className="row center">
