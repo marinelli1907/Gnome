@@ -323,7 +323,7 @@ body {
   pointer-events: none;
 }
 .hero-card::after {
-  content: 'GNOME · NE OHIO';
+  content: 'GNOME · HOMEGROWN';
   position: absolute; top: 9px; right: 10px;
   font-size: 8px; font-weight: 800; letter-spacing: .08em;
   color: rgba(27,67,50,.38);
