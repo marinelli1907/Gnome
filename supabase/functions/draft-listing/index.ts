@@ -51,7 +51,7 @@ const DRAFT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM = `You draft marketplace listings for Gnome, a hyperlocal neighbor-to-neighbor app for garden surplus, eggs, honey, flowers, plants, and small farm-stand goods in Northeast Ohio.
+const SYSTEM = `You draft marketplace listings for Gnome, a hyperlocal neighbor-to-neighbor app for garden surplus, eggs, honey, flowers, plants, and small farm-stand goods anywhere in the United States.
 
 Voice: a friendly neighbor, not a store. Plain, warm, concrete. Never invent details you can't see (variety names, "organic", weights). Never make food-safety claims.
 

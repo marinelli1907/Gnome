@@ -41,7 +41,7 @@ export default async function HomePage() {
       {/* ------------------------------------------------ hero */}
       <section className="container hero2">
         <div className="hero2-copy">
-          <div className="kicker">🌱 Northeast Ohio’s neighborhood market</div>
+          <div className="kicker">🌱 Your neighborhood’s farmers market</div>
           <h1>
             Fresh from the garden <em>next door</em>.
           </h1>
@@ -81,8 +81,8 @@ export default async function HomePage() {
           <div className="band-copy">
             <h2>The Gnome Seed Drop</h2>
             <p>
-              Seeds picked for your zone and the season — chosen by AI, packed by hand
-              in Northeast Ohio, shipped with a growing tip for every packet.
+              Seeds picked for your zone and the season — chosen by AI, packed by
+              hand, shipped anywhere in the U.S. with a growing tip for every packet.
             </p>
           </div>
           <span className="band-cta">
@@ -186,7 +186,7 @@ export default async function HomePage() {
       {/* ------------------------------------------- areas + final CTA */}
       <section className="container section">
         <Vine className="vine" />
-        <div className="section-head"><h2>Now growing in Northeast Ohio</h2></div>
+        <div className="section-head"><h2>Now growing near you</h2></div>
         <div className="chips">
           {AREAS.map((a) => <Link key={a.slug} className="chip" href={`/near/${a.slug}`}>📍 {a.label}</Link>)}
         </div>

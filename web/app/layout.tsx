@@ -35,7 +35,7 @@ const JSON_LD = {
       '@type': 'Organization',
       name: 'Gnome',
       url: BASE,
-      description: 'Hyperlocal farmers market: neighbors sharing, trading, and selling homegrown goods in Northeast Ohio.',
+      description: 'Hyperlocal farmers market: neighbors sharing, trading, and selling homegrown goods, wherever you are in the U.S.',
       parentOrganization: { '@type': 'Organization', name: 'Boone Systems LLC' },
     },
     {
@@ -79,7 +79,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <div className="footer-brand"><GnomeMark size={24} className="brand-mark" /> Gnome</div>
                 <p className="footer-tag">
                   The neighborhood farmers market — fresh from the garden next door,
-                  in Northeast Ohio.
+                  wherever you live.
                 </p>
               </div>
               <div>

@@ -9,7 +9,7 @@ import Link from 'next/link';
 export const metadata: Metadata = {
   title: 'The Gnome Seed Drop — seeds picked for your zone, shipped to your door',
   description:
-    'A seed subscription from Gnome. Every drop is chosen for your growing zone and the season, packed in Northeast Ohio, and ships with a growing tip card for each packet.',
+    'A seed subscription from Gnome. Every drop is chosen for your growing zone and the season, packed by hand in Ohio, and ships anywhere in the U.S. with a growing tip card for each packet.',
 };
 
 const PLANS = [
@@ -48,7 +48,7 @@ const PLANS = [
 const STEPS = [
   { n: '📍', t: 'Tell us where you grow', d: 'Your zip sets your USDA zone and frost dates — the drop is picked for your actual garden, not a generic calendar.' },
   { n: '🤖', t: 'AI picks the drop', d: 'Each drop is chosen for your zone and the week it ships — and every packet comes with its own growing tip card.' },
-  { n: '📦', t: 'Packed & shipped right', d: 'Hand-packed in Northeast Ohio and shipped by people who ship for a living. Track it to your door.' },
+  { n: '📦', t: 'Packed & shipped right', d: 'Hand-packed in Ohio and shipped by people who ship for a living. Track it to your door.' },
 ];
 
 export default function SeedsPage() {
