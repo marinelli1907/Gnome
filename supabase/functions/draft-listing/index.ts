@@ -13,6 +13,39 @@
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
+// --- Cost gate: real signed-in users only, capped per day. -----------------
+// verify_jwt has already validated the signature; we only read the claims.
+// The anon key's JWT has no `sub`, so bare anon-key calls are rejected — every
+// model call is attributable to an account and counted against a daily cap.
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+function userIdFrom(req: Request): string | null {
+  try {
+    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.sub === 'string' && payload.sub.length > 10 ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+async function underDailyCap(userId: string, feature: string, cap: number): Promise<boolean> {
+  const admin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+  const { data, error } = await admin.rpc('ai_usage_increment', {
+    p_user: userId, p_feature: feature, p_cap: cap,
+  });
+  if (error) {
+    // Fail open: a broken usage table shouldn't take the feature down.
+    console.error('ai_usage_increment error:', error);
+    return true;
+  }
+  return data !== false;
+}
+
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -21,7 +54,7 @@ const CORS = {
 // Keep in sync with expo/constants/categories.ts and web/lib/categories.ts.
 const CATEGORY_IDS = [
   'vegetables', 'fruit', 'herbs', 'eggs', 'seeds', 'plants',
-  'flowers', 'compost', 'honey', 'farm_fresh', 'supplies', 'decor', 'other',
+  'flowers', 'compost', 'honey', 'farm_fresh', 'supplies', 'decor', 'wood', 'meat', 'other',
 ] as const;
 
 const ALLOWED_MEDIA = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
@@ -57,7 +90,7 @@ Voice: a friendly neighbor, not a store. Plain, warm, concrete. Never invent det
 
 Pricing: suggest a conservative, typical local price only when the item and unit are obvious (e.g. eggs by the dozen, honey by the jar); otherwise null. Prices are informal neighbor prices, not retail.
 
-If the photo doesn't show something a neighbor would share, trade, or sell (produce, garden goods, eggs, honey, flowers, plants, firewood, compost, preserves), still do your best with a generic but honest draft and category "other".`;
+If the photo doesn't show something a neighbor would share, trade, or sell (produce, garden goods, eggs, honey, flowers, plants, firewood, carving or lumber wood, farm-raised meat, compost, preserves), still do your best with a generic but honest draft and category "other".`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -67,6 +100,14 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
       return json({ error: 'AI drafting is not configured yet.' }, 503);
+    }
+
+    const userId = userIdFrom(req);
+    if (!userId) {
+      return json({ error: 'Sign in to use AI drafting.' }, 401);
+    }
+    if (!(await underDailyCap(userId, 'draft', 20))) {
+      return json({ error: "You've used today's AI drafts — back tomorrow! Meanwhile, the form works great by hand." }, 429);
     }
 
     const { imageBase64, mediaType, listingType } = await req.json();
@@ -81,7 +122,7 @@ Deno.serve(async (req: Request) => {
 
     const anthropic = new Anthropic({ apiKey });
     const response = await anthropic.messages.create({
-      model: 'claude-opus-5',
+      model: 'claude-sonnet-5',
       max_tokens: 1024,
       output_config: {
         effort: 'low', // fast draft; the user reviews everything anyway

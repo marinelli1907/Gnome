@@ -110,6 +110,10 @@ export function SignInCard({ title, blurb }: { title?: string; blurb?: string })
         </p>
       )}
       {error && <p className="autherror">{error}</p>}
+      <p className="authhint">
+        By continuing you agree to the <a href="/terms">Terms</a> and{' '}
+        <a href="/privacy">Privacy Policy</a>.
+      </p>
     </div>
   );
 }
