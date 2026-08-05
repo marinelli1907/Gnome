@@ -116,7 +116,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="legal">
               Gnome by Boone Systems LLC · Browse and sell on the web or in the free Gnome app.
               Payments between neighbors are arranged directly with sellers. Sellers are
-              responsible for following local food laws.
+              responsible for following local food laws. <Link href="/terms">Terms</Link> ·{' '}
+              <Link href="/privacy">Privacy</Link>
             </div>
           </div>
         </footer>

@@ -5,6 +5,39 @@
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
+// --- Cost gate: real signed-in users only, capped per day. -----------------
+// verify_jwt has already validated the signature; we only read the claims.
+// The anon key's JWT has no `sub`, so bare anon-key calls are rejected — every
+// model call is attributable to an account and counted against a daily cap.
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+function userIdFrom(req: Request): string | null {
+  try {
+    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.sub === 'string' && payload.sub.length > 10 ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+async function underDailyCap(userId: string, feature: string, cap: number): Promise<boolean> {
+  const admin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+  const { data, error } = await admin.rpc('ai_usage_increment', {
+    p_user: userId, p_feature: feature, p_cap: cap,
+  });
+  if (error) {
+    // Fail open: a broken usage table shouldn't take the feature down.
+    console.error('ai_usage_increment error:', error);
+    return true;
+  }
+  return data !== false;
+}
+
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -38,6 +71,14 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!apiKey) {
       return json({ error: 'The garden planner is not configured yet.' }, 503);
+    }
+
+    const userId = userIdFrom(req);
+    if (!userId) {
+      return json({ error: 'Sign in to use the garden planner.' }, 401);
+    }
+    if (!(await underDailyCap(userId, 'planner', 30))) {
+      return json({ error: "You've hit today's planner limit — your garden will still be there tomorrow! 🌱" }, 429);
     }
 
     const { location, messages } = await req.json();
