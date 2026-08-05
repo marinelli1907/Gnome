@@ -34,6 +34,8 @@ export interface WebListing {
   is_featured: boolean | null;
   featured_until: string | null;
   has_active_promotion: boolean | null;
+  approx_lat?: number | null;
+  approx_lng?: number | null;
 }
 
 export interface WebMarket {

@@ -389,3 +389,47 @@ body {
 .legalpage p { line-height: 1.65; font-size: 15.5px; }
 .legalpage a { color: var(--green); font-weight: 600; }
 .legal a { color: var(--green); font-weight: 600; }
+
+/* Filter bar: uniform chips, single scrollable rows, clear active state */
+.filterbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.chiprow { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none; }
+.chiprow::-webkit-scrollbar { display: none; }
+.chiprow .chip { flex: none; height: 34px; display: inline-flex; align-items: center; padding: 0 14px; font-size: 13.5px; line-height: 1; }
+.chip.active { background: var(--green); color: #fff; border-color: var(--green); }
+.chip.active:hover { color: #fff; }
+
+/* My Market dashboard */
+.mm-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.mm-head h1 { font-family: var(--font-display), Georgia, serif; color: var(--green); margin: 0 0 4px; font-size: 34px; }
+.mm-stats { color: var(--muted); font-size: 14px; margin: 0; }
+.mm-stats strong { color: var(--text); }
+.mm-actions { display: flex; gap: 8px; }
+.mm-count { font-size: 14px; color: var(--muted); font-weight: 600; margin-left: 6px; }
+.mm-list { display: flex; flex-direction: column; gap: 10px; }
+.mm-row { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px 10px 10px; }
+.mm-thumb { width: 56px; height: 56px; border-radius: 10px; background: var(--bg-2); flex: none; display: flex; align-items: center; justify-content: center; font-size: 26px; overflow: hidden; }
+.mm-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mm-info { flex: 1; min-width: 0; }
+.mm-title { font-weight: 700; font-size: 15px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-title:hover { color: var(--green); }
+.mm-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.mm-expiry { font-size: 12.5px; color: var(--muted); }
+.mm-btns { display: flex; gap: 6px; flex: none; }
+.mm-btn { border: 1.5px solid var(--border); background: var(--surface); border-radius: 10px; padding: 7px 12px; font-size: 13px; font-weight: 700; color: var(--green); cursor: pointer; }
+.mm-btn:hover { border-color: var(--green); }
+.mm-btn.danger { color: var(--tomato); }
+.mm-btn.danger:hover { border-color: var(--tomato); }
+.mm-btn:disabled { opacity: .5; cursor: default; }
+@media (max-width: 560px) {
+  .mm-row { flex-wrap: wrap; }
+  .mm-btns { width: 100%; justify-content: flex-end; }
+}
+
+/* Browse page */
+.browse-search input { max-width: 420px; height: 42px; }
+.chip-divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; flex: none; }
+.chiprow .chip:disabled { opacity: .45; cursor: default; }
+.chiprow button.chip { cursor: pointer; }
+.geo-note { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+.browse-cardwrap { position: relative; }
+.distance-pill { position: absolute; bottom: 12px; right: 12px; background: rgba(27,67,50,.88); color: #fff; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }

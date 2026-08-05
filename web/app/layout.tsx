@@ -62,9 +62,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav className="nav-cta">
               <span className="nav-links">
-                <Link href="/near/richmond-heights-oh">Browse</Link>
+                <Link href="/browse">Browse</Link>
                 <Link href="/garden">Garden Planner ✨</Link>
                 <Link href="/seeds">Seed Drop 🌱</Link>
+                <Link href="/my">My Market</Link>
               </span>
               <Link className="btn btn-primary btn-sm" href="/sell">Sell</Link>
               <a className="btn btn-secondary btn-sm" href={IOS}>Get the app</a>
@@ -85,7 +86,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div>
                 <h4>Explore</h4>
                 <ul>
-                  <li><Link href="/near/richmond-heights-oh">Browse near you</Link></li>
+                  <li><Link href="/browse">Browse near you</Link></li>
                   <li><Link href="/garden">AI Garden Planner</Link></li>
                   <li><Link href="/seeds">The Seed Drop</Link></li>
                   <li><Link href="/category/vegetables">Vegetables</Link></li>
@@ -97,6 +98,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <h4>For growers</h4>
                 <ul>
                   <li><Link href="/sell">Sell on Gnome</Link></li>
+                  <li><Link href="/my">My Market</Link></li>
                   <li><a href={IOS}>Get the app</a></li>
                   <li><a href={IOS}>Start your Market</a></li>
                   <li><Link href="/category/supplies">Garden supplies</Link></li>

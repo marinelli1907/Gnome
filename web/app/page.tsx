@@ -50,7 +50,7 @@ export default async function HomePage() {
             eggs, honey, flowers, plants, and the occasional hand-painted gnome.
           </p>
           <div className="row">
-            <Link className="btn btn-primary" href={`/near/${AREAS[1].slug}`}>Browse near you</Link>
+            <Link className="btn btn-primary" href="/browse">Browse near you</Link>
             <Link className="btn btn-secondary" href="/seeds">🌱 The Seed Drop</Link>
           </div>
           <ul className="hero-points">
@@ -122,7 +122,7 @@ export default async function HomePage() {
         <section className="container section">
           <div className="section-head">
             <h2>Fresh on Gnome</h2>
-            <Link href={`/near/${AREAS[1].slug}`}>See more →</Link>
+            <Link href="/browse">See more →</Link>
           </div>
           <div className="grid">{recent.map((l) => <ListingCard key={l.id} listing={l} />)}</div>
         </section>
