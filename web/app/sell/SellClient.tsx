@@ -215,6 +215,7 @@ export default function SellClient() {
         <p className="sub">Neighbors browsing the web and the Gnome app can see it right now.</p>
         <div className="row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a className="btn btn-primary btn-sm" href={href}>View your listing</a>
+          <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
           <button className="btn btn-secondary btn-sm" onClick={() => {
             setDone(null); setTitle(''); setDescription(''); setQuantity('');
             setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]);

@@ -39,16 +39,24 @@ export default async function NearPage({ params, searchParams }: Params) {
         <p>Homegrown produce, plants, eggs and farm goods shared, traded, and sold by neighbors.</p>
       </section>
 
-      <div className="chips" style={{ marginBottom: 12 }}>
-        <Link className="chip" href={`/near/${city}`}>All</Link>
-        {TYPES.map((t) => (
-          <Link key={t} className="chip" href={`/near/${city}?type=${t}`}>{TYPE_LABEL[t]}</Link>
-        ))}
-      </div>
-      <div className="chips" style={{ marginBottom: 8 }}>
-        {CATEGORIES.map((c) => (
-          <Link key={c.id} className="chip" href={`/category/${c.id}`}>{c.emoji} {c.label}</Link>
-        ))}
+      <div className="filterbar">
+        <div className="chiprow">
+          <Link className={`chip${!activeType ? ' active' : ''}`} href={`/near/${city}`}>All</Link>
+          {TYPES.map((t) => (
+            <Link
+              key={t}
+              className={`chip${activeType === t ? ' active' : ''}`}
+              href={`/near/${city}?type=${t}`}
+            >
+              {TYPE_LABEL[t]}
+            </Link>
+          ))}
+        </div>
+        <div className="chiprow">
+          {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
+            <Link key={c.id} className="chip" href={`/category/${c.id}`}>{c.emoji} {c.label}</Link>
+          ))}
+        </div>
       </div>
 
       {featured.length >= 2 && (

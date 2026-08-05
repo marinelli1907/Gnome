@@ -18,10 +18,10 @@ export const CATEGORIES: Category[] = [
   { id: 'compost', label: 'Compost', emoji: '🪱' },
   { id: 'honey', label: 'Honey', emoji: '🍯' },
   { id: 'farm_fresh', label: 'Farm Fresh', emoji: '🥛' },
-  { id: 'supplies', label: 'Garden Supplies', emoji: '🛠️' },
-  { id: 'decor', label: 'Garden Decor', emoji: '🍄' },
-  { id: 'wood', label: 'Firewood & Wood', emoji: '🪵' },
-  { id: 'meat', label: 'Farm Meat', emoji: '🥩' },
+  { id: 'supplies', label: 'Supplies', emoji: '🛠️' },
+  { id: 'decor', label: 'Decor', emoji: '🍄' },
+  { id: 'wood', label: 'Wood', emoji: '🪵' },
+  { id: 'meat', label: 'Meat', emoji: '🥩' },
   { id: 'other', label: 'Other', emoji: '🧺' },
 ];
 
