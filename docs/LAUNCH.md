@@ -29,27 +29,23 @@ is a few minutes in https://supabase.com/dashboard/project/fgybyghwcjlstqxkclch.
    sign-in buttons built in beta-prep #1/#2 fail server-side. Client IDs/secrets
    per BETA_PREP.md.
 
-## Revenue switch-on (Stripe) — one blocker left (verified 2026-08-06)
+## Revenue switch-on (Stripe) — ARMED, awaiting first live checkout (2026-08-06)
 
-Done: Payment Links live on /pricing (Grower + Farm + Boost), secrets set
-(restricted rk_ key + whsec, correct format), webhook endpoint receiving
-events. **Blocker: signature verification fails (400) on every delivery** —
-the stored `STRIPE_WEBHOOK_SECRET` does not match the endpoint's current
-signing secret (endpoint likely recreated or secret rolled after copying).
-No subscription has ever been recorded; if a real checkout happened, the
-upgrade did not land.
+Everything is configured: Payment Links live on /pricing (Grower + Farm +
+Boost), secrets set (restricted rk_ key + whsec, correct format), the single
+live endpoint `gnome-plan-sync` active. Verified in the Stripe dashboard:
+**zero deliveries and zero payments ever** — the 400s in the function logs
+were arming probes with fake signatures (expected), not failed Stripe
+deliveries. So the whsec has never been exercised against a real signed
+event; it cannot be verified without one.
 
-Fix (Stripe + Supabase dashboards, ~5 min):
-1. Stripe → Developers → Webhooks → the `…/functions/v1/stripe-webhook`
-   endpoint → **reveal signing secret** (confirm this is the only/active
-   endpoint for these events).
-2. Supabase → Edge Functions → Secrets → set `STRIPE_WEBHOOK_SECRET` to that
-   exact value (function v10 trims whitespace and accepts the
-   `Stripe_Webhook_Secret` casing too).
-3. Stripe → that endpoint → event deliveries → **resend** the failed events
-   (three 400s on 2026-08-06) — confirm 200s, then check
-   `market_subscriptions` has a row. On failure the function logs the
-   secret's shape + Stripe's error (Edge Function logs).
+First-transaction smoke test (optional, ~$0.30 net cost): buy the $4.99
+Boost yourself from My Market, confirm the webhook logs 200 and
+`listing_promotions` gets a row, then refund the payment in Stripe
+(fees aren't returned on refund). If it 400s, the function logs the
+secret's shape + Stripe's error (Edge Function logs) — then re-copy the
+signing secret from the endpoint page into the Supabase
+`STRIPE_WEBHOOK_SECRET` secret and resend the event from Stripe.
 
 ## Done (verified live 2026-08-03)
 
