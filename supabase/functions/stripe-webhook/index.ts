@@ -8,7 +8,7 @@
 //   Cancellations downgrade the market back to 'free'.
 //
 // Secrets (supabase secrets set ...):
-//   STRIPE_SECRET_KEY      sk_live_... (reads line items / subscriptions)
+//   STRIPE_SECRET_KEY      rk_live_... restricted key (Checkout Sessions: Read)
 //   STRIPE_WEBHOOK_SECRET  whsec_...   (from the webhook endpoint in Stripe)
 //   STRIPE_PRICE_GROWER    price_...   (Grower monthly price id)
 //   STRIPE_PRICE_FARM      price_...   (Farm monthly price id)
@@ -25,10 +25,12 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const BOOST_DAYS = 7;
 
 Deno.serve(async (req: Request) => {
-  // Accept the dashboard-entered casing variants too (secrets can't be renamed).
-  const secretKey = Deno.env.get('STRIPE_SECRET_KEY') ?? Deno.env.get('Stripe_Secret_Key');
-  const webhookSecret =
-    Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? Deno.env.get('Stripe_Webhook_Secret');
+  // Accept the dashboard-entered casing variants too (secrets can't be renamed),
+  // and trim — dashboard paste can carry a stray newline/space that breaks HMAC.
+  const secretKey = (Deno.env.get('STRIPE_SECRET_KEY') ?? Deno.env.get('Stripe_Secret_Key'))?.trim();
+  const webhookSecret = (
+    Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? Deno.env.get('Stripe_Webhook_Secret')
+  )?.trim();
   if (!secretKey || !webhookSecret) {
     return new Response('Stripe not configured', { status: 503 });
   }
@@ -47,7 +49,15 @@ Deno.serve(async (req: Request) => {
       Stripe.createSubtleCryptoProvider(),
     );
   } catch (e) {
-    console.error('signature verification failed:', e);
+    // Log the secret's *shape* (never its value) so a mis-pasted or wrong-endpoint
+    // whsec is diagnosable from the function logs alone.
+    const shape = /^whsec_[A-Za-z0-9]+$/.test(webhookSecret)
+      ? `format ok, length ${webhookSecret.length}`
+      : `UNEXPECTED FORMAT, length ${webhookSecret.length}`;
+    console.error(
+      `signature verification failed (secret ${shape}):`,
+      e instanceof Error ? e.message : e,
+    );
     return new Response('Bad signature', { status: 400 });
   }
 
