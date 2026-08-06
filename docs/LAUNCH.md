@@ -29,25 +29,27 @@ is a few minutes in https://supabase.com/dashboard/project/fgybyghwcjlstqxkclch.
    sign-in buttons built in beta-prep #1/#2 fail server-side. Client IDs/secrets
    per BETA_PREP.md.
 
-## Revenue switch-on (Stripe — ~30 min, all in the Stripe dashboard)
+## Revenue switch-on (Stripe) — one blocker left (verified 2026-08-06)
 
-The whole monetization pipeline is deployed and waiting on four Stripe values:
+Done: Payment Links live on /pricing (Grower + Farm + Boost), secrets set
+(restricted rk_ key + whsec, correct format), webhook endpoint receiving
+events. **Blocker: signature verification fails (400) on every delivery** —
+the stored `STRIPE_WEBHOOK_SECRET` does not match the endpoint's current
+signing secret (endpoint likely recreated or secret rolled after copying).
+No subscription has ever been recorded; if a real checkout happened, the
+upgrade did not land.
 
-1. Create two subscription products: **Grower $9.99/mo**, **Farm $29.99/mo**
-   (one-off **Boost $4.99** optional). Create a **Payment Link** for each.
-2. Add a webhook endpoint →
-   `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
-   with events `checkout.session.completed`,
-   `customer.subscription.updated`, `customer.subscription.deleted`.
-3. `supabase secrets set STRIPE_SECRET_KEY=sk_live_... STRIPE_WEBHOOK_SECRET=whsec_...
-   STRIPE_PRICE_GROWER=price_... STRIPE_PRICE_FARM=price_...`
-4. Put the two Payment Link URLs in `web/.env.local`
-   (`NEXT_PUBLIC_STRIPE_LINK_GROWER/_FARM`) and redeploy the web.
-
-Then: /pricing upgrade buttons check out via Stripe; the webhook flips
-`markets.plan` (raising listing caps + monthly boost credits + full AI
-allowance automatically); cancellation downgrades to free. Seed Drop links
-(NEXT_PUBLIC_SEED_LINK_*) are a separate 10 minutes while you're in there.
+Fix (Stripe + Supabase dashboards, ~5 min):
+1. Stripe → Developers → Webhooks → the `…/functions/v1/stripe-webhook`
+   endpoint → **reveal signing secret** (confirm this is the only/active
+   endpoint for these events).
+2. Supabase → Edge Functions → Secrets → set `STRIPE_WEBHOOK_SECRET` to that
+   exact value (function v10 trims whitespace and accepts the
+   `Stripe_Webhook_Secret` casing too).
+3. Stripe → that endpoint → event deliveries → **resend** the failed events
+   (three 400s on 2026-08-06) — confirm 200s, then check
+   `market_subscriptions` has a row. On failure the function logs the
+   secret's shape + Stripe's error (Edge Function logs).
 
 ## Done (verified live 2026-08-03)
 
@@ -67,6 +69,7 @@ allowance automatically); cancellation downgrades to free. Seed Drop links
 2. `/garden` → ask "what should I plant right now?" → answer mentions your town's zone.
 3. App: tap the Garden Planner banner → same question works signed in.
 
-## Deliberately NOT in scope (CTO "Vanth" gate — M10)
+## Deliberately NOT in scope (CTO "Vanth" gate — M10 full)
 
-Stripe/paid boosts, admin dashboards, analytics UIs. Payments stay offline.
+Admin dashboards, analytics UIs, in-app payment flows beyond Payment Links.
+(M10-lite — Stripe Payment Links + webhook — shipped 2026-08-05.)
