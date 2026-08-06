@@ -12,6 +12,8 @@ import { SignInCard, useSession } from '../components/auth';
 
 // Explicit column list — post-0010 the base table rejects select=* for
 // non-service roles (lat/lng/slug are revoked; everything else is granted).
+const BOOST_LINK = process.env.NEXT_PUBLIC_STRIPE_LINK_BOOST;
+
 const COLS =
   'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until';
 
@@ -233,6 +235,11 @@ export default function MyMarketClient() {
                             <button className="mm-btn" disabled={busyId === l.id} onClick={() => void boost(l)}>
                               ✨ Boost
                             </button>
+                          )}
+                          {!boosted && l.status === 'active' && credits === 0 && BOOST_LINK && (
+                            <a className="mm-btn" href={`${BOOST_LINK}?client_reference_id=boost_${l.id}`}>
+                              ✨ Boost $4.99
+                            </a>
                           )}
                           <button className="mm-btn" disabled={busyId === l.id} onClick={() => void markSold(l)}>
                             Mark sold
