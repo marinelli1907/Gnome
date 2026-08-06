@@ -57,6 +57,7 @@ export default function MyMarketClient() {
 
   const [market, setMarket] = useState<MyMarket | null>(null);
   const [listings, setListings] = useState<MyListing[] | null>(null);
+  const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +71,12 @@ export default function MyMarketClient() {
     if (lerr) setError(lerr.message);
     setMarket((m as MyMarket) ?? null);
     setListings((ls as unknown as MyListing[]) ?? []);
+    if (m?.id) {
+      const { data: c } = await supabase.rpc('market_boost_credits_remaining', {
+        p_market_id: (m as MyMarket).id,
+      });
+      setCredits(typeof c === 'number' ? c : 0);
+    }
   }, [uid]);
 
   useEffect(() => { void load(); }, [load]);
@@ -84,6 +91,31 @@ export default function MyMarketClient() {
     setBusyId(null);
     if (error) setError(error.message);
     else await load();
+  }
+
+  // Redeem a plan boost credit → 7-day featured promotion (M7 trigger
+  // enforces the monthly allowance server-side; we just surface it).
+  async function boost(l: MyListing) {
+    if (!market) return;
+    setBusyId(l.id);
+    setError(null);
+    const { error } = await supabaseBrowser().from('listing_promotions').insert({
+      listing_id: l.id,
+      market_id: market.id,
+      source: 'plan_credit',
+      status: 'active',
+      starts_at: new Date().toISOString(),
+      ends_at: new Date(Date.now() + 7 * 86400_000).toISOString(),
+      created_by: uid,
+    });
+    setBusyId(null);
+    if (error) {
+      setError(
+        error.message.includes('credit')
+          ? 'No boost credits left this month — upgrade for more, or grab a one-off boost.'
+          : error.message,
+      );
+    } else await load();
   }
 
   const markSold = (l: MyListing) => setStatus(l, 'completed');
@@ -129,6 +161,22 @@ export default function MyMarketClient() {
             <a className="btn btn-secondary btn-sm" href={`/market/${market.slug}`}>Public page</a>
           )}
         </div>
+      </div>
+
+      <div className="plan-card">
+        <div>
+          <strong className="plan-name">{(market?.plan ?? 'free') === 'free' ? 'Neighbor (free)' : `${market?.plan} plan`}</strong>
+          <span className="plan-usage">
+            {activeCount}/{market?.plan === 'farm' || market?.plan === 'sponsor' ? 500 : market?.plan === 'grower' ? 100 : 10} listings
+            {' · '}{credits} boost credit{credits === 1 ? '' : 's'} left this month
+          </span>
+        </div>
+        {(market?.plan ?? 'free') === 'free' && (
+          <a className="btn btn-primary btn-sm" href="/pricing">Upgrade</a>
+        )}
+        {(market?.plan ?? 'free') !== 'free' && (
+          <a className="btn btn-secondary btn-sm" href="/pricing">Plans</a>
+        )}
       </div>
 
       {error && <p className="autherror">{error}</p>}
@@ -181,6 +229,11 @@ export default function MyMarketClient() {
                     <div className="mm-btns">
                       {live && (
                         <>
+                          {!boosted && l.status === 'active' && credits > 0 && (
+                            <button className="mm-btn" disabled={busyId === l.id} onClick={() => void boost(l)}>
+                              ✨ Boost
+                            </button>
+                          )}
                           <button className="mm-btn" disabled={busyId === l.id} onClick={() => void markSold(l)}>
                             Mark sold
                           </button>
@@ -204,7 +257,8 @@ export default function MyMarketClient() {
       })}
 
       <p className="authhint" style={{ marginTop: 24 }}>
-        Editing details, boosts, and pickup chat live in the Gnome app for now.
+        Editing details and pickup chat live in the Gnome app for now.{' '}
+        Want more reach? <a href="/pricing">See plans &amp; boosts</a>.
       </p>
     </div>
   );
