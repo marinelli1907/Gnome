@@ -25,8 +25,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const BOOST_DAYS = 7;
 
 Deno.serve(async (req: Request) => {
-  const secretKey = Deno.env.get('STRIPE_SECRET_KEY');
-  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
+  // Accept the dashboard-entered casing variants too (secrets can't be renamed).
+  const secretKey = Deno.env.get('STRIPE_SECRET_KEY') ?? Deno.env.get('Stripe_Secret_Key');
+  const webhookSecret =
+    Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? Deno.env.get('Stripe_Webhook_Secret');
   if (!secretKey || !webhookSecret) {
     return new Response('Stripe not configured', { status: 503 });
   }
