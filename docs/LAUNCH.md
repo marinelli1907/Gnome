@@ -29,6 +29,26 @@ is a few minutes in https://supabase.com/dashboard/project/fgybyghwcjlstqxkclch.
    sign-in buttons built in beta-prep #1/#2 fail server-side. Client IDs/secrets
    per BETA_PREP.md.
 
+## Revenue switch-on (Stripe — ~30 min, all in the Stripe dashboard)
+
+The whole monetization pipeline is deployed and waiting on four Stripe values:
+
+1. Create two subscription products: **Grower $9.99/mo**, **Farm $29.99/mo**
+   (one-off **Boost $4.99** optional). Create a **Payment Link** for each.
+2. Add a webhook endpoint →
+   `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
+   with events `checkout.session.completed`,
+   `customer.subscription.updated`, `customer.subscription.deleted`.
+3. `supabase secrets set STRIPE_SECRET_KEY=sk_live_... STRIPE_WEBHOOK_SECRET=whsec_...
+   STRIPE_PRICE_GROWER=price_... STRIPE_PRICE_FARM=price_...`
+4. Put the two Payment Link URLs in `web/.env.local`
+   (`NEXT_PUBLIC_STRIPE_LINK_GROWER/_FARM`) and redeploy the web.
+
+Then: /pricing upgrade buttons check out via Stripe; the webhook flips
+`markets.plan` (raising listing caps + monthly boost credits + full AI
+allowance automatically); cancellation downgrades to free. Seed Drop links
+(NEXT_PUBLIC_SEED_LINK_*) are a separate 10 minutes while you're in there.
+
 ## Done (verified live 2026-08-03)
 
 - Web **Sell flow** (`/sell`): email-code/magic-link sign-in, photo upload,

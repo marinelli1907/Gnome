@@ -29,13 +29,20 @@ function userIdFrom(req: Request): string | null {
   }
 }
 
-async function underDailyCap(userId: string, feature: string, cap: number): Promise<boolean> {
+// Caps by plan: free users get a real taste; paid Markets get the full
+// allowance (a concrete subscription perk alongside listings + boosts).
+async function underDailyCap(
+  userId: string, feature: string, freeCap: number, paidCap: number,
+): Promise<boolean> {
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+  const { data: market } = await admin
+    .from('markets').select('plan').eq('owner_id', userId).limit(1).maybeSingle();
+  const paid = !!market?.plan && market.plan !== 'free';
   const { data, error } = await admin.rpc('ai_usage_increment', {
-    p_user: userId, p_feature: feature, p_cap: cap,
+    p_user: userId, p_feature: feature, p_cap: paid ? paidCap : freeCap,
   });
   if (error) {
     // Fail open: a broken usage table shouldn't take the feature down.
@@ -106,8 +113,8 @@ Deno.serve(async (req: Request) => {
     if (!userId) {
       return json({ error: 'Sign in to use AI drafting.' }, 401);
     }
-    if (!(await underDailyCap(userId, 'draft', 20))) {
-      return json({ error: "You've used today's AI drafts — back tomorrow! Meanwhile, the form works great by hand." }, 429);
+    if (!(await underDailyCap(userId, 'draft', 5, 25))) {
+      return json({ error: "You've used today's free AI drafts. Grower and Farm plans get 25 a day — or fill the form by hand, it works great." }, 429);
     }
 
     const { imageBase64, mediaType, listingType } = await req.json();

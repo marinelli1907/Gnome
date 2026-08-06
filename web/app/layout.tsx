@@ -99,6 +99,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <ul>
                   <li><Link href="/sell">Sell on Gnome</Link></li>
                   <li><Link href="/my">My Market</Link></li>
+                  <li><Link href="/pricing">Pricing &amp; boosts</Link></li>
                   <li><a href={IOS}>Get the app</a></li>
                   <li><a href={IOS}>Start your Market</a></li>
                   <li><Link href="/category/supplies">Garden supplies</Link></li>

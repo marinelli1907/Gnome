@@ -21,13 +21,20 @@ function userIdFrom(req: Request): string | null {
   }
 }
 
-async function underDailyCap(userId: string, feature: string, cap: number): Promise<boolean> {
+// Caps by plan: free users get a real taste; paid Markets get the full
+// allowance (a concrete subscription perk alongside listings + boosts).
+async function underDailyCap(
+  userId: string, feature: string, freeCap: number, paidCap: number,
+): Promise<boolean> {
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+  const { data: market } = await admin
+    .from('markets').select('plan').eq('owner_id', userId).limit(1).maybeSingle();
+  const paid = !!market?.plan && market.plan !== 'free';
   const { data, error } = await admin.rpc('ai_usage_increment', {
-    p_user: userId, p_feature: feature, p_cap: cap,
+    p_user: userId, p_feature: feature, p_cap: paid ? paidCap : freeCap,
   });
   if (error) {
     // Fail open: a broken usage table shouldn't take the feature down.
@@ -77,8 +84,8 @@ Deno.serve(async (req: Request) => {
     if (!userId) {
       return json({ error: 'Sign in to use the garden planner.' }, 401);
     }
-    if (!(await underDailyCap(userId, 'planner', 30))) {
-      return json({ error: "You've hit today's planner limit — your garden will still be there tomorrow! 🌱" }, 429);
+    if (!(await underDailyCap(userId, 'planner', 10, 40))) {
+      return json({ error: "You've hit today's free planner limit — Grower and Farm plans get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
     }
 
     const { location, messages } = await req.json();
