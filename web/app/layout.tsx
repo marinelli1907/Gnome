@@ -69,9 +69,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="nav-cta">
               <span className="nav-links">
                 <Link href="/browse">Browse</Link>
-                <Link href="/plots">Plots</Link>
-                <Link href="/garden">Garden Planner ✨</Link>
-                <Link href="/seeds">Seed Drop 🌱</Link>
+                <span className="nav-grow">
+                  <button type="button" aria-haspopup="true">Grow ▾</button>
+                  <span className="nav-grow-menu">
+                    <Link href="/garden">✨ Garden Planner</Link>
+                    <Link href="/seeds">🌱 Seed Drop</Link>
+                    <Link href="/plots">🧑‍🌾 Reserve a Plot</Link>
+                  </span>
+                </span>
+                <Link href="/pricing">Pricing</Link>
                 <Link href="/my">My Market</Link>
               </span>
               <Link className="btn btn-primary btn-sm" href="/sell">Sell</Link>
@@ -88,8 +94,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <img src="/badge.png" alt="Gnome Farmers Market badge" className="footer-badge" />
                 <div className="footer-brand"><GnomeMark size={24} className="brand-mark" /> Gnome</div>
                 <p className="footer-tag">
-                  The neighborhood farmers market — fresh from the garden next door,
-                  wherever you live.
+                  Gnome is a neighborhood marketplace that helps people grow, find,
+                  share, and sell local food and garden goods.
                 </p>
               </div>
               <div>
@@ -110,8 +116,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <li><Link href="/sell">Sell on Gnome</Link></li>
                   <li><Link href="/my">My Market</Link></li>
                   <li><Link href="/pricing">Pricing &amp; boosts</Link></li>
+                  <li><Link href="/trust">Trust &amp; Safety</Link></li>
                   <li><a href={IOS}>Get the app</a></li>
-                  <li><a href={IOS}>Start your Market</a></li>
                   <li><Link href="/category/supplies">Garden supplies</Link></li>
                   <li><Link href="/category/decor">Garden decor</Link></li>
                 </ul>
@@ -129,8 +135,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="legal">
               Gnome by Boone Systems LLC · Browse and sell on the web or in the free Gnome app.
               Payments between neighbors are arranged directly with sellers. Sellers are
-              responsible for following local food laws. <Link href="/terms">Terms</Link> ·{' '}
-              <Link href="/privacy">Privacy</Link>
+              responsible for following local food laws. <Link href="/trust">Trust &amp; Safety</Link> ·{' '}
+              <Link href="/terms">Terms</Link> · <Link href="/privacy">Privacy</Link>
             </div>
           </div>
         </footer>

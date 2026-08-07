@@ -8,13 +8,14 @@ import { useEffect, useMemo, useState } from 'react';
 import ListingCard from '../components/ListingCard';
 import { CATEGORIES } from '../../lib/categories';
 import type { WebListing } from '../../lib/gnome';
+import { logWeb } from '../../lib/analytics';
 import { TYPE_LABEL } from '../../lib/format';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 const COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,approx_lat,approx_lng';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,approx_lat,approx_lng';
 
 type GeoListing = WebListing & { approx_lat: number | null; approx_lng: number | null };
 
@@ -68,10 +69,27 @@ export default function BrowseClient() {
   const [category, setCategory] = useState<string | null>(null);
   const [q, setQ] = useState('');
 
-  // Honor a ?type= deep link (e.g. /browse?type=plot from the Plots page).
+  // Honor deep links: ?type= (from the Plots page) and ?loc= (the homepage
+  // ZIP/city box) — a passed location geocodes and persists like manual entry.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('type');
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('type');
     if (t && (TYPES as readonly string[]).includes(t)) setType(t);
+    const loc = params.get('loc');
+    if (loc?.trim()) {
+      void (async () => {
+        try {
+          const found = await geocode(loc.trim());
+          if (found) {
+            setCoords({ lat: found.lat, lng: found.lng });
+            setManualLabel(found.label);
+            setGeoState('manual');
+            logWeb('browse_location_set', { label: found.label, via: 'zip_box' });
+            try { localStorage.setItem(LOC_KEY, JSON.stringify(found)); } catch { /* ignore */ }
+          }
+        } catch { /* keep whatever location state we had */ }
+      })();
+    }
   }, []);
 
   // Load listings once (client-side, anon REST — same boundary as the server pages).
@@ -130,6 +148,7 @@ export default function BrowseClient() {
         setGeoState('manual');
         setLocOpen(false);
         setLocInput('');
+        logWeb('browse_location_set', { label: found.label });
         try { localStorage.setItem(LOC_KEY, JSON.stringify(found)); } catch { /* private mode */ }
       }
     } catch {
@@ -281,6 +300,13 @@ export default function BrowseClient() {
         )}
         {locError && <p className="autherror">{locError}</p>}
       </div>
+
+      {filtered !== null && filtered.length > 0 && filtered.every((l) => l.is_demo) && (
+        <p className="geo-note" style={{ marginBottom: 14 }}>
+          🌱 These are <strong>preview listings</strong> showing how Gnome works — real
+          neighbors haven’t posted here yet. <a href="/sell">Be the first grower nearby</a>.
+        </p>
+      )}
 
       {filtered === null ? (
         <div className="empty"><p>Loading fresh listings…</p></div>

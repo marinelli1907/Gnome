@@ -73,6 +73,34 @@ export default async function PlotsPage() {
         )}
       </section>
 
+      <section className="container section" style={{ maxWidth: 760 }}>
+        <h2>Set expectations before money moves</h2>
+        <p className="sub" style={{ maxWidth: 700 }}>
+          A plot reservation is an agreement between you and a grower — Gnome
+          introduces you and keeps the request on record, but the two of you set
+          the terms. Before paying, agree on:
+        </p>
+        <ul className="checks">
+          <li><strong>What you’re buying</strong> — growing space, the grower’s labor, a share of the harvest, or all three. Say it out loud.</li>
+          <li><strong>The crop plan</strong> — what gets planted, roughly when it’s ready, and who picks substitutes if something can’t be grown.</li>
+          <li><strong>Updates</strong> — how often you’ll hear from the grower (weekly photos in chat is the friendly default).</li>
+          <li><strong>If a crop fails</strong> — gardens aren’t factories. Agree up front: replant, partial refund, or credit toward next season.</li>
+          <li><strong>Harvest &amp; pickup</strong> — who harvests, and when and where you collect it.</li>
+        </ul>
+        <div className="preview-note" style={{ marginTop: 16 }}>
+          <strong>A sample arrangement:</strong> “$40 reserves my 4×8 raised bed for
+          the season. You pick the crop from what grows in our zone; I plant, tend,
+          water, and harvest. Weekly photo updates in Gnome chat. Pickup at my
+          garden gate as things ripen. If a crop fails outright, I replant if the
+          calendar allows — otherwise half the fee comes back.”
+        </div>
+        <p className="authhint" style={{ marginTop: 12 }}>
+          Growing has no guarantees — weather, pests, and luck are part of every
+          season. Payment is arranged directly between you and the grower; Gnome
+          doesn’t hold funds or take a cut.
+        </p>
+      </section>
+
       <section className="container">
         <div className="final-band">
           <GnomeMascot size={92} className="final-gnome" />

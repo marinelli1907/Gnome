@@ -16,7 +16,7 @@ const TIERS = [
     name: 'Neighbor',
     price: 'Free',
     cadence: 'forever',
-    blurb: 'For sharing the surplus.',
+    blurb: 'For browsing, sharing occasionally, and posting wanted asks.',
     features: [
       '10 active listings',
       'Your own Market page',
@@ -30,7 +30,7 @@ const TIERS = [
     name: 'Grower',
     price: '$9.99',
     cadence: '/month',
-    blurb: 'For serious garden stands.',
+    blurb: 'For serious gardeners who sell regularly — the natural next step.',
     highlight: true,
     features: [
       '100 active listings',
@@ -46,7 +46,7 @@ const TIERS = [
     name: 'Farm',
     price: '$29.99',
     cadence: '/month',
-    blurb: 'For farm stands & small farms.',
+    blurb: 'For high-volume sellers, farm stands, and established producers.',
     features: [
       '500 active listings',
       'Offer plots — pre-sell your whole season',
@@ -95,9 +95,12 @@ export default function PricingPage() {
       </div>
 
       <p className="pricing-fine">
-        Subscriptions are handled securely by Stripe and can be cancelled anytime — your
-        Market simply returns to the free tier. Boosts and plans promote your listings;
-        Gnome never charges buyers and never takes a percentage of sales.
+        <strong>Gnome takes 0% of neighbor-to-neighbor sales — no transaction fees, ever.</strong>{' '}
+        Plans are billed monthly through Stripe and can be cancelled anytime; your Market
+        simply returns to the free tier at the end of the billing period, and your listings
+        beyond the free cap pause rather than disappear. Plan limits are enforced by the
+        platform itself, not the buttons on this page. Questions or a billing problem?
+        We’ll make it right — cancel first, ask second.
       </p>
     </main>
   );

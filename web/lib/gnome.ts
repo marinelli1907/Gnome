@@ -34,6 +34,7 @@ export interface WebListing {
   is_featured: boolean | null;
   featured_until: string | null;
   has_active_promotion: boolean | null;
+  is_demo?: boolean | null;
   approx_lat?: number | null;
   approx_lng?: number | null;
 }
@@ -66,7 +67,7 @@ export interface WebMarket {
 }
 
 const LISTING_COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo';
 
 async function rest<T>(view: string, params: Record<string, string>, revalidate: number): Promise<T[]> {
   if (!SUPABASE_URL || !ANON) return [];

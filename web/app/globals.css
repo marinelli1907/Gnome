@@ -206,6 +206,32 @@ img { display: block; }
 .locrow { display: flex; gap: 8px; max-width: 520px; margin-top: 10px; }
 .locrow input { flex: 1; min-width: 0; }
 .geo-note .linkbtn { font-size: inherit; }
+
+/* Homepage ZIP/town box */
+.locate-box { display: flex; gap: 8px; max-width: 440px; margin: 0 0 14px; }
+.locate-box input { flex: 1; min-width: 0; }
+.locate-box .btn { white-space: nowrap; }
+@media (max-width: 480px) { .locate-box { flex-direction: column; } }
+
+/* Preview (demo) listing labels */
+.preview-chip { position: absolute; bottom: 12px; right: 12px; background: rgba(31,36,33,.72); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 8px; }
+.preview-note { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; font-size: 14px; color: var(--muted); margin: 10px 0 14px; }
+.preview-note a { color: var(--green); font-weight: 700; }
+
+/* Nav "Grow" dropdown — CSS-only, hover + keyboard focus */
+.nav-grow { position: relative; display: inline-flex; }
+.nav-grow > button { background: none; border: none; padding: 0; font: inherit; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
+.nav-grow > button:hover { color: var(--green); }
+.nav-grow-menu {
+  display: none; position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  flex-direction: column; gap: 2px; min-width: 190px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(20,48,35,.14); z-index: 20;
+}
+.nav-grow-menu::before { content: ''; position: absolute; top: -12px; left: 0; right: 0; height: 12px; }
+.nav-grow:hover .nav-grow-menu, .nav-grow:focus-within .nav-grow-menu { display: flex; }
+.nav-grow-menu a { padding: 8px 10px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--text); white-space: nowrap; }
+.nav-grow-menu a:hover { background: var(--bg-2); color: var(--green); }
 .footer-tag { color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 260px; }
 .legal { border-top: 1px solid var(--border); padding: 18px 0 28px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
