@@ -24,8 +24,14 @@ export const metadata: Metadata = {
   title: { default: 'Gnome — A farmers market in your pocket', template: '%s | Gnome' },
   description: DESC,
   applicationName: SITE,
-  openGraph: { siteName: SITE, type: 'website', title: 'Gnome — A farmers market in your pocket', description: DESC },
-  twitter: { card: 'summary_large_image' },
+  openGraph: {
+    siteName: SITE,
+    type: 'website',
+    title: 'Gnome — A farmers market in your pocket',
+    description: DESC,
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Gnome Farmers Market' }],
+  },
+  twitter: { card: 'summary_large_image', images: ['/og.png'] },
 };
 
 const JSON_LD = {
@@ -78,6 +84,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="container">
             <div className="footer-cols">
               <div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/badge.png" alt="Gnome Farmers Market badge" className="footer-badge" />
                 <div className="footer-brand"><GnomeMark size={24} className="brand-mark" /> Gnome</div>
                 <p className="footer-tag">
                   The neighborhood farmers market — fresh from the garden next door,

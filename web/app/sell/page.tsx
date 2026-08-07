@@ -17,7 +17,7 @@ export default async function SellPage({
     ? (type as 'free' | 'trade' | 'sale' | 'wanted' | 'plot')
     : undefined;
   return (
-    <main className="container">
+    <main className="container" style={{ maxWidth: 720 }}>
       <section className="hero" style={{ paddingBottom: 8 }}>
         <span className="kicker">Your garden’s storefront</span>
         <h1>Post it in under a minute</h1>
@@ -28,7 +28,7 @@ export default async function SellPage({
           neighborly price for you.
         </p>
       </section>
-      <section className="section" style={{ maxWidth: 640 }}>
+      <section className="section">
         <SellClient initialType={initialType} />
       </section>
     </main>
