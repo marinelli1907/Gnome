@@ -63,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="nav-cta">
               <span className="nav-links">
                 <Link href="/browse">Browse</Link>
+                <Link href="/plots">Plots</Link>
                 <Link href="/garden">Garden Planner ✨</Link>
                 <Link href="/seeds">Seed Drop 🌱</Link>
                 <Link href="/my">My Market</Link>
@@ -87,6 +88,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <h4>Explore</h4>
                 <ul>
                   <li><Link href="/browse">Browse near you</Link></li>
+                  <li><Link href="/plots">Reserve a plot</Link></li>
                   <li><Link href="/garden">AI Garden Planner</Link></li>
                   <li><Link href="/seeds">The Seed Drop</Link></li>
                   <li><Link href="/category/vegetables">Vegetables</Link></li>

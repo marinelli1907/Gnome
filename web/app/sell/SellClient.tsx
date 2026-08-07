@@ -9,13 +9,14 @@ import { CATEGORIES } from '../../lib/categories';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
 
-type ListingType = 'free' | 'trade' | 'sale' | 'wanted';
+type ListingType = 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
 
 const TYPES: { id: ListingType; label: string; hint: string }[] = [
   { id: 'free', label: 'Share free', hint: 'Give surplus to neighbors' },
   { id: 'trade', label: 'Trade', hint: 'Swap for something you want' },
   { id: 'sale', label: 'Sell', hint: 'Neighborly price, paid at pickup' },
   { id: 'wanted', label: 'Wanted', hint: 'Ask neighbors for something' },
+  { id: 'plot', label: 'Offer a plot', hint: 'A neighbor reserves it; you grow their pick' },
 ];
 
 const MAX_PHOTOS = 5;
@@ -40,11 +41,11 @@ async function toJpeg(file: File, maxDim = 1280): Promise<{ blob: Blob; base64: 
   return { blob: new Blob([bytes], { type: 'image/jpeg' }), base64 };
 }
 
-export default function SellClient() {
+export default function SellClient({ initialType }: { initialType?: ListingType }) {
   const { session, ready } = useSession();
   const uid = session?.user?.id;
 
-  const [listingType, setListingType] = useState<ListingType>('free');
+  const [listingType, setListingType] = useState<ListingType>(initialType ?? 'free');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('vegetables');
   const [description, setDescription] = useState('');
@@ -123,6 +124,9 @@ export default function SellClient() {
     if (listingType === 'sale' && (!price || Number(price) <= 0)) {
       return setError('Set a price for a sale listing.');
     }
+    if (listingType === 'plot' && (!price || Number(price) <= 0)) {
+      return setError('Set a reservation price for your plot.');
+    }
     if (listingType === 'trade' && !tradeFor.trim()) {
       return setError('Say what you’d like to trade for.');
     }
@@ -173,7 +177,10 @@ export default function SellClient() {
           category,
           quantity: quantity.trim() || null,
           photos: urls,
-          price_cents: listingType === 'sale' ? Math.round(Number(price) * 100) : null,
+          price_cents:
+            listingType === 'sale' || listingType === 'plot'
+              ? Math.round(Number(price) * 100)
+              : null,
           unit: listingType === 'sale' ? unit.trim() || null : null,
           trade_for: listingType === 'trade' ? tradeFor.trim() : null,
           city: city.trim(),
@@ -182,6 +189,11 @@ export default function SellClient() {
         .select('id,slug')
         .single();
       if (error) {
+        if (error.message.includes('PLOTS_REQUIRE_PLAN')) {
+          throw new Error(
+            'Offering plots is a Grower & Farm plan feature — upgrade on the Pricing page and your garden can take reservations.',
+          );
+        }
         throw new Error(
           error.message.includes('plan')
             ? 'You’ve hit your plan’s active-listing limit — complete or remove an old listing first.'
@@ -269,16 +281,29 @@ export default function SellClient() {
           hidden
           onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
         />
-        {photos.length > 0 && listingType !== 'wanted' && (
+        {photos.length > 0 && listingType !== 'wanted' && listingType !== 'plot' && (
           <button type="button" className="btn btn-secondary btn-sm aidraft" disabled={drafting} onClick={() => void aiDraft()}>
             {drafting ? 'Drafting…' : '✨ Let AI write the listing from your photo'}
           </button>
         )}
       </div>
 
+      {listingType === 'plot' && (
+        <p className="authhint" style={{ margin: 0 }}>
+          🧑‍🌾 One listing = one reservable plot. A neighbor reserves it and picks
+          the crop; you grow it. Post one listing per plot you can offer.
+          Plot offers are a <a href="/pricing">Grower &amp; Farm plan</a> feature.
+        </p>
+      )}
+
       <div className="field">
         <label>Title</label>
-        <input value={title} maxLength={80} placeholder="Fresh cherry tomatoes" onChange={(e) => setTitle(e.target.value)} />
+        <input
+          value={title}
+          maxLength={80}
+          placeholder={listingType === 'plot' ? '4×8 raised bed — you pick the crop' : 'Fresh cherry tomatoes'}
+          onChange={(e) => setTitle(e.target.value)}
+        />
       </div>
 
       <div className="field-row">
@@ -291,8 +316,12 @@ export default function SellClient() {
           </select>
         </div>
         <div className="field">
-          <label>Quantity (optional)</label>
-          <input value={quantity} placeholder="About 2 lbs" onChange={(e) => setQuantity(e.target.value)} />
+          <label>{listingType === 'plot' ? 'Plot size (optional)' : 'Quantity (optional)'}</label>
+          <input
+            value={quantity}
+            placeholder={listingType === 'plot' ? '4×8 raised bed, full sun' : 'About 2 lbs'}
+            onChange={(e) => setQuantity(e.target.value)}
+          />
         </div>
       </div>
 
@@ -309,6 +338,13 @@ export default function SellClient() {
         </div>
       )}
 
+      {listingType === 'plot' && (
+        <div className="field">
+          <label>Reservation price (USD)</label>
+          <input inputMode="decimal" value={price} placeholder="40.00" onChange={(e) => setPrice(e.target.value)} />
+        </div>
+      )}
+
       {listingType === 'trade' && (
         <div className="field">
           <label>Trade for</label>
@@ -321,7 +357,11 @@ export default function SellClient() {
         <textarea
           rows={3}
           value={description}
-          placeholder="A friendly sentence or two about what you're offering."
+          placeholder={
+            listingType === 'plot'
+              ? 'What can you grow, when is it ready, and how will the neighbor get updates? Set expectations up front — crops are living things.'
+              : "A friendly sentence or two about what you're offering."
+          }
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
@@ -340,11 +380,18 @@ export default function SellClient() {
       {error && <p className="autherror">{error}</p>}
 
       <button className="btn btn-primary" disabled={posting} onClick={() => void post()}>
-        {posting ? 'Posting…' : listingType === 'wanted' ? 'Post your ask' : 'Post your listing'}
+        {posting
+          ? 'Posting…'
+          : listingType === 'wanted'
+            ? 'Post your ask'
+            : listingType === 'plot'
+              ? 'Offer your plot'
+              : 'Post your listing'}
       </button>
       <p className="authhint">
         Pickup and payment happen in person — Gnome never takes a cut. Listings expire
-        automatically ({listingType === 'wanted' ? '30' : '7'} days) unless renewed in the app.
+        automatically ({listingType === 'wanted' ? '30' : listingType === 'plot' ? '45' : '7'} days)
+        unless renewed in the app.
       </p>
     </div>
   );

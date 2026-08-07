@@ -21,7 +21,7 @@ interface MyListing {
   id: string;
   title: string;
   category: string;
-  listing_type: 'free' | 'trade' | 'sale' | 'wanted';
+  listing_type: 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
   status: 'active' | 'claimed' | 'completed' | 'expired' | 'removed';
   price_cents: number | null;
   unit: string | null;
@@ -33,6 +33,17 @@ interface MyListing {
 }
 
 interface MyMarket { id: string; name: string; slug: string; plan: string | null }
+
+// A plot-reservation request on one of MY plot listings (I'm the grower).
+interface Reservation {
+  id: string;
+  listing_id: string;
+  status: 'pending' | 'approved' | 'declined' | 'cancelled' | 'completed' | 'expired';
+  buyer_note: string | null;
+  agreed_price_cents: number | null;
+  created_at: string;
+  claimer: { name: string | null } | null;
+}
 
 const GROUPS: { key: string; title: string; blurb: string; match: (l: MyListing) => boolean }[] = [
   {
@@ -59,6 +70,7 @@ export default function MyMarketClient() {
 
   const [market, setMarket] = useState<MyMarket | null>(null);
   const [listings, setListings] = useState<MyListing[] | null>(null);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +84,25 @@ export default function MyMarketClient() {
     ]);
     if (lerr) setError(lerr.message);
     setMarket((m as MyMarket) ?? null);
-    setListings((ls as unknown as MyListing[]) ?? []);
+    const rows = (ls as unknown as MyListing[]) ?? [];
+    setListings(rows);
+
+    // Incoming plot reservations on my plot listings (claims RLS shows the
+    // owner every claim on their listings; the FK-qualified embed avoids the
+    // ambiguous double-FK to profiles).
+    const plotIds = rows.filter((l) => l.listing_type === 'plot').map((l) => l.id);
+    if (plotIds.length > 0) {
+      const { data: rs } = await supabase
+        .from('claims')
+        .select('id,listing_id,status,buyer_note,agreed_price_cents,created_at,claimer:profiles!claims_claimer_id_fkey(name)')
+        .eq('claim_type', 'plot_reservation')
+        .in('listing_id', plotIds)
+        .order('created_at', { ascending: false });
+      setReservations((rs as unknown as Reservation[]) ?? []);
+    } else {
+      setReservations([]);
+    }
+
     if (m?.id) {
       const { data: c } = await supabase.rpc('market_boost_credits_remaining', {
         p_market_id: (m as MyMarket).id,
@@ -120,12 +150,25 @@ export default function MyMarketClient() {
     } else await load();
   }
 
+  // Approve/decline a plot reservation. Approving fires the claim-status
+  // trigger: the plot listing flips to 'claimed' (off the marketplace) and
+  // other pending requests auto-decline.
+  async function setReservation(r: Reservation, status: 'approved' | 'declined') {
+    setBusyId(r.id);
+    setError(null);
+    const { error } = await supabaseBrowser().from('claims').update({ status }).eq('id', r.id);
+    setBusyId(null);
+    if (error) setError(error.message);
+    else await load();
+  }
+
   const markSold = (l: MyListing) => setStatus(l, 'completed');
   const remove = (l: MyListing) => setStatus(l, 'removed');
   const relist = (l: MyListing) =>
     setStatus(l, 'active', {
       expires_at: new Date(
-        Date.now() + (l.listing_type === 'wanted' ? 30 : 7) * 86400_000,
+        Date.now() +
+          (l.listing_type === 'wanted' ? 30 : l.listing_type === 'plot' ? 45 : 7) * 86400_000,
       ).toISOString(),
     });
 
@@ -183,6 +226,58 @@ export default function MyMarketClient() {
 
       {error && <p className="autherror">{error}</p>}
 
+      {reservations.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Plot reservations <span className="mm-count">{reservations.length}</span></h2>
+          </div>
+          <p className="sub">
+            Neighbors asking to reserve a plot. Approve one and that plot comes off
+            the marketplace; other requests on it decline automatically. Payment is
+            arranged directly — details and updates in the app chat.
+          </p>
+          <div className="mm-list">
+            {reservations.map((r) => {
+              const plot = listings.find((l) => l.id === r.listing_id);
+              const who = r.claimer?.name || 'A neighbor';
+              return (
+                <div key={r.id} className="mm-row">
+                  <div className="mm-thumb"><span>🧑‍🌾</span></div>
+                  <div className="mm-info">
+                    <span className="mm-title">
+                      {who} · {plot?.title ?? 'your plot'}
+                      {r.agreed_price_cents != null && r.agreed_price_cents > 0
+                        ? ` · ${formatPrice(r.agreed_price_cents)}`
+                        : ''}
+                    </span>
+                    <div className="mm-meta">
+                      {r.status === 'pending' && <span className="tag type-wanted">New request</span>}
+                      {r.status === 'approved' && <span className="tag type-free">Reserved ✓</span>}
+                      {(r.status === 'declined' || r.status === 'cancelled') && (
+                        <span className="tag">{r.status === 'declined' ? 'Declined' : 'Cancelled'}</span>
+                      )}
+                      {r.buyer_note && <span className="mm-expiry">“{r.buyer_note}”</span>}
+                    </div>
+                  </div>
+                  <div className="mm-btns">
+                    {r.status === 'pending' && (
+                      <>
+                        <button className="mm-btn" disabled={busyId === r.id} onClick={() => void setReservation(r, 'approved')}>
+                          Approve
+                        </button>
+                        <button className="mm-btn danger" disabled={busyId === r.id} onClick={() => void setReservation(r, 'declined')}>
+                          Decline
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {listings.length === 0 && (
         <div className="empty">
           <div className="emoji">🌱</div>
@@ -224,7 +319,11 @@ export default function MyMarketClient() {
                             : TYPE_LABEL[l.listing_type]}
                         </span>
                         {boosted && <span className="tag featured">✨ Boosted</span>}
-                        {l.status === 'claimed' && <span className="tag type-trade">Claimed — pending pickup</span>}
+                        {l.status === 'claimed' && (
+                          <span className="tag type-trade">
+                            {l.listing_type === 'plot' ? 'Reserved — growing' : 'Claimed — pending pickup'}
+                          </span>
+                        )}
                         {live && l.status === 'active' && <span className="mm-expiry">{timeLeft(l.expires_at)}</span>}
                       </div>
                     </div>

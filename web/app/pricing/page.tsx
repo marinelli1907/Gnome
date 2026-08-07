@@ -34,6 +34,7 @@ const TIERS = [
     highlight: true,
     features: [
       '100 active listings',
+      'Offer plots — neighbors reserve, you grow',
       '1 free listing boost every month',
       'Full AI access — 25 drafts, 40 planner questions/day',
       'Featured eligibility on the homepage rail',
@@ -48,6 +49,7 @@ const TIERS = [
     blurb: 'For farm stands & small farms.',
     features: [
       '500 active listings',
+      'Offer plots — pre-sell your whole season',
       '5 free listing boosts every month',
       'Full AI access — 25 drafts, 40 planner questions/day',
       'Featured eligibility + verified review',

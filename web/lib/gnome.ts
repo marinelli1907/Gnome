@@ -11,7 +11,7 @@ export interface WebListing {
   title: string;
   description: string | null;
   category: string;
-  listing_type: 'free' | 'trade' | 'sale' | 'wanted';
+  listing_type: 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
   status: string;
   price_cents: number | null;
   currency: string | null;
