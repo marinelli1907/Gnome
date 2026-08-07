@@ -63,7 +63,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="site-header">
           <div className="container inner">
             <Link href="/" className="brand">
-              <GnomeMark size={30} className="brand-mark" /> Gnome{' '}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/badge.png" alt="" className="brand-badge" /> Gnome{' '}
               <span>a farmers market in your pocket</span>
             </Link>
             <nav className="nav-cta">
