@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import AppLink from '../../components/AppLink';
 import ListingCard from '../../components/ListingCard';
+import ReservePlot from '../../components/ReservePlot';
 import { categoryFor } from '@/lib/categories';
 import { appCtaLabel, areaLabel, idFromSlugId, listingValue, marketPath, TYPE_LABEL } from '@/lib/format';
 import { getActiveListings, getListingById, getMarketBySlug } from '@/lib/gnome';
@@ -117,7 +118,9 @@ export default async function ListingPage({ params }: Params) {
           {repBits.length > 0 ? <div className="rep-compact">{repBits.join(' · ')}</div> : null}
 
           <div className="cta-stack">
-            {l.market_id ? (
+            {l.listing_type === 'plot' ? (
+              <ReservePlot listingId={l.id} priceCents={l.price_cents} />
+            ) : l.market_id ? (
               <AppLink kind="listing" id={l.id} label={appCtaLabel(l.listing_type)} variant="primary" />
             ) : null}
             <AppLink kind="listing" id={l.id} label="Open in Gnome" variant="secondary" />
@@ -125,6 +128,13 @@ export default async function ListingPage({ params }: Params) {
 
           {l.listing_type === 'sale' && (
             <div className="note">Payments are arranged directly with the seller. Gnome does not process payment on the web yet.</div>
+          )}
+          {l.listing_type === 'plot' && (
+            <div className="note">
+              A reservation is a request — the grower approves it, then you arrange
+              payment and pickup together. Gnome doesn’t hold funds or take a cut.
+              Agree up front on timing and what happens if a crop fails.
+            </div>
           )}
           <div className="note">Meet in a safe, public spot for pickup. Pickup details are shared in the app after a request is approved.</div>
         </div>

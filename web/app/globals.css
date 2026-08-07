@@ -80,6 +80,7 @@ img { display: block; }
 .badge.trade { background: var(--sage); }
 .badge.sale { background: var(--tomato); }
 .badge.wanted { background: var(--muted); }
+.badge.plot { background: #8a5a2b; }
 .valuechip { position: absolute; top: 12px; right: 12px; background: rgba(255,253,248,.94); color: var(--text); font-size: 14px; font-weight: 800; padding: 5px 10px; border-radius: 10px; }
 .promoted { position: absolute; top: 42px; left: 12px; background: var(--gold); color: var(--text); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px; }
 
@@ -101,6 +102,7 @@ img { display: block; }
 .tag.type-trade { background: rgba(135,169,107,.18); color: #4f6b3c; }
 .tag.type-sale { background: rgba(188,71,73,.12); color: var(--tomato); }
 .tag.type-wanted { background: rgba(107,112,92,.15); color: var(--muted); }
+.tag.type-plot { background: rgba(138,90,43,.14); color: #8a5a2b; }
 .tag.featured { background: var(--gold); color: var(--text); }
 .tag.verified { background: rgba(27,67,50,.1); color: var(--green); }
 
@@ -206,7 +208,7 @@ img { display: block; }
 .nav-links a:hover { color: var(--green); }
 /* Links appear only when the row genuinely fits on one line; the tagline
    is the first thing to go — it needs another ~250px on top of the links. */
-@media (min-width: 840px) { .nav-links { display: inline-flex; } }
+@media (min-width: 900px) { .nav-links { display: inline-flex; } }
 @media (max-width: 1079px) { .brand span { display: none; } }
 
 @media (max-width: 860px) {
@@ -359,6 +361,7 @@ body {
 
 /* Bands: deepen with gradient + inner glow; gnome peeks over the final band. */
 .band { background: linear-gradient(115deg, #143023, var(--green) 55%, var(--green-light)); }
+.band-plot { background: linear-gradient(115deg, #4a3218, #6b4a24 55%, #8a5a2b); box-shadow: 0 14px 34px rgba(74,50,24,.22); }
 .final-band {
   position: relative;
   background:

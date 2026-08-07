@@ -91,6 +91,24 @@ export default async function HomePage() {
         </Link>
       </section>
 
+      {/* ------------------------------------------- plots band */}
+      <section className="container" style={{ marginTop: 14 }}>
+        <Link href="/plots" className="band band-plot">
+          <div className="band-emoji">🧑‍🌾</div>
+          <div className="band-copy">
+            <h2>Reserve a plot</h2>
+            <p>
+              Pick a plot in a neighbor’s garden and choose the crop — they grow it,
+              you harvest it. Growers: pre-sell your season and turn the whole
+              garden into income.
+            </p>
+          </div>
+          <span className="band-cta">
+            Explore plots <span className="band-arrow">→</span>
+          </span>
+        </Link>
+      </section>
+
       {/* ------------------------------------------- featured rail */}
       {featured.length >= 2 && (
         <section className="container section">

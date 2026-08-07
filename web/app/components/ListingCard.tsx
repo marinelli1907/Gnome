@@ -7,6 +7,7 @@ function shortValue(l: WebListing): string {
   if (l.listing_type === 'sale') return l.price_cents != null ? formatPrice(l.price_cents, l.unit) : 'For sale';
   if (l.listing_type === 'trade') return 'Trade';
   if (l.listing_type === 'wanted') return 'Wanted';
+  if (l.listing_type === 'plot') return l.price_cents != null ? `Reserve ${formatPrice(l.price_cents)}` : 'Reserve';
   return 'Free';
 }
 

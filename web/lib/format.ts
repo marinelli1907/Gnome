@@ -54,13 +54,14 @@ export function areaLabel(city: string | null, state: string | null): string {
   return city || state || 'your area';
 }
 
-type LType = 'free' | 'trade' | 'sale' | 'wanted';
+type LType = 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
 
 export const TYPE_LABEL: Record<LType, string> = {
   free: 'Free',
   trade: 'Trade',
   sale: 'For Sale',
   wanted: 'Wanted',
+  plot: 'Plot',
 };
 
 export function formatPrice(cents: number, unit?: string | null): string {
@@ -82,6 +83,10 @@ export function listingValue(l: {
       return l.trade_for ? `Trade for ${l.trade_for}` : 'Open to trade';
     case 'wanted':
       return 'Wanted';
+    case 'plot':
+      return l.price_cents != null
+        ? `Reserve for ${formatPrice(l.price_cents)}`
+        : 'Reserve this plot';
     default:
       return 'Free';
   }
@@ -96,6 +101,8 @@ export function appCtaLabel(t: LType): string {
       return 'Request to Buy in Gnome';
     case 'wanted':
       return 'Respond in Gnome';
+    case 'plot':
+      return 'Reserve in Gnome';
     default:
       return 'Claim in Gnome';
   }

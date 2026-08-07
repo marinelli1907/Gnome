@@ -18,7 +18,7 @@ const COLS =
 
 type GeoListing = WebListing & { approx_lat: number | null; approx_lng: number | null };
 
-const TYPES = ['free', 'trade', 'sale', 'wanted'] as const;
+const TYPES = ['free', 'trade', 'sale', 'wanted', 'plot'] as const;
 const RADII = [5, 10, 25, 50, 0] as const; // 0 = anywhere
 
 function miles(aLat: number, aLng: number, bLat: number, bLng: number): number {
@@ -39,6 +39,12 @@ export default function BrowseClient() {
   const [type, setType] = useState<string | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [q, setQ] = useState('');
+
+  // Honor a ?type= deep link (e.g. /browse?type=plot from the Plots page).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('type');
+    if (t && (TYPES as readonly string[]).includes(t)) setType(t);
+  }, []);
 
   // Load listings once (client-side, anon REST — same boundary as the server pages).
   useEffect(() => {
