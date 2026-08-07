@@ -434,10 +434,19 @@ body {
 .legal a { color: var(--green); font-weight: 600; }
 
 /* Filter bar: uniform chips, single scrollable rows, clear active state */
-.filterbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
-.chiprow { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none; }
-.chiprow::-webkit-scrollbar { display: none; }
+.filterbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+/* Labeled filter rows. Desktop: chips WRAP so nothing is ever cut off.
+   Touch widths: single swipeable line (momentum scroll, no scrollbar). */
+.filter-group { display: flex; align-items: flex-start; gap: 12px; }
+.filter-label { flex: none; width: 76px; padding-top: 9px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.chiprow { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
 .chiprow .chip { flex: none; height: 34px; display: inline-flex; align-items: center; padding: 0 14px; font-size: 13.5px; line-height: 1; }
+@media (max-width: 719px) {
+  .filter-group { flex-direction: column; gap: 6px; }
+  .filter-label { width: auto; padding-top: 0; }
+  .chiprow { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; width: 100%; }
+  .chiprow::-webkit-scrollbar { display: none; }
+}
 .chip.active { background: var(--green); color: #fff; border-color: var(--green); }
 .chip.active:hover { color: #fff; }
 

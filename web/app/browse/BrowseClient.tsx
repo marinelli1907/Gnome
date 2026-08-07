@@ -218,44 +218,55 @@ export default function BrowseClient() {
           />
         </div>
 
-        <div className="chiprow">
-          <button className={`chip${!type ? ' active' : ''}`} onClick={() => setType(null)}>All</button>
-          {TYPES.map((t) => (
-            <button
-              key={t}
-              className={`chip${type === t ? ' active' : ''}`}
-              onClick={() => setType(type === t ? null : t)}
-            >
-              {TYPE_LABEL[t]}
-            </button>
-          ))}
-          <span className="chip-divider" aria-hidden />
-          {RADII.map((r) => (
-            <button
-              key={r}
-              className={`chip${radius === r ? ' active' : ''}`}
-              disabled={!coords && r !== 0}
-              title={!coords && r !== 0 ? 'Allow location to filter by distance' : undefined}
-              onClick={() => setRadius(r)}
-            >
-              {r === 0 ? 'Anywhere' : `${r} mi`}
-            </button>
-          ))}
+        <div className="filter-group">
+          <span className="filter-label">Show</span>
+          <div className="chiprow">
+            <button className={`chip${!type ? ' active' : ''}`} onClick={() => setType(null)}>All</button>
+            {TYPES.map((t) => (
+              <button
+                key={t}
+                className={`chip${type === t ? ' active' : ''}`}
+                onClick={() => setType(type === t ? null : t)}
+              >
+                {TYPE_LABEL[t]}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="chiprow">
-          <button className={`chip${!category ? ' active' : ''}`} onClick={() => setCategory(null)}>
-            All categories
-          </button>
-          {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
-            <button
-              key={c.id}
-              className={`chip${category === c.id ? ' active' : ''}`}
-              onClick={() => setCategory(category === c.id ? null : c.id)}
-            >
-              {c.emoji} {c.label}
+        <div className="filter-group">
+          <span className="filter-label">Within</span>
+          <div className="chiprow">
+            {RADII.map((r) => (
+              <button
+                key={r}
+                className={`chip${radius === r ? ' active' : ''}`}
+                disabled={!coords && r !== 0}
+                title={!coords && r !== 0 ? 'Set a location to filter by distance' : undefined}
+                onClick={() => setRadius(r)}
+              >
+                {r === 0 ? 'Anywhere' : `${r} mi`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="filter-group">
+          <span className="filter-label">Category</span>
+          <div className="chiprow">
+            <button className={`chip${!category ? ' active' : ''}`} onClick={() => setCategory(null)}>
+              All
             </button>
-          ))}
+            {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
+              <button
+                key={c.id}
+                className={`chip${category === c.id ? ' active' : ''}`}
+                onClick={() => setCategory(category === c.id ? null : c.id)}
+              >
+                {c.emoji} {c.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {geoState === 'denied' && !locOpen && (
