@@ -1,5 +1,30 @@
 # Gnome — launch checklist
 
+## SMTP (auth email) — ONE PASTE FROM DONE (2026-08-07)
+
+Supabase → Auth → Emails → SMTP Settings is staged with these values
+(no secrets in this file; the password lives only in Daniel's hands and,
+already, in /var/www/1way-backend/.env on the VPS as MAIL_PASSWORD):
+
+- Sender email:  marinelli1907@outlook.com
+- Sender name:   Gnome Farmers Market
+- Host:          smtp-mail.outlook.com
+- Port:          587 (STARTTLS)
+- Username:      marinelli1907@outlook.com
+- Password:      ← Daniel pastes, then Save changes
+- Reply address: same as sender (Outlook personal has no separate reply-to
+  mailbox; replies land in the Outlook inbox)
+
+After saving, the auth mail rate limit rises to 30/hr (adjustable) and
+truly-external addresses can sign up. Verify with any non-team email.
+
+**Deliverability upgrade (recommended before real growth):** a domain
+mailbox — Hostinger includes free mailboxes with gnomefarmersmarket.com
+(hPanel → Emails → create hello@gnomefarmersmarket.com, then host
+smtp.hostinger.com:587) — gives SPF/DKIM alignment and a branded sender.
+Personal Outlook works at low volume but is the weakest link for spam
+placement, and Microsoft has been tightening basic-auth SMTP.
+
 Updated 2026-08-03. Code for everything below is DONE, deployed, and live at
 https://gnomefarmersmarket.com (sell + AI garden planner shipped; see git log).
 What remains is Supabase **dashboard** configuration that has no API — each item
