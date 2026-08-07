@@ -51,6 +51,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');       // dollars, string
+  const [plotCount, setPlotCount] = useState('1'); // identical plots to post (plot type only)
   const [unit, setUnit] = useState('');
   const [tradeFor, setTradeFor] = useState('');
   const [city, setCity] = useState('');
@@ -59,7 +60,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   const [drafting, setDrafting] = useState(false);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ id: string; slug: string | null } | null>(null);
+  const [done, setDone] = useState<{ id: string; slug: string | null; count: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Prefill town from the profile (set by the app or a previous web post).
@@ -165,29 +166,33 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         .then(() => {});
 
       // 4) The listing itself. kind mirror + type-specific fields match the app.
-      const { data, error } = await supabase
+      // One listing = one reservable plot, so "3 identical plots" = 3 rows —
+      // each gets reserved (and comes off the market) independently.
+      const n = listingType === 'plot' ? Math.min(10, Math.max(1, Number(plotCount) || 1)) : 1;
+      const row = {
+        owner_id: uid,
+        market_id: market?.id ?? null,
+        listing_type: listingType,
+        kind: listingType === 'wanted' ? ('wanted' as const) : ('offer' as const),
+        title: title.trim(),
+        description: description.trim() || null,
+        category,
+        quantity: quantity.trim() || null,
+        photos: urls,
+        price_cents:
+          listingType === 'sale' || listingType === 'plot'
+            ? Math.round(Number(price) * 100)
+            : null,
+        unit: listingType === 'sale' ? unit.trim() || null : null,
+        trade_for: listingType === 'trade' ? tradeFor.trim() : null,
+        city: city.trim(),
+        state: state.trim().toUpperCase(),
+      };
+      const { data: rows, error } = await supabase
         .from('listings')
-        .insert({
-          owner_id: uid,
-          market_id: market?.id ?? null,
-          listing_type: listingType,
-          kind: listingType === 'wanted' ? 'wanted' : 'offer',
-          title: title.trim(),
-          description: description.trim() || null,
-          category,
-          quantity: quantity.trim() || null,
-          photos: urls,
-          price_cents:
-            listingType === 'sale' || listingType === 'plot'
-              ? Math.round(Number(price) * 100)
-              : null,
-          unit: listingType === 'sale' ? unit.trim() || null : null,
-          trade_for: listingType === 'trade' ? tradeFor.trim() : null,
-          city: city.trim(),
-          state: state.trim().toUpperCase(),
-        })
-        .select('id,slug')
-        .single();
+        .insert(Array.from({ length: n }, () => ({ ...row })))
+        .select('id,slug');
+      const data = rows?.[0];
       if (error) {
         if (error.message.includes('PLOTS_REQUIRE_PLAN')) {
           throw new Error(
@@ -200,7 +205,8 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
             : error.message,
         );
       }
-      setDone({ id: data.id, slug: data.slug });
+      if (!data) throw new Error('Posting failed — try again.');
+      setDone({ id: data.id, slug: data.slug, count: n });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Posting failed — try again.');
     } finally {
@@ -223,14 +229,14 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     const href = `/listing/${done.slug ? `${done.slug}-` : ''}${done.id}`;
     return (
       <div className="authcard">
-        <h2>🎉 Your listing is live</h2>
-        <p className="sub">Neighbors browsing the web and the Gnome app can see it right now.</p>
+        <h2>🎉 {done.count > 1 ? `Your ${done.count} plots are live` : 'Your listing is live'}</h2>
+        <p className="sub">Neighbors browsing the web and the Gnome app can see {done.count > 1 ? 'them' : 'it'} right now.</p>
         <div className="row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a className="btn btn-primary btn-sm" href={href}>View your listing</a>
           <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
           <button className="btn btn-secondary btn-sm" onClick={() => {
             setDone(null); setTitle(''); setDescription(''); setQuantity('');
-            setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]);
+            setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]); setPlotCount('1');
           }}>
             Post another
           </button>
@@ -290,9 +296,10 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
 
       {listingType === 'plot' && (
         <p className="authhint" style={{ margin: 0 }}>
-          🧑‍🌾 One listing = one reservable plot. A neighbor reserves it and picks
-          the crop; you grow it. Post one listing per plot you can offer.
-          Plot offers are a <a href="/pricing">Grower &amp; Farm plan</a> feature.
+          🧑‍🌾 A neighbor reserves a plot and picks the crop; you grow it. Offering
+          several identical plots? Set the count below and each gets its own
+          reservable listing. Plot offers are a{' '}
+          <a href="/pricing">Grower &amp; Farm plan</a> feature.
         </p>
       )}
 
@@ -339,9 +346,20 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       )}
 
       {listingType === 'plot' && (
-        <div className="field">
-          <label>Reservation price (USD)</label>
-          <input inputMode="decimal" value={price} placeholder="40.00" onChange={(e) => setPrice(e.target.value)} />
+        <div className="field-row">
+          <div className="field">
+            <label>Reservation price (USD, per plot)</label>
+            <input inputMode="decimal" value={price} placeholder="40.00" onChange={(e) => setPrice(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Identical plots (1–10)</label>
+            <input
+              inputMode="numeric"
+              value={plotCount}
+              placeholder="1"
+              onChange={(e) => setPlotCount(e.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </div>
         </div>
       )}
 
