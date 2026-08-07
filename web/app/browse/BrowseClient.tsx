@@ -6,7 +6,7 @@
 // sorted newest-first, and the radius chips prompt for permission.
 import { useEffect, useMemo, useState } from 'react';
 import ListingCard from '../components/ListingCard';
-import { CATEGORIES } from '../../lib/categories';
+import { CATEGORIES, categoryFor } from '../../lib/categories';
 import type { WebListing } from '../../lib/gnome';
 import { logWeb } from '../../lib/analytics';
 import { TYPE_LABEL } from '../../lib/format';
@@ -20,7 +20,6 @@ const COLS =
 type GeoListing = WebListing & { approx_lat: number | null; approx_lng: number | null };
 
 const TYPES = ['free', 'trade', 'sale', 'wanted', 'plot'] as const;
-const RADII = [5, 10, 25, 50, 0] as const; // 0 = anywhere
 
 const LOC_KEY = 'gnome-manual-location';
 
@@ -57,6 +56,7 @@ function miles(aLat: number, aLng: number, bLat: number, bLng: number): number {
 
 export default function BrowseClient() {
   const [listings, setListings] = useState<GeoListing[] | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [geoState, setGeoState] = useState<'idle' | 'asking' | 'granted' | 'denied' | 'manual'>('idle');
   const [manualLabel, setManualLabel] = useState<string | null>(null);
@@ -218,56 +218,123 @@ export default function BrowseClient() {
           />
         </div>
 
-        <div className="filter-group">
-          <span className="filter-label">Show</span>
-          <div className="chiprow">
-            <button className={`chip${!type ? ' active' : ''}`} onClick={() => setType(null)}>All</button>
-            {TYPES.map((t) => (
+        {/* One compact bar: everything else lives behind the Filters button. */}
+        {(() => {
+          const activeCount =
+            (type ? 1 : 0) + (category ? 1 : 0) + (coords && radius > 0 && radius !== 25 ? 1 : 0);
+          return (
+            <div className="filter-toggle-row">
               <button
-                key={t}
-                className={`chip${type === t ? ' active' : ''}`}
-                onClick={() => setType(type === t ? null : t)}
+                className={`btn ${filtersOpen || activeCount > 0 ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen(!filtersOpen)}
               >
-                {TYPE_LABEL[t]}
+                ⚙ Filters{activeCount > 0 ? ` (${activeCount})` : ''} {filtersOpen ? '▴' : '▾'}
               </button>
-            ))}
-          </div>
-        </div>
+              {!filtersOpen && type && (
+                <button className="chip active" onClick={() => setType(null)}>
+                  {TYPE_LABEL[type as keyof typeof TYPE_LABEL]} ✕
+                </button>
+              )}
+              {!filtersOpen && category && (
+                <button className="chip active" onClick={() => setCategory(null)}>
+                  {categoryFor(category).emoji} {categoryFor(category).label} ✕
+                </button>
+              )}
+              {!filtersOpen && coords && radius > 0 && (
+                <span className="chip" aria-hidden>within {radius} mi</span>
+              )}
+            </div>
+          );
+        })()}
 
-        <div className="filter-group">
-          <span className="filter-label">Within</span>
-          <div className="chiprow">
-            {RADII.map((r) => (
-              <button
-                key={r}
-                className={`chip${radius === r ? ' active' : ''}`}
-                disabled={!coords && r !== 0}
-                title={!coords && r !== 0 ? 'Set a location to filter by distance' : undefined}
-                onClick={() => setRadius(r)}
-              >
-                {r === 0 ? 'Anywhere' : `${r} mi`}
-              </button>
-            ))}
-          </div>
-        </div>
+        {filtersOpen && (
+          <div className="filter-panel">
+            <div className="fp-section">
+              <span className="filter-label">Show</span>
+              <div className="chiprow">
+                <button className={`chip${!type ? ' active' : ''}`} onClick={() => setType(null)}>All</button>
+                {TYPES.map((t) => (
+                  <button
+                    key={t}
+                    className={`chip${type === t ? ' active' : ''}`}
+                    onClick={() => setType(type === t ? null : t)}
+                  >
+                    {TYPE_LABEL[t]}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="filter-group">
-          <span className="filter-label">Category</span>
-          <div className="chiprow">
-            <button className={`chip${!category ? ' active' : ''}`} onClick={() => setCategory(null)}>
-              All
-            </button>
-            {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
+            <div className="fp-section">
+              <span className="filter-label">Distance</span>
+              {coords ? (
+                <div className="radius-row">
+                  <input
+                    type="range"
+                    min={1}
+                    max={50}
+                    value={radius === 0 ? 50 : Math.min(50, radius)}
+                    disabled={radius === 0}
+                    aria-label="Search radius in miles"
+                    onChange={(e) => setRadius(Number(e.target.value))}
+                  />
+                  <input
+                    className="radius-num"
+                    inputMode="numeric"
+                    aria-label="Radius in miles"
+                    value={radius === 0 ? '' : String(radius)}
+                    placeholder="mi"
+                    onChange={(e) => {
+                      const v = Number(e.target.value.replace(/[^0-9]/g, ''));
+                      setRadius(Math.min(200, Math.max(0, v)));
+                    }}
+                  />
+                  <span className="radius-unit">mi</span>
+                  <button
+                    className={`chip${radius === 0 ? ' active' : ''}`}
+                    onClick={() => setRadius(radius === 0 ? 25 : 0)}
+                  >
+                    Anywhere
+                  </button>
+                </div>
+              ) : (
+                <p className="geo-note" style={{ margin: 0 }}>
+                  Set a location to filter by distance —{' '}
+                  <button className="linkbtn" onClick={() => setLocOpen(true)}>enter your address or city</button>.
+                </p>
+              )}
+            </div>
+
+            <div className="fp-section">
+              <span className="filter-label">Category</span>
+              <div className="chiprow">
+                <button className={`chip${!category ? ' active' : ''}`} onClick={() => setCategory(null)}>
+                  All
+                </button>
+                {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
+                  <button
+                    key={c.id}
+                    className={`chip${category === c.id ? ' active' : ''}`}
+                    onClick={() => setCategory(category === c.id ? null : c.id)}
+                  >
+                    {c.emoji} {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="fp-actions">
               <button
-                key={c.id}
-                className={`chip${category === c.id ? ' active' : ''}`}
-                onClick={() => setCategory(category === c.id ? null : c.id)}
+                className="btn btn-secondary btn-sm"
+                onClick={() => { setType(null); setCategory(null); setRadius(25); }}
               >
-                {c.emoji} {c.label}
+                Clear all
               </button>
-            ))}
+              <button className="btn btn-primary btn-sm" onClick={() => setFiltersOpen(false)}>Done</button>
+            </div>
           </div>
-        </div>
+        )}
 
         {geoState === 'denied' && !locOpen && (
           <p className="geo-note">
