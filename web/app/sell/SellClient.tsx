@@ -5,6 +5,7 @@
 // tables, same RLS, same draft-listing function, same market attachment — a
 // listing posted here is indistinguishable from one posted in the app.
 import { useEffect, useRef, useState } from 'react';
+import { logWeb } from '../../lib/analytics';
 import { CATEGORIES } from '../../lib/categories';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
@@ -206,6 +207,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         );
       }
       if (!data) throw new Error('Posting failed — try again.');
+      logWeb('listing_published', { type: listingType, count: n });
       setDone({ id: data.id, slug: data.slug, count: n });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Posting failed — try again.');

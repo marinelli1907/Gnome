@@ -18,8 +18,10 @@ const PLANS = [
     emoji: '🌱',
     name: 'Starter Pack',
     price: '$12',
-    cadence: 'one-time',
-    blurb: '5 packets picked for your zone and the current season. A taste of the drop.',
+    cadence: 'one-time · start here',
+    highlight: true,
+    blurb:
+      '5 hand-picked packets for your USDA zone and the current season, with a growing tip card for each. One-time, no subscription — the low-risk way to try the drop.',
     link: process.env.NEXT_PUBLIC_SEED_LINK_STARTER,
     cta: 'Get the Starter Pack',
   },
@@ -78,7 +80,16 @@ export default function SeedsPage() {
         <div className="section-head"><h2>Pick your drop</h2></div>
         <div className="grid">
           {PLANS.map((p) => (
-            <div key={p.id} className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
+              key={p.id}
+              className="card"
+              style={{
+                padding: 20, display: 'flex', flexDirection: 'column', gap: 8,
+                ...('highlight' in p && p.highlight
+                  ? { border: '2px solid var(--green)', boxShadow: '0 10px 26px rgba(27,67,50,.12)' }
+                  : {}),
+              }}
+            >
               <div style={{ fontSize: 30 }}>{p.emoji}</div>
               <h3 style={{ margin: 0 }}>{p.name}</h3>
               <div>
@@ -97,7 +108,10 @@ export default function SeedsPage() {
           ))}
         </div>
         <p className="sub" style={{ marginTop: 12 }}>
-          Ships within the U.S. Subscriptions are managed through Stripe — change or cancel anytime.
+          Ships within the U.S., usually within a week of your order. Subscriptions are
+          managed through Stripe — change or cancel anytime. Packets that fail to
+          germinate get replaced in your next drop, no questions — just tell us.
+          Substitutions may occur when a variety sells out; always zone-appropriate.
         </p>
       </section>
 

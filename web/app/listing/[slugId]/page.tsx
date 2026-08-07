@@ -70,6 +70,13 @@ export default async function ListingPage({ params }: Params) {
         <Link href="/">Home</Link> · <Link href={`/category/${l.category}`}>{cat.label}</Link>
       </div>
 
+      {l.is_demo && (
+        <div className="preview-note">
+          👋 This is a <strong>preview listing</strong> showing how Gnome works — it isn’t
+          real inventory. <Link href="/sell">Post something real</Link> and yours takes its place.
+        </div>
+      )}
+
       <article className="detail">
         <div className="gallery">
           {photos[0] ? (

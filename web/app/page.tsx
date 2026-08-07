@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { GnomeMascot, Sun, Vine } from './components/art';
+import HomeLocate from './components/HomeLocate';
 import ListingCard from './components/ListingCard';
 import MarketCard from './components/MarketCard';
 import { CATEGORIES } from '@/lib/categories';
@@ -15,10 +16,10 @@ const AREAS = [
 ];
 
 const STEPS = [
-  { n: '🍅', t: 'Find it nearby', d: 'Browse fresh produce, eggs, honey, plants and garden goods from neighbors and small growers around you.' },
-  { n: '🤝', t: 'Claim or request', d: 'Claim a free share, offer a trade, or request to buy — right in the free Gnome app.' },
-  { n: '🧺', t: 'Meet at the garden gate', d: 'Arrange a friendly local pickup. No shipping, no middleman, no fees between neighbors.' },
-  { n: '🏡', t: 'Grow your own Market', d: 'Every grower gets a storefront — followers, trust stats, and boosts when you want the spotlight.' },
+  { n: '🍅', t: 'Find what’s growing nearby', d: 'Browse fresh produce, eggs, honey, plants and garden goods from neighbors and small growers around you.' },
+  { n: '🌱', t: 'Grow your own, with help', d: 'The AI Garden Planner knows your zone and the calendar; the Seed Drop sends the right seeds. No land? Reserve a plot in a neighbor’s garden.' },
+  { n: '🤝', t: 'Share or sell the extra', d: 'Claim a free share, offer a trade, or request to buy — pickup is arranged neighbor to neighbor, no fees between you.' },
+  { n: '🏡', t: 'Build your neighborhood market', d: 'Every grower gets a storefront with real trust stats. Repeat buyers, plot reservations, a stronger local food network.' },
 ];
 
 // Hero collage — real listing shapes, no stock photos needed.
@@ -49,9 +50,10 @@ export default async function HomePage() {
             Gnome is where neighbors share, trade, and sell what they grow — tomatoes,
             eggs, honey, flowers, plants, and the occasional hand-painted gnome.
           </p>
+          <HomeLocate />
           <div className="row">
             <Link className="btn btn-primary" href="/browse">Browse near you</Link>
-            <Link className="btn btn-secondary" href="/seeds">🌱 The Seed Drop</Link>
+            <Link className="btn btn-secondary" href="/sell">Sell what you grow</Link>
           </div>
           <ul className="hero-points">
             <li>Free for neighbors</li>
@@ -72,41 +74,6 @@ export default async function HomePage() {
           </div>
           <GnomeMascot className="hero-gnome" />
         </div>
-      </section>
-
-      {/* ------------------------------------------- seed drop band */}
-      <section className="container">
-        <Link href="/seeds" className="band">
-          <div className="band-emoji">📦</div>
-          <div className="band-copy">
-            <h2>The Gnome Seed Drop</h2>
-            <p>
-              Seeds picked for your zone and the season — chosen by AI, packed by
-              hand, shipped anywhere in the U.S. with a growing tip for every packet.
-            </p>
-          </div>
-          <span className="band-cta">
-            From $9/mo <span className="band-arrow">→</span>
-          </span>
-        </Link>
-      </section>
-
-      {/* ------------------------------------------- plots band */}
-      <section className="container" style={{ marginTop: 14 }}>
-        <Link href="/plots" className="band band-plot">
-          <div className="band-emoji">🧑‍🌾</div>
-          <div className="band-copy">
-            <h2>Reserve a plot</h2>
-            <p>
-              Pick a plot in a neighbor’s garden and choose the crop — they grow it,
-              you harvest it. Growers: pre-sell your season and turn the whole
-              garden into income.
-            </p>
-          </div>
-          <span className="band-cta">
-            Explore plots <span className="band-arrow">→</span>
-          </span>
-        </Link>
       </section>
 
       {/* ------------------------------------------- featured rail */}
@@ -199,6 +166,40 @@ export default async function HomePage() {
             )}
           </div>
         </div>
+      </section>
+
+      {/* ------------------------------- more ways to grow: plots + seed drop */}
+      <section className="container" style={{ marginTop: 6 }}>
+        <Link href="/plots" className="band band-plot">
+          <div className="band-emoji">🧑‍🌾</div>
+          <div className="band-copy">
+            <h2>No garden? Reserve a plot</h2>
+            <p>
+              Pick a plot in a neighbor’s garden and choose the crop — they grow it,
+              you harvest it. Growers: pre-sell your season and turn the whole
+              garden into income.
+            </p>
+          </div>
+          <span className="band-cta">
+            Explore plots <span className="band-arrow">→</span>
+          </span>
+        </Link>
+      </section>
+
+      <section className="container" style={{ marginTop: 14 }}>
+        <Link href="/seeds" className="band">
+          <div className="band-emoji">📦</div>
+          <div className="band-copy">
+            <h2>Start growing: The Gnome Seed Drop</h2>
+            <p>
+              Seeds picked for your zone and the season — chosen by AI, packed by
+              hand, shipped anywhere in the U.S. with a growing tip for every packet.
+            </p>
+          </div>
+          <span className="band-cta">
+            See the drops <span className="band-arrow">→</span>
+          </span>
+        </Link>
       </section>
 
       {/* ------------------------------------------- areas + final CTA */}

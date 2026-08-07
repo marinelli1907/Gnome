@@ -6,6 +6,7 @@
 // the reservation price is settled directly with the grower, like every
 // Gnome sale. Escrow is Phase 2 (docs/PLOTS.md).
 import { useState } from 'react';
+import { logWeb } from '../../lib/analytics';
 import { formatPrice } from '../../lib/format';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from './auth';
@@ -40,7 +41,10 @@ export default function ReservePlot({
 
   if (!open) {
     return (
-      <button className="btn btn-primary" onClick={() => setOpen(true)}>
+      <button
+        className="btn btn-primary"
+        onClick={() => { setOpen(true); logWeb('reserve_started', { listing: listingId }); }}
+      >
         Reserve this plot{price ? ` · ${price}` : ''}
       </button>
     );
@@ -75,6 +79,7 @@ export default function ReservePlot({
       else if (error.message.includes('claims_insert_claimer')) setError('You can’t reserve your own plot.');
       else setError(error.message);
     } else {
+      logWeb('reserve_submitted', { listing: listingId });
       setDone(true);
     }
   }

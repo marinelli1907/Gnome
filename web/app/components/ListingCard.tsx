@@ -25,6 +25,7 @@ export default function ListingCard({ listing, promoted }: { listing: WebListing
           <div className="fallback">{cat.emoji}</div>
         )}
         <span className={`badge ${t}`}>{TYPE_LABEL[t]}</span>
+        {listing.is_demo ? <span className="preview-chip">Preview</span> : null}
         {promoted ? <span className="promoted">Promoted</span> : null}
         <span className="valuechip">{shortValue(listing)}</span>
       </div>
