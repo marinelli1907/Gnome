@@ -24,6 +24,9 @@ interface AuthContextValue {
   /** Resolves with whether email confirmation is still pending (no session yet). */
   signUp: (email: string, password: string, name: string) => Promise<{ needsConfirm: boolean }>;
   signIn: (email: string, password: string) => Promise<void>;
+  /** Email a 6-digit sign-in code (creates the account if new — same as web). */
+  requestEmailCode: (email: string) => Promise<void>;
+  verifyEmailCode: (email: string, code: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -63,6 +66,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }, []);
+
+  const requestEmailCode = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true }, // same door as the website
+    });
+    if (error) throw error;
+  }, []);
+
+  const verifyEmailCode = useCallback(async (email: string, code: string) => {
+    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
     if (error) throw error;
   }, []);
 
@@ -138,11 +154,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       configured: isSupabaseConfigured,
       signUp,
       signIn,
+      requestEmailCode,
+      verifyEmailCode,
       signInWithGoogle,
       signInWithApple,
       signOut,
     }),
-    [session, loading, signUp, signIn, signInWithGoogle, signInWithApple, signOut],
+    [session, loading, signUp, signIn, requestEmailCode, verifyEmailCode, signInWithGoogle, signInWithApple, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
