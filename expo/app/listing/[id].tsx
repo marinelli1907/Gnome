@@ -183,6 +183,13 @@ export default function ListingDetailScreen() {
             </Text>
             <TypeBadge type={type} />
           </View>
+          {listing.is_demo ? (
+            <View style={styles.previewNote}>
+              <Text style={styles.previewNoteText}>
+                Preview listing — sample content showing how Gnome works. It’s not a real neighbor’s harvest.
+              </Text>
+            </View>
+          ) : null}
           <Text style={[styles.value, type === 'sale' && { color: Colors.sell }]}>{value}</Text>
           <Text style={styles.category}>
             {cat.emoji} {cat.label}
@@ -282,6 +289,13 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: 13, color: Colors.textSecondary },
+  previewNote: {
+    backgroundColor: Colors.goldLight,
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  previewNoteText: { fontSize: 12, color: Colors.text, lineHeight: 17 },
   description: { fontSize: 15, color: Colors.text, lineHeight: 22, marginTop: 18 },
   owner: {
     flexDirection: 'row',

@@ -76,12 +76,17 @@ export default function RequestScreen() {
     trade: { heading: `Offer a trade for "${listing.title}"`, cta: 'Send trade offer', claimType: 'trade_offer' },
     sale: { heading: `Request to buy "${listing.title}"`, cta: 'Send buy request', claimType: 'purchase_request' },
     wanted: { heading: `You have "${listing.title}"`, cta: 'Send', claimType: 'wanted_response' },
+    plot: { heading: `Reserve "${listing.title}"`, cta: 'Send reservation request', claimType: 'plot_reservation' },
   };
   const c = config[type];
 
   const submit = () => {
     if (type === 'trade' && !tradeOffer.trim()) {
       Alert.alert('What will you trade?', 'Tell the grower what you’re offering.');
+      return;
+    }
+    if (type === 'plot' && !note.trim()) {
+      Alert.alert('What should they grow?', 'Tell the grower what you’d like grown in your plot.');
       return;
     }
     claim.mutate(
@@ -91,8 +96,11 @@ export default function RequestScreen() {
         claimType: c.claimType,
         tradeOfferText: type === 'trade' ? tradeOffer.trim() : null,
         buyerNote: note.trim() || null,
-        agreedPriceCents: type === 'sale' ? listing.price_cents ?? null : null,
-        paymentStatus: type === 'sale' ? 'external' : 'none',
+        agreedPriceCents:
+          type === 'sale' ? listing.price_cents ?? null
+          : type === 'plot' ? listing.price_cents ?? 0
+          : null,
+        paymentStatus: type === 'sale' || type === 'plot' ? 'external' : 'none',
       },
       {
         onSuccess: () => {
@@ -122,13 +130,17 @@ export default function RequestScreen() {
           {listing.market?.name ? ` · 🏡 ${listing.market.name}` : ''}
         </Text>
 
-        {type === 'sale' && (
+        {(type === 'sale' || type === 'plot') && (
           <View style={styles.priceBox}>
-            <Text style={styles.priceLabel}>Price</Text>
+            <Text style={styles.priceLabel}>{type === 'plot' ? 'Reservation price' : 'Price'}</Text>
             <Text style={styles.price}>
               {listing.price_cents != null ? formatPrice(listing.price_cents, listing.unit) : '—'}
             </Text>
-            <Text style={styles.priceNote}>Payment is arranged in person — Gnome never handles money.</Text>
+            <Text style={styles.priceNote}>
+              {type === 'plot'
+                ? 'The grower approves your request first. Payment and pickup are arranged together — Gnome never handles money.'
+                : 'Payment is arranged in person — Gnome never handles money.'}
+            </Text>
           </View>
         )}
 
@@ -148,14 +160,18 @@ export default function RequestScreen() {
           label={
             type === 'wanted'
               ? 'What do you have? (optional)'
-              : 'Add a note for the grower (optional)'
+              : type === 'plot'
+                ? 'What should they grow?'
+                : 'Add a note for the grower (optional)'
           }
           value={note}
           onChangeText={setNote}
           placeholder={
             type === 'wanted'
               ? 'I have a big bunch of fresh basil ready now.'
-              : 'When could I pick up? Anything else to know?'
+              : type === 'plot'
+                ? 'San Marzano tomatoes and basil, please — enough for sauce season.'
+                : 'When could I pick up? Anything else to know?'
           }
           multiline
           numberOfLines={3}

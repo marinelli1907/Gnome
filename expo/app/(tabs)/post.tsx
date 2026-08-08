@@ -32,6 +32,7 @@ const HEADING: Record<ListingType, string> = {
   trade: 'Offer a trade',
   sale: 'List something for sale',
   wanted: 'Post what you need',
+  plot: 'Offer a garden plot',
 };
 
 const NOTE: Record<ListingType, string> = {
@@ -39,6 +40,7 @@ const NOTE: Record<ListingType, string> = {
   trade: 'Listings expire after 7 days. Arrange the swap in person.',
   sale: 'Expires after 7 days. Payments happen offline, in person — Gnome never handles money.',
   wanted: 'Wanted posts expire after 30 days. Neighbors with a match can offer it to you.',
+  plot: 'Neighbors request your plot and tell you what to grow. You approve, then arrange payment together — Gnome never handles money.',
 };
 
 export default function PostScreen() {
@@ -57,7 +59,7 @@ export default function PostScreen() {
     fulfilledBy?: string;
   }>();
 
-  const initialType = (['free', 'trade', 'sale', 'wanted'] as const).includes(params.type as ListingType)
+  const initialType = (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)
     ? (params.type as ListingType)
     : 'free';
 
@@ -78,7 +80,7 @@ export default function PostScreen() {
   const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}`;
   useEffect(() => {
     if (params.fulfilledBy || params.title || params.category || params.type) {
-      if (params.type && (['free', 'trade', 'sale', 'wanted'] as const).includes(params.type as ListingType)) {
+      if (params.type && (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)) {
         setType(params.type as ListingType);
       }
       if (params.fulfilledBy) setType('free');
@@ -171,10 +173,15 @@ export default function PostScreen() {
       return;
     }
     let priceCents: number | null = null;
-    if (type === 'sale') {
+    if (type === 'sale' || type === 'plot') {
       const dollars = parseFloat(price);
       if (!Number.isFinite(dollars) || dollars <= 0) {
-        Alert.alert('Add a price', 'Sale listings need a price greater than $0.');
+        Alert.alert(
+          'Add a price',
+          type === 'plot'
+            ? 'Set what it costs to reserve this plot for the season.'
+            : 'Sale listings need a price greater than $0.',
+        );
         return;
       }
       priceCents = Math.round(dollars * 100);
@@ -342,6 +349,21 @@ export default function PostScreen() {
             placeholder="Eggs, herbs, or anything from your garden"
           />
         )}
+        {type === 'plot' && (
+          <View style={styles.typeFields}>
+            <Field
+              label="Reservation price ($)"
+              value={price}
+              onChangeText={setPrice}
+              placeholder="60"
+              keyboardType="decimal-pad"
+            />
+            <Text style={styles.hint}>
+              What a neighbor pays to reserve this plot for the season. They tell you what to grow;
+              you approve and settle payment directly.
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.fieldLabel}>Category</Text>
         <View style={styles.catWrap}>
@@ -367,7 +389,7 @@ export default function PostScreen() {
 
         <Text style={styles.note}>{NOTE[type]}</Text>
         <Button
-          label={isWanted ? 'Post want' : type === 'sale' ? 'List for sale' : type === 'trade' ? 'Post trade' : 'Post listing'}
+          label={isWanted ? 'Post want' : type === 'sale' ? 'List for sale' : type === 'trade' ? 'Post trade' : type === 'plot' ? 'Offer plot' : 'Post listing'}
           onPress={submit}
           loading={busy}
         />

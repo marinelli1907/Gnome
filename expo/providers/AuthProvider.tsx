@@ -21,7 +21,8 @@ interface AuthContextValue {
   userId: string | null;
   loading: boolean;
   configured: boolean;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  /** Resolves with whether email confirmation is still pending (no session yet). */
+  signUp: (email: string, password: string, name: string) => Promise<{ needsConfirm: boolean }>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
@@ -50,12 +51,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, name: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name } },
     });
     if (error) throw error;
+    // With email confirmation off, signUp returns a live session — the user is in.
+    return { needsConfirm: !data.session };
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {

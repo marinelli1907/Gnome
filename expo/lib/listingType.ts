@@ -6,6 +6,7 @@ export const TYPE_LABEL: Record<ListingType, string> = {
   trade: 'Trade',
   sale: 'For Sale',
   wanted: 'Wanted',
+  plot: 'Plot',
 };
 
 export const TYPE_COLOR: Record<ListingType, string> = {
@@ -13,6 +14,7 @@ export const TYPE_COLOR: Record<ListingType, string> = {
   trade: Colors.secondary, // Sage
   sale: Colors.accent, // Tomato
   wanted: Colors.textSecondary, // Muted
+  plot: Colors.primaryLight, // Fresh Green
 };
 
 export const TYPE_FILTERS: { value: 'all' | ListingType; label: string }[] = [
@@ -20,15 +22,17 @@ export const TYPE_FILTERS: { value: 'all' | ListingType; label: string }[] = [
   { value: 'free', label: 'Free' },
   { value: 'trade', label: 'Trade' },
   { value: 'sale', label: 'For Sale' },
+  { value: 'plot', label: 'Plots' },
   { value: 'wanted', label: 'Wanted' },
 ];
 
-// Create-flow chooser (Give Away / Trade / Sell / Wanted).
+// Create-flow chooser (Give Away / Trade / Sell / Wanted / Offer a Plot).
 export const TYPE_CHOICES: { value: ListingType; label: string; emoji: string }[] = [
   { value: 'free', label: 'Give Away', emoji: '🧺' },
   { value: 'trade', label: 'Trade', emoji: '🔄' },
   { value: 'sale', label: 'Sell', emoji: '🏷️' },
   { value: 'wanted', label: 'Wanted', emoji: '🔎' },
+  { value: 'plot', label: 'Offer a Plot', emoji: '🌾' },
 ];
 
 export function formatPrice(cents: number, unit?: string | null): string {
@@ -46,6 +50,8 @@ export function listingValueLabel(l: Pick<Listing, 'listing_type' | 'price_cents
       return l.trade_for ? `Trade for ${l.trade_for}` : 'Open to trade';
     case 'wanted':
       return 'Wanted';
+    case 'plot':
+      return l.price_cents != null ? `${formatPrice(l.price_cents)} to reserve` : 'Plot for rent';
     case 'free':
     default:
       return 'Free';
@@ -60,6 +66,8 @@ export function ctaLabel(type: ListingType): string {
       return 'Request to Buy';
     case 'wanted':
       return 'I Have This';
+    case 'plot':
+      return 'Reserve this plot';
     case 'free':
     default:
       return 'Claim this';

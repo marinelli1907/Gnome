@@ -20,6 +20,7 @@ export const CATEGORIES: Category[] = [
   { id: 'decor', label: 'Decor', emoji: '🍄' },
   { id: 'wood', label: 'Wood', emoji: '🪵' },
   { id: 'meat', label: 'Meat', emoji: '🥩' },
+  { id: 'pet_treats', label: 'Pet Treats', emoji: '🦴' },
   { id: 'other', label: 'Other', emoji: '🧺' },
 ];
 

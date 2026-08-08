@@ -122,6 +122,7 @@ export default function MarketScreen() {
     <View style={styles.header}>
       <Avatar uri={m.avatar_url} name={m.name} size={72} />
       <Text style={styles.name}>{m.name}</Text>
+      {m.tagline ? <Text style={styles.tagline}>“{m.tagline}”</Text> : null}
       {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
       {isOwner && (
         <Button
@@ -192,6 +193,7 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', padding: 20, gap: 6 },
   name: { fontSize: 24, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
+  tagline: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.primaryLight, textAlign: 'center', fontStyle: 'italic', marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
   repWrap: { alignSelf: 'stretch', marginTop: 16 },
   actionsRow: { flexDirection: 'row', gap: 14, alignItems: 'center' },
