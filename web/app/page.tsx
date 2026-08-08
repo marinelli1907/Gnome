@@ -47,8 +47,8 @@ export default async function HomePage() {
             Fresh from the garden <em>next door</em>.
           </h1>
           <p>
-            Gnome is where neighbors share, trade, and sell what they grow — tomatoes,
-            eggs, honey, flowers, plants, and the occasional hand-painted gnome.
+            See what your neighbors are growing, sharing, selling, and looking for
+            today — tomatoes, eggs, honey, plants, and the occasional hand-painted gnome.
           </p>
           <HomeLocate />
           <div className="row">
@@ -73,6 +73,36 @@ export default async function HomePage() {
             ))}
           </div>
           <GnomeMascot className="hero-gnome" />
+        </div>
+      </section>
+
+      {/* --------------------------------------- four pillars: the product map */}
+      <section className="container section pillars-section">
+        <div className="pillars">
+          <Link href="/browse" className="pillar">
+            <span className="pillar-emoji">🧺</span>
+            <h3>See what’s growing near you</h3>
+            <p>Produce, plants, eggs, and garden goods from people nearby — free shares, trades, sales, and wanted posts.</p>
+            <span className="pillar-cta">Browse nearby →</span>
+          </Link>
+          <Link href="/garden" className="pillar">
+            <span className="pillar-emoji">🌱</span>
+            <h3>Grow with Gnome</h3>
+            <p>The Garden Planner tells you what to plant; the Seed Drop sends the seeds; no yard? Reserve a plot nearby.</p>
+            <span className="pillar-cta">Start growing →</span>
+          </Link>
+          <Link href="/my" className="pillar">
+            <span className="pillar-emoji">🏡</span>
+            <h3>Your garden deserves a storefront</h3>
+            <p>Post what you grow, manage availability, chat with neighbors, and build repeat local customers.</p>
+            <span className="pillar-cta">Open My Market →</span>
+          </Link>
+          <Link href="/pricing" className="pillar">
+            <span className="pillar-emoji">🌿</span>
+            <h3>Start free. Grow when you need more.</h3>
+            <p>Browse and share for free, forever. Upgrade when your Market needs more listings, boosts, and AI.</p>
+            <span className="pillar-cta">View plans →</span>
+          </Link>
         </div>
       </section>
 
@@ -102,14 +132,28 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ------------------------------------------- fresh grid */}
+      {/* ------------------------------------------- growing near you today */}
       {recent.length > 0 && (
         <section className="container section">
           <div className="section-head">
-            <h2>Fresh on Gnome</h2>
-            <Link href="/browse">See more →</Link>
+            <h2>Growing near you today</h2>
+            <Link href="/browse">View everything nearby →</Link>
           </div>
           <div className="grid">{recent.map((l) => <ListingCard key={l.id} listing={l} />)}</div>
+        </section>
+      )}
+
+      {/* ------------------------------------------- markets near you */}
+      {markets.length >= 2 && (
+        <section className="container section">
+          <Vine className="vine" />
+          <div className="section-head">
+            <h2>Markets near you</h2>
+          </div>
+          <p className="sub">Neighborhood farm stands — each one is a real person’s garden.</p>
+          <div className="grid">
+            {markets.slice(0, 6).map((m) => <MarketCard key={m.id} market={m} />)}
+          </div>
         </section>
       )}
 
@@ -168,38 +212,58 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ------------------------------- more ways to grow: plots + seed drop */}
-      <section className="container" style={{ marginTop: 6 }}>
-        <Link href="/plots" className="band band-plot">
-          <div className="band-emoji">🧑‍🌾</div>
-          <div className="band-copy">
-            <h2>No garden? Reserve a plot</h2>
-            <p>
-              Pick a plot in a neighbor’s garden and choose the crop — they grow it,
-              you harvest it. Growers: pre-sell your season and turn the whole
-              garden into income.
-            </p>
+      {/* ------------------------------------------- grow with gnome */}
+      <section className="grow-band">
+        <div className="container">
+          <div className="section-head"><h2>Grow with Gnome</h2></div>
+          <p className="grow-band-sub">
+            One ecosystem, three ways in — whether you have a whole yard, a windowsill,
+            or no space at all.
+          </p>
+          <div className="grow-cards">
+            <Link href="/garden" className="grow-card">
+              <span className="pillar-emoji">✨</span>
+              <h3>Garden Planner</h3>
+              <p>Figure out what to grow and when — zone-aware answers for your exact town and week. Free during beta.</p>
+              <span className="pillar-cta">Ask the planner →</span>
+            </Link>
+            <Link href="/seeds" className="grow-card">
+              <span className="pillar-emoji">📦</span>
+              <h3>Seed Drop</h3>
+              <p>Seeds picked for your season and growing zone, packed by hand, shipped with a growing tip for every packet.</p>
+              <span className="pillar-cta">See the drops →</span>
+            </Link>
+            <Link href="/plots" className="grow-card">
+              <span className="pillar-emoji">🧑‍🌾</span>
+              <h3>Reserve a Plot</h3>
+              <p>No room to grow? Reserve space in a nearby grower’s garden — you pick the crop, they grow it, you harvest.</p>
+              <span className="pillar-cta">Find growing space →</span>
+            </Link>
           </div>
-          <span className="band-cta">
-            Explore plots <span className="band-arrow">→</span>
-          </span>
-        </Link>
+        </div>
       </section>
 
-      <section className="container" style={{ marginTop: 14 }}>
-        <Link href="/seeds" className="band">
-          <div className="band-emoji">📦</div>
-          <div className="band-copy">
-            <h2>Start growing: The Gnome Seed Drop</h2>
-            <p>
-              Seeds picked for your zone and the season — chosen by AI, packed by
-              hand, shipped anywhere in the U.S. with a growing tip for every packet.
+      {/* ------------------------------------------- pricing strip */}
+      <section className="container section">
+        <div className="pricing-strip">
+          <div>
+            <h2>Start free. Grow when you need more.</h2>
+            <p className="sub" style={{ margin: '4px 0 0' }}>
+              Neighbor is free forever · Grower $9.99/mo · Farm $29.99/mo —
+              and <strong>Gnome takes 0% of neighbor-to-neighbor sales</strong>.
             </p>
           </div>
-          <span className="band-cta">
-            See the drops <span className="band-arrow">→</span>
-          </span>
-        </Link>
+          <Link className="btn btn-primary" href="/pricing">View plans</Link>
+        </div>
+      </section>
+
+      {/* ------------------------------------------- trust strip */}
+      <section className="container">
+        <p className="trust-strip">
+          🛡️ Built for neighborly exchanges — approximate public locations, private
+          pickup details, report &amp; block, and food-safety guidance.{' '}
+          <Link href="/trust">How Gnome keeps it friendly →</Link>
+        </p>
       </section>
 
       {/* ------------------------------------------- areas + final CTA */}

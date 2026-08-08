@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Fraunces, Inter } from 'next/font/google';
 import './globals.css';
 import { GnomeMark } from './components/art';
+import GnomeAssistant from './components/GnomeAssistant';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 // Display face: a soft, seed-catalog serif for headlines only.
@@ -71,11 +72,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="nav-links">
                 <Link href="/browse">Browse</Link>
                 <span className="nav-grow">
-                  <button type="button" aria-haspopup="true">Grow ▾</button>
-                  <span className="nav-grow-menu">
-                    <Link href="/garden">✨ Garden Planner</Link>
-                    <Link href="/seeds">🌱 Seed Drop</Link>
-                    <Link href="/plots">🧑‍🌾 Reserve a Plot</Link>
+                  <button type="button" aria-haspopup="true" aria-label="Grow menu: Garden Planner, Seed Drop, Reserve a Plot">Grow ▾</button>
+                  <span className="nav-grow-menu" role="menu">
+                    <Link href="/garden" role="menuitem">
+                      <span className="ngm-title">✨ Garden Planner</span>
+                      <span className="ngm-desc">Know what to plant, and when</span>
+                    </Link>
+                    <Link href="/seeds" role="menuitem">
+                      <span className="ngm-title">🌱 Seed Drop</span>
+                      <span className="ngm-desc">Seeds picked for your season</span>
+                    </Link>
+                    <Link href="/plots" role="menuitem">
+                      <span className="ngm-title">🧑‍🌾 Reserve a Plot</span>
+                      <span className="ngm-desc">Grow without the space</span>
+                    </Link>
                   </span>
                 </span>
                 <Link href="/pricing">Pricing</Link>
@@ -87,6 +97,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         {children}
+        <GnomeAssistant />
         <footer className="footer">
           <div className="container">
             <div className="footer-cols">
