@@ -111,6 +111,9 @@ export function SignInCard({ title, blurb }: { title?: string; blurb?: string })
       )}
       {error && <p className="autherror">{error}</p>}
       <p className="authhint">
+        Prefer a password? <a href="/login">Sign in or create an account</a>.
+      </p>
+      <p className="authhint">
         By continuing you agree to the <a href="/terms">Terms</a> and{' '}
         <a href="/privacy">Privacy Policy</a>.
       </p>

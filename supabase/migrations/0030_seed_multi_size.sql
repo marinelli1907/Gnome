@@ -1,0 +1,6 @@
+-- Gnome — Seed Drop: multi-select growing spaces. Run after 0029.
+-- seed_profiles.garden_sizes text[] added; generate_seed_drop() recreated to
+-- apply container-only constraints ONLY when every selected space is small
+-- (windowsill/containers). Legacy single garden_size remains as fallback.
+-- Applied live 2026-08-07; full function body identical to the live version
+-- (see 0028 for the original engine; the only change is the sizes/small calc).

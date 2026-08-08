@@ -33,7 +33,8 @@ export default function SeedProfileClient() {
 
   const [zip, setZip] = useState('');
   const [zone, setZone] = useState<string>('6');
-  const [size, setSize] = useState<string>('unsure');
+  const [zoneAuto, setZoneAuto] = useState(false);
+  const [sizes, setSizes] = useState<string[]>([]);
   const [sun, setSun] = useState<string>('unsure');
   const [exp, setExp] = useState<string>('beginner');
   const [prefs, setPrefs] = useState<string[]>([]);
@@ -50,7 +51,8 @@ export default function SeedProfileClient() {
         if (!data) return;
         if (data.zip) setZip(data.zip);
         if (data.zone) setZone(String(data.zone));
-        if (data.garden_size) setSize(data.garden_size);
+        if (data.garden_sizes?.length) setSizes(data.garden_sizes);
+        else if (data.garden_size && data.garden_size !== 'unsure') setSizes([data.garden_size]);
         if (data.sun) setSun(data.sun);
         if (data.experience) setExp(data.experience);
         if (data.preferences?.length) setPrefs(data.preferences);
@@ -58,6 +60,29 @@ export default function SeedProfileClient() {
         setSaved(true);
       });
   }, [uid]);
+
+  // Auto hardiness zone from ZIP: geocode via Nominatim (keyless), then a
+  // latitude-band estimate calibrated to USDA zones (±1 zone typical; the
+  // select stays editable, and the engine only shifts timing at extremes).
+  useEffect(() => {
+    if (!/^\d{5}$/.test(zip)) return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&country=us&postalcode=${zip}`,
+          { headers: { Accept: 'application/json' } },
+        );
+        const rows = (await res.json()) as { lat: string }[];
+        if (!rows[0]) return;
+        const lat = Number(rows[0].lat);
+        if (!lat) return;
+        const est = Math.min(10, Math.max(3, Math.round(10.5 - 0.302 * (lat - 25.8))));
+        setZone(String(est));
+        setZoneAuto(true);
+      } catch { /* zone stays manual */ }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [zip]);
 
   async function save(): Promise<boolean> {
     if (!uid) return false;
@@ -68,7 +93,8 @@ export default function SeedProfileClient() {
       user_id: uid,
       zip: zip.trim(),
       zone: Number(zone),
-      garden_size: size,
+      garden_sizes: sizes,
+      garden_size: sizes[0] ?? 'unsure',   // legacy single-value mirror
       sun,
       experience: exp,
       preferences: prefs,
@@ -110,19 +136,26 @@ export default function SeedProfileClient() {
       </div>
 
       <div className="field">
-        <label>Hardiness zone (best guess is fine)</label>
-        <select value={zone} onChange={(e) => setZone(e.target.value)}>
+        <label>Hardiness zone{zoneAuto ? ' — set automatically from your ZIP, adjust if you know better' : ' (best guess is fine)'}</label>
+        <select value={zone} onChange={(e) => { setZone(e.target.value); setZoneAuto(false); }}>
           {[3, 4, 5, 6, 7, 8, 9, 10].map((z) => (
-            <option key={z} value={z}>Zone {z}{z === 6 ? ' — most of NE Ohio (pick this if unsure)' : ''}</option>
+            <option key={z} value={z}>Zone {z}{z === 6 ? ' — most of NE Ohio' : ''}</option>
           ))}
         </select>
       </div>
 
       <div className="field">
-        <label>Where will these grow?</label>
+        <label>Where will these grow? (pick all that apply)</label>
         <div className="chiprow">
-          {SIZES.map(([v, l]) => (
-            <button key={v} type="button" className={`chip${size === v ? ' active' : ''}`} onClick={() => setSize(v)}>{l}</button>
+          {SIZES.filter(([v]) => v !== 'unsure').map(([v, l]) => (
+            <button
+              key={v}
+              type="button"
+              className={`chip${sizes.includes(v) ? ' active' : ''}`}
+              onClick={() => setSizes(sizes.includes(v) ? sizes.filter((s) => s !== v) : [...sizes, v])}
+            >
+              {l}
+            </button>
           ))}
         </div>
       </div>
