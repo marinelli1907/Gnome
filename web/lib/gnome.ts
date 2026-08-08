@@ -35,6 +35,8 @@ export interface WebListing {
   featured_until: string | null;
   has_active_promotion: boolean | null;
   is_demo?: boolean | null;
+  market_position?: number | null;
+  market_featured?: boolean | null;
   approx_lat?: number | null;
   approx_lng?: number | null;
 }
@@ -64,10 +66,12 @@ export interface WebMarket {
   trades_completed: number;
   response_rate: number | null;
   verified_email?: boolean;
+  tagline?: string | null;
+  theme?: string | null;
 }
 
 const LISTING_COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured';
 
 async function rest<T>(view: string, params: Record<string, string>, revalidate: number): Promise<T[]> {
   if (!SUPABASE_URL || !ANON) return [];
@@ -132,14 +136,14 @@ export async function getMarketListings(marketId: string, limit = 60): Promise<W
   return rest<WebListing>('public_listings', {
     select: LISTING_COLS,
     market_id: `eq.${marketId}`,
-    order: 'has_active_promotion.desc,created_at.desc',
+    order: 'market_position.asc.nullslast,has_active_promotion.desc,created_at.desc',
     limit: String(limit),
   }, 300);
 }
 
 // --- Markets --------------------------------------------------------------
 const MARKET_COLS =
-  'id,slug,name,description,market_type,status,avatar_url,banner_url,city,county,state,verified,sponsor_visible,website_url,instagram_url,facebook_url,created_at,active_listing_count,member_since,listings_shared,listings_sold,trades_completed,response_rate,verified_email';
+  'id,slug,name,description,market_type,status,avatar_url,banner_url,city,county,state,verified,sponsor_visible,website_url,instagram_url,facebook_url,created_at,active_listing_count,member_since,listings_shared,listings_sold,trades_completed,response_rate,verified_email,tagline,theme';
 
 export async function getFeaturedMarkets(limit = 8): Promise<WebMarket[]> {
   return rest<WebMarket>('public_markets', {

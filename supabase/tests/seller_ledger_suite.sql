@@ -1,0 +1,9 @@
+-- Seller ledger integrity suite (run without COMMIT; rolls back).
+-- Last full run 2026-08-08: 5/5 PASS —
+-- T1 cash sale: ledger row + guarded inventory 10->8, net=gross
+-- T2 oversell rejected: INSUFFICIENT_INVENTORY, never negative
+-- T3 void_sale keeps row (status=void + reason) and restores inventory
+-- T4 net = gross - discount - fee; listing optional (quick sale)
+-- T5 privacy: other users see zero foreign ledger rows; record_sale into a
+--    foreign market raises. See conversation history / rerun pattern in
+--    rls_suite.sql for the harness (set_config jwt + SET LOCAL ROLE).

@@ -53,7 +53,7 @@ export default async function MarketPage({ params }: Params) {
         // eslint-disable-next-line @next/next/no-img-element
         <img className="banner" src={m.banner_url} alt={m.name} />
       ) : (
-        <div className="banner" />
+        <div className={`banner theme-${m.theme ?? 'garden'}`} />
       )}
 
       <div className="market-title">
@@ -76,6 +76,7 @@ export default async function MarketPage({ params }: Params) {
         <FollowButton marketId={m.id} />
       </div>
 
+      {m.tagline ? <p className="market-tagline">“{m.tagline}”</p> : null}
       {m.description ? <p className="desc" style={{ maxWidth: 720 }}>{m.description}</p> : null}
 
       <div className="rep">
@@ -114,6 +115,17 @@ export default async function MarketPage({ params }: Params) {
 
       <section className="section">
         <div className="section-head"><h2>From this Market</h2></div>
+        {listings.some((l) => l.market_featured) && (
+          <>
+            <div className="section-head" style={{ marginTop: 4 }}><h2>⭐ Featured</h2></div>
+            <div className="grid" style={{ marginBottom: 22 }}>
+              {listings.filter((l) => l.market_featured).map((l) => (
+                <ListingCard key={l.id} listing={l} promoted={!!l.has_active_promotion} />
+              ))}
+            </div>
+            <div className="section-head"><h2>Everything at this Market</h2></div>
+          </>
+        )}
         {listings.length > 0 ? (
           <div className="grid">{listings.map((l) => <ListingCard key={l.id} listing={l} promoted={!!l.has_active_promotion} />)}</div>
         ) : (

@@ -1,0 +1,17 @@
+-- Gnome — My Market storefront + seller accounting (applied live 2026-08-08).
+-- Additive. Full SQL in Supabase migration history '0032_seller_storefront'.
+--
+-- markets: + tagline (<=120 chars), + theme (garden|harvest|herb|farm_stand|minimal)
+-- listings: + market_position int (presentation-only ordering),
+--           + market_featured bool (seller's own featured — distinct from paid boosts)
+-- NEW seller_transactions: market/listing/claim refs, source manual|request,
+--   quantity, gross/discount/fee cents, net GENERATED, payment_method
+--   (cash|venmo|zelle|cashapp|check|external_card|other|gnome), buyer_label,
+--   notes, status completed|void (+void_reason, corrected_from), sold_at.
+-- NEW seller_expenses: date, category enum-checked, amount_cents, vendor, notes.
+-- RLS: owns_market() definer helper; owner-only ALL on both tables; admin
+--   SELECT-only (deliberately no admin write policy).
+-- RPC record_sale(...): definer, re-checks ownership + listing∈market,
+--   guarded inventory_count decrement (INSUFFICIENT_INVENTORY, never negative),
+--   ledger insert — atomic. RPC void_sale(txn, reason): keeps the row
+--   (status=void), restores consumed inventory. Both EXECUTE-revoked from anon.

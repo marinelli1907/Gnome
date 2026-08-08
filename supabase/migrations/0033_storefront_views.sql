@@ -1,0 +1,6 @@
+-- Gnome — storefront fields in public views + seller analytics events
+-- (applied live 2026-08-08; full SQL in Supabase migration history).
+-- public_listings: + market_position, market_featured (append-only).
+-- public_markets: exact prior definition + tagline, theme appended.
+-- events_guard allowlist += web_sale_recorded, web_expense_recorded,
+--   web_market_customized, web_market_reordered.
