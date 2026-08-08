@@ -65,7 +65,7 @@ export default function GardenClient() {
     if (!uid) return;
     supabaseBrowser()
       .from('seed_orders')
-      .select('id,status,items:seed_order_items(status,product:seed_products(crop,variety))')
+      .select('id,status,items:seed_order_items(status,product:seed_products!seed_order_items_seed_product_id_fkey(crop,variety))')
       .eq('user_id', uid)
       .in('status', ['selected', 'packed', 'shipped'])
       .order('created_at', { ascending: false })

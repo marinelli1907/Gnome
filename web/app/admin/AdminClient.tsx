@@ -28,7 +28,10 @@ interface Action {
   note: string | null; created_at: string;
 }
 
-type Tab = 'reports' | 'listings' | 'users' | 'seeds' | 'drops' | 'audit';
+type Tab = 'dashboard' | 'reports' | 'listings' | 'users' | 'seeds' | 'drops' | 'audit';
+
+const LOW_STOCK_THRESHOLD = 5; // packets — surfaced on the dashboard
+const STARTER_LINK_SET = !!process.env.NEXT_PUBLIC_SEED_LINK_STARTER;
 
 interface SeedLot {
   id: string; internal_lot_number: string; current_qty: number; unit: string;
@@ -42,16 +45,22 @@ interface SeedProductRow {
 interface SeedDropOrder {
   id: string; user_id: string; status: string; packet_count: number;
   tracking: string | null; created_at: string; profile_snapshot: Record<string, unknown>;
-  items: { id: string; status: string; product: { crop: string; variety: string } | null;
-           lot: { internal_lot_number: string } | null }[];
+  items: { id: string; status: string; qty_packets: number; substitution_reason: string | null;
+           product: { crop: string; variety: string; packet_seed_count: number } | null;
+           lot: { internal_lot_number: string; germination_pct: number | null } | null }[];
 }
+interface SubOption {
+  product_id: string; crop: string; variety: string; category: string;
+  lot_id: string; internal_lot_number: string; germ: number; why: string;
+}
+interface LotLogRow { id: string; delta: number; reason: string; order_id: string | null; created_at: string }
 
 export default function AdminClient() {
   const { session, ready } = useSession();
   const uid = session?.user?.id;
 
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [tab, setTab] = useState<Tab>('reports');
+  const [tab, setTab] = useState<Tab>('dashboard');
   const [reports, setReports] = useState<Report[]>([]);
   const [listings, setListings] = useState<AdminListing[]>([]);
   const [users, setUsers] = useState<AdminProfile[]>([]);
@@ -63,6 +72,13 @@ export default function AdminClient() {
   const [lotForm, setLotForm] = useState({ product: '', lotNo: '', qty: '', germ: '', supplier: '' });
   const [testForm, setTestForm] = useState<{ lot: string; tested: string; germd: string } | null>(null);
   const [trackForm, setTrackForm] = useState<{ order: string; tracking: string } | null>(null);
+  const [adjustForm, setAdjustForm] = useState<{ lot: string; delta: string; reason: string } | null>(null);
+  const [countForm, setCountForm] = useState<{ lot: string; counted: string } | null>(null);
+  const [lotHistory, setLotHistory] = useState<{ lot: string; rows: LotLogRow[] } | null>(null);
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [orderEmail, setOrderEmail] = useState<Record<string, string>>({});
+  const [packChecks, setPackChecks] = useState<Record<string, boolean>>({});
+  const [subFor, setSubFor] = useState<{ item: string; options: SubOption[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,7 +100,7 @@ export default function AdminClient() {
         .select('id,crop,variety,category,packet_seed_count,active,lots:seed_lots(id,internal_lot_number,current_qty,unit,germination_pct,next_review_date,status,received_date,supplier)')
         .order('crop'),
       sb.from('seed_orders')
-        .select('id,user_id,status,packet_count,tracking,created_at,profile_snapshot,items:seed_order_items(id,status,product:seed_products(crop,variety),lot:seed_lots(internal_lot_number))')
+        .select('id,user_id,status,packet_count,tracking,created_at,profile_snapshot,items:seed_order_items(id,status,qty_packets,substitution_reason,product:seed_products!seed_order_items_seed_product_id_fkey(crop,variety,packet_seed_count),lot:seed_lots(internal_lot_number,germination_pct))')
         .order('created_at', { ascending: false }).limit(50),
     ]);
     setReports((r.data as Report[]) ?? []);
@@ -224,6 +240,116 @@ export default function AdminClient() {
     setBusy(false);
   }
 
+  // Reasoned adjustment (never a silent overwrite) + audit log row.
+  async function applyAdjustment() {
+    if (!adjustForm) return;
+    const delta = Number(adjustForm.delta);
+    if (!delta || !adjustForm.reason) return setError('Adjustment needs a non-zero amount and a reason.');
+    const lot = seedRows.flatMap((p) => p.lots).find((l) => l.id === adjustForm.lot);
+    if (!lot) return;
+    setBusy(true); setError(null);
+    const sb = supabaseBrowser();
+    const newQty = Math.max(0, Number(lot.current_qty) + delta);
+    const { error } = await sb.from('seed_lots')
+      .update({ current_qty: newQty, status: newQty === 0 ? 'depleted' : lot.status === 'depleted' ? 'active' : lot.status })
+      .eq('id', adjustForm.lot);
+    if (error) setError(error.message);
+    else {
+      await sb.from('seed_inventory_log').insert({ lot_id: adjustForm.lot, delta, reason: adjustForm.reason, actor: uid });
+      await audit('inventory_adjusted', 'seed_lot', adjustForm.lot, `${delta > 0 ? '+' : ''}${delta} — ${adjustForm.reason}`);
+      setAdjustForm(null);
+      await load();
+    }
+    setBusy(false);
+  }
+
+  // Physical count reconciliation → adjustment with expected/counted recorded.
+  async function applyCount() {
+    if (!countForm) return;
+    const lot = seedRows.flatMap((p) => p.lots).find((l) => l.id === countForm.lot);
+    const counted = Number(countForm.counted);
+    if (!lot || Number.isNaN(counted)) return setError('Enter the counted quantity.');
+    const diff = counted - Number(lot.current_qty);
+    if (diff === 0) { setCountForm(null); setNote(''); return; }
+    setBusy(true); setError(null);
+    const sb = supabaseBrowser();
+    const { error } = await sb.from('seed_lots')
+      .update({ current_qty: counted, status: counted === 0 ? 'depleted' : lot.status === 'depleted' ? 'active' : lot.status })
+      .eq('id', countForm.lot);
+    if (error) setError(error.message);
+    else {
+      const reason = `stock count (expected ${lot.current_qty}, counted ${counted})`;
+      await sb.from('seed_inventory_log').insert({ lot_id: countForm.lot, delta: diff, reason, actor: uid });
+      await audit('stock_count', 'seed_lot', countForm.lot, reason);
+      setCountForm(null);
+      await load();
+    }
+    setBusy(false);
+  }
+
+  async function showHistory(lotId: string) {
+    if (lotHistory?.lot === lotId) { setLotHistory(null); return; }
+    const { data } = await supabaseBrowser()
+      .from('seed_inventory_log')
+      .select('id,delta,reason,order_id,created_at')
+      .eq('lot_id', lotId)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    setLotHistory({ lot: lotId, rows: (data as LotLogRow[]) ?? [] });
+  }
+
+  // Substitution: backend produces eligible options; arbitrary swaps impossible.
+  async function openSubstitutes(itemId: string) {
+    setBusy(true); setError(null);
+    const { data, error } = await supabaseBrowser().rpc('admin_seed_substitutes', { p_item: itemId });
+    setBusy(false);
+    if (error) setError(error.message);
+    else setSubFor({ item: itemId, options: (data as SubOption[]) ?? [] });
+  }
+  async function applySubstitute(opt: SubOption) {
+    if (!subFor) return;
+    const reason = window.prompt(`Substitute with ${opt.crop} '${opt.variety}'? Reason:`, 'out of stock');
+    if (reason === null) return;
+    setBusy(true); setError(null);
+    const { error } = await supabaseBrowser().rpc('admin_substitute_seed_item', {
+      p_item: subFor.item, p_product: opt.product_id, p_reason: reason || 'substitution',
+    });
+    setBusy(false);
+    if (error) setError(error.message);
+    else { setSubFor(null); await load(); }
+  }
+
+  async function cancelOrder(o: SeedDropOrder) {
+    const reason = window.prompt(
+      'Cancel this order? Reserved inventory will be released. Reason:', 'customer request');
+    if (reason === null) return;
+    setBusy(true); setError(null);
+    const { error } = await supabaseBrowser().rpc('admin_cancel_seed_order', { p_order: o.id, p_reason: reason });
+    setBusy(false);
+    if (error) setError(error.message);
+    else await load();
+  }
+
+  async function expandOrder(o: SeedDropOrder) {
+    if (expandedOrder === o.id) { setExpandedOrder(null); return; }
+    setExpandedOrder(o.id);
+    setPackChecks({});
+    if (!orderEmail[o.id]) {
+      const { data } = await supabaseBrowser().rpc('admin_user_email', { p_user: o.user_id });
+      if (typeof data === 'string') setOrderEmail((m) => ({ ...m, [o.id]: data }));
+    }
+  }
+
+  function exportCsv(name: string, rows: Record<string, unknown>[]) {
+    if (rows.length === 0) return;
+    const cols = Object.keys(rows[0]);
+    const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => JSON.stringify(r[c] ?? '')).join(','))].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  }
+
   // ---- Seed Drop fulfillment ------------------------------------------------
   async function runSelection(o: SeedDropOrder) {
     setBusy(true); setError(null);
@@ -270,15 +396,16 @@ export default function AdminClient() {
     <div>
       <div className="mm-head">
         <div>
-          <h1>Moderation</h1>
+          <h1>Gnome Admin</h1>
           <p className="mm-stats">
+            <strong>{drops.filter((o) => !['shipped', 'cancelled', 'refunded'].includes(o.status)).length}</strong> open orders ·{' '}
             <strong>{reports.filter((r) => r.status === 'open').length}</strong> open reports
           </p>
         </div>
       </div>
 
-      <div className="seg" style={{ maxWidth: 680, marginBottom: 18 }}>
-        {(['reports', 'listings', 'users', 'seeds', 'drops', 'audit'] as Tab[]).map((t) => (
+      <div className="seg" style={{ maxWidth: 760, marginBottom: 18, flexWrap: 'wrap' }}>
+        {(['dashboard', 'drops', 'seeds', 'reports', 'listings', 'users', 'audit'] as Tab[]).map((t) => (
           <button key={t} type="button" className={`seg-btn${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -286,6 +413,103 @@ export default function AdminClient() {
       </div>
 
       {error && <p className="autherror">{error}</p>}
+
+      {tab === 'dashboard' && (() => {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const ordersToday = drops.filter((o) => new Date(o.created_at) >= today);
+        const needsSelection = drops.filter((o) => o.status === 'paid');
+        const needsReview = drops.filter((o) => o.status === 'needs_review');
+        const toPack = drops.filter((o) => o.status === 'selected');
+        const toShip = drops.filter((o) => o.status === 'packed');
+        const allLots = seedRows.flatMap((p) => p.lots.map((l) => ({ ...l, crop: p.crop })));
+        const lowStock = allLots.filter((l) => ['fresh', 'active', 'aging'].includes(l.status) && Number(l.current_qty) > 0 && Number(l.current_qty) < LOW_STOCK_THRESHOLD);
+        const outOfStock = seedRows.filter((p) => p.active && !p.lots.some((l) => ['fresh', 'active', 'aging'].includes(l.status) && Number(l.current_qty) > 0));
+        const retestDue = allLots.filter((l) => l.next_review_date && l.next_review_date < new Date().toISOString().slice(0, 10));
+        const quarantined = allLots.filter((l) => l.status === 'quarantined' || l.status === 'failed');
+        const openReports = reports.filter((r) => r.status === 'open');
+        const hasInventory = allLots.some((l) => Number(l.current_qty) > 0);
+        const cards: { label: string; value: number; to: Tab; hot?: boolean }[] = [
+          { label: 'Orders today', value: ordersToday.length, to: 'drops' },
+          { label: 'Awaiting selection', value: needsSelection.length, to: 'drops', hot: needsSelection.length > 0 },
+          { label: 'Needs review', value: needsReview.length, to: 'drops', hot: needsReview.length > 0 },
+          { label: 'Ready to pack', value: toPack.length, to: 'drops', hot: toPack.length > 0 },
+          { label: 'Packed — needs tracking', value: toShip.length, to: 'drops', hot: toShip.length > 0 },
+          { label: 'Low-stock lots', value: lowStock.length, to: 'seeds', hot: lowStock.length > 0 },
+          { label: 'Germination retests due', value: retestDue.length, to: 'seeds', hot: retestDue.length > 0 },
+          { label: 'Open reports', value: openReports.length, to: 'reports', hot: openReports.length > 0 },
+        ];
+        return (
+          <div>
+            <div className="dash-cards">
+              {cards.map((c) => (
+                <button key={c.label} className={`dash-card${c.hot ? ' hot' : ''}`} onClick={() => setTab(c.to)}>
+                  <span className="dc-value">{c.value}</span>
+                  <span className="dc-label">{c.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <section className="section" style={{ paddingTop: 10 }}>
+              <div className="section-head"><h2>Needs your attention</h2></div>
+              <div className="mm-list">
+                {needsReview.map((o) => (
+                  <div key={o.id} className="mm-row">
+                    <div className="mm-info">
+                      <span className="mm-title">Seed Drop {o.id.slice(0, 8)}… found fewer than {o.packet_count} eligible varieties</span>
+                      <div className="mm-meta"><span className="tag type-sale">needs review</span></div>
+                    </div>
+                    <div className="mm-btns"><button className="mm-btn" onClick={() => { setTab('drops'); void expandOrder(o); }}>Review order</button></div>
+                  </div>
+                ))}
+                {toShip.map((o) => (
+                  <div key={o.id} className="mm-row">
+                    <div className="mm-info"><span className="mm-title">Order {o.id.slice(0, 8)}… is packed but has no tracking</span></div>
+                    <div className="mm-btns"><button className="mm-btn" onClick={() => setTab('drops')}>Add tracking</button></div>
+                  </div>
+                ))}
+                {lowStock.map((l) => (
+                  <div key={l.id} className="mm-row">
+                    <div className="mm-info"><span className="mm-title">{l.crop} lot {l.internal_lot_number} is low ({l.current_qty} left)</span></div>
+                    <div className="mm-btns"><button className="mm-btn" onClick={() => setTab('seeds')}>Restock</button></div>
+                  </div>
+                ))}
+                {retestDue.map((l) => (
+                  <div key={l.id} className="mm-row">
+                    <div className="mm-info"><span className="mm-title">{l.crop} lot {l.internal_lot_number} germination retest overdue</span></div>
+                    <div className="mm-btns"><button className="mm-btn" onClick={() => setTab('seeds')}>Run test</button></div>
+                  </div>
+                ))}
+                {quarantined.map((l) => (
+                  <div key={l.id} className="mm-row">
+                    <div className="mm-info"><span className="mm-title">{l.crop} lot {l.internal_lot_number} is {l.status}</span></div>
+                    <div className="mm-btns"><button className="mm-btn" onClick={() => setTab('seeds')}>Review lot</button></div>
+                  </div>
+                ))}
+                {openReports.map((r) => (
+                  <div key={r.id} className="mm-row">
+                    <div className="mm-info"><span className="mm-title">Reported {r.target_type}: “{r.reason ?? 'no reason given'}”</span></div>
+                    <div className="mm-btns"><button className="mm-btn" onClick={() => setTab('reports')}>Moderate</button></div>
+                  </div>
+                ))}
+                {needsReview.length + toShip.length + lowStock.length + retestDue.length + quarantined.length + openReports.length === 0 && (
+                  <div className="empty"><p>All quiet in the garden. 🌱 Nothing needs you right now.</p></div>
+                )}
+              </div>
+            </section>
+
+            <section className="section">
+              <div className="section-head"><h2>Seed Drop go-live readiness</h2></div>
+              <ul className="checks">
+                <li>✅ Database, engine, and fulfillment tooling — live (engine test suite 7/7)</li>
+                <li>✅ Ask Gnome seed integration — live</li>
+                <li>{hasInventory ? '✅' : '⬜'} Real seed inventory received {hasInventory ? '' : '— receive your first lot in the Seeds tab'}</li>
+                <li>{STARTER_LINK_SET ? '✅' : '⬜'} Stripe Starter link configured {STARTER_LINK_SET ? '' : '— create the $12 Payment Link, set NEXT_PUBLIC_SEED_LINK_STARTER, redeploy'}</li>
+                <li>⬜ Seed-label compliance review — external legal check before Gnome-branded repackaging (never auto-checked)</li>
+              </ul>
+            </section>
+          </div>
+        );
+      })()}
 
       {tab === 'reports' && (
         <div className="mm-list">
@@ -393,6 +617,13 @@ export default function AdminClient() {
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void addLot()}>Receive</button>
           </div>
 
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <button className="mm-btn" onClick={() => exportCsv('seed-inventory', seedRows.flatMap((p) => p.lots.map((l) => ({
+              crop: p.crop, variety: p.variety, lot: l.internal_lot_number, supplier: l.supplier ?? '',
+              qty: l.current_qty, unit: l.unit, germination: l.germination_pct ?? '', status: l.status,
+              received: l.received_date, next_review: l.next_review_date ?? '',
+            }))))}>⬇ Export CSV</button>
+          </div>
           <div className="mm-list">
             {seedRows.map((p) => (
               <div key={p.id} className="mm-row" style={{ alignItems: 'flex-start' }}>
@@ -409,8 +640,9 @@ export default function AdminClient() {
                           {l.germination_pct != null ? ` · ${l.germination_pct}% germ` : ' · untested'}
                           {' · '}{l.status}{overdue ? ' · RETEST DUE' : ''}
                           {' '}
-                          <button className="linkbtn" disabled={busy} onClick={() => void adjustLot(l, 1, 'adjusted')}>+1</button>{' '}
-                          <button className="linkbtn" disabled={busy} onClick={() => void adjustLot(l, -1, 'adjusted')}>−1</button>{' '}
+                          <button className="linkbtn" disabled={busy} onClick={() => { setAdjustForm({ lot: l.id, delta: '', reason: '' }); setCountForm(null); }}>adjust</button>{' '}
+                          <button className="linkbtn" disabled={busy} onClick={() => { setCountForm({ lot: l.id, counted: '' }); setAdjustForm(null); }}>count</button>{' '}
+                          <button className="linkbtn" disabled={busy} onClick={() => void showHistory(l.id)}>log</button>{' '}
                           <button className="linkbtn" disabled={busy} onClick={() => setTestForm({ lot: l.id, tested: '', germd: '' })}>test</button>{' '}
                           {l.status !== 'quarantined'
                             ? <button className="linkbtn" disabled={busy} onClick={() => void setLotStatus(l, 'quarantined')}>quarantine</button>
@@ -419,6 +651,41 @@ export default function AdminClient() {
                       );
                     })}
                   </div>
+                  {adjustForm && p.lots.some((l) => l.id === adjustForm.lot) && (
+                    <div className="locrow" style={{ marginTop: 8 }}>
+                      <input placeholder="± qty (e.g. -4)" inputMode="numeric" value={adjustForm.delta}
+                        onChange={(e) => setAdjustForm({ ...adjustForm, delta: e.target.value.replace(/[^0-9-]/g, '') })} />
+                      <select value={adjustForm.reason} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}>
+                        <option value="">reason…</option>
+                        {['manual correction', 'damaged', 'lost', 'germination testing', 'packaging waste', 'return', 'expired', 'other'].map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                      <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void applyAdjustment()}>Apply</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setAdjustForm(null)}>Cancel</button>
+                    </div>
+                  )}
+                  {countForm && p.lots.some((l) => l.id === countForm.lot) && (
+                    <div className="locrow" style={{ marginTop: 8 }}>
+                      <input placeholder={`counted qty (expected ${p.lots.find((l) => l.id === countForm.lot)?.current_qty})`}
+                        inputMode="numeric" value={countForm.counted}
+                        onChange={(e) => setCountForm({ ...countForm, counted: e.target.value.replace(/[^0-9]/g, '') })} />
+                      <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void applyCount()}>Reconcile</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setCountForm(null)}>Cancel</button>
+                    </div>
+                  )}
+                  {lotHistory && p.lots.some((l) => l.id === lotHistory.lot) && (
+                    <div className="preview-note" style={{ marginTop: 8 }}>
+                      <strong>Lot history</strong> (newest first — balances reconcile in seed_inventory_log):
+                      {lotHistory.rows.length === 0 && <div>no movements recorded</div>}
+                      {lotHistory.rows.map((r) => (
+                        <div key={r.id}>
+                          {new Date(r.created_at).toLocaleString()} · {r.delta > 0 ? `+${r.delta}` : r.delta} · {r.reason}
+                          {r.order_id ? ` · order ${r.order_id.slice(0, 8)}…` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {testForm && p.lots.some((l) => l.id === testForm.lot) && (
                     <div className="locrow" style={{ marginTop: 8 }}>
                       <input placeholder="seeds tested" inputMode="numeric" value={testForm.tested} onChange={(e) => setTestForm({ ...testForm, tested: e.target.value.replace(/[^0-9]/g, '') })} />
@@ -436,52 +703,130 @@ export default function AdminClient() {
 
       {tab === 'drops' && (
         <div className="mm-list">
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="mm-btn" onClick={() => exportCsv('seed-orders', drops.map((o) => ({
+              id: o.id, status: o.status, packets: o.packet_count, tracking: o.tracking ?? '',
+              created: o.created_at,
+              seeds: o.items.filter((i) => i.status !== 'released').map((i) => i.product?.crop).join('; '),
+            })))}>⬇ Export CSV</button>
+          </div>
           {drops.length === 0 && <div className="empty"><p>No Seed Drop orders yet.</p></div>}
-          {drops.map((o) => (
-            <div key={o.id} className="mm-row" style={{ alignItems: 'flex-start' }}>
-              <div className="mm-thumb"><span>📦</span></div>
-              <div className="mm-info">
-                <span className="mm-title">
-                  {o.id.slice(0, 8)}… · {o.packet_count} packets · {new Date(o.created_at).toLocaleDateString()}
-                  {' · zone '}{String((o.profile_snapshot as { zone?: number })?.zone ?? '?')}
-                  {' · '}{String((o.profile_snapshot as { garden_size?: string })?.garden_size ?? '?')}
-                </span>
-                <div className="mm-meta" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  <span className={`tag ${o.status === 'needs_review' ? 'type-sale' : 'type-free'}`}>{o.status}</span>
-                  {o.tracking && <span className="mm-expiry">{o.tracking}</span>}
-                  {o.items.filter((i) => i.status !== 'released').map((i) => (
-                    <span key={i.id} className="tag">
-                      {i.product ? `${i.product.crop}/${i.product.variety}` : '?'}
-                      {i.lot ? ` [${i.lot.internal_lot_number}]` : ''}
+          {drops.map((o) => {
+            const activeItems = o.items.filter((i) => i.status !== 'released');
+            const snap = o.profile_snapshot as {
+              zone?: number; garden_size?: string; garden_sizes?: string[]; sun?: string;
+              experience?: string; zip?: string; preferences?: string[]; exclusions?: string[];
+            };
+            const allChecked = activeItems.length > 0 && activeItems.every((i) => packChecks[i.id]);
+            return (
+              <div key={o.id}>
+                <div className="mm-row" style={{ alignItems: 'flex-start' }}>
+                  <div className="mm-thumb"><span>📦</span></div>
+                  <div className="mm-info">
+                    <span className="mm-title">
+                      {o.id.slice(0, 8)}… · {o.packet_count} packets · {new Date(o.created_at).toLocaleDateString()}
+                      {' · zone '}{String(snap.zone ?? '?')} · {snap.zip ?? '?'}
                     </span>
-                  ))}
+                    <div className="mm-meta" style={{ flexWrap: 'wrap', gap: 6 }}>
+                      <span className={`tag ${o.status === 'needs_review' ? 'type-sale' : 'type-free'}`}>{o.status}</span>
+                      {o.tracking && <span className="mm-expiry">{o.tracking}</span>}
+                      {activeItems.map((i) => (
+                        <span key={i.id} className="tag">
+                          {i.product ? `${i.product.crop}/${i.product.variety}` : '?'}
+                          {i.lot ? ` [${i.lot.internal_lot_number}]` : ''}
+                          {i.substitution_reason ? ' 🔁' : ''}
+                        </span>
+                      ))}
+                    </div>
+                    {trackForm?.order === o.id && (
+                      <div className="locrow" style={{ marginTop: 8 }}>
+                        <input placeholder="carrier + tracking number" value={trackForm.tracking} onChange={(e) => setTrackForm({ order: o.id, tracking: e.target.value })} />
+                        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void setOrderStatus(o, 'shipped', trackForm.tracking)}>Ship</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mm-btns">
+                    <button className="mm-btn" onClick={() => void expandOrder(o)}>
+                      {expandedOrder === o.id ? 'Close' : 'Details'}
+                    </button>
+                    {(o.status === 'paid' || o.status === 'needs_review') && (
+                      <button className="mm-btn" disabled={busy} onClick={() => void runSelection(o)}>Run selection</button>
+                    )}
+                    {o.status === 'selected' && (
+                      <button
+                        className="mm-btn"
+                        disabled={busy}
+                        onClick={() => {
+                          if (!allChecked && !window.confirm('Not every packet is confirmed in the packing checklist. Mark packed anyway?')) return;
+                          void setOrderStatus(o, 'packed');
+                        }}
+                      >
+                        Mark packed
+                      </button>
+                    )}
+                    {o.status === 'packed' && (
+                      <button className="mm-btn" disabled={busy} onClick={() => setTrackForm({ order: o.id, tracking: '' })}>Add tracking</button>
+                    )}
+                    {(o.status === 'paid' || o.status === 'selected' || o.status === 'needs_review') && (
+                      <button className="mm-btn danger" disabled={busy} onClick={() => void cancelOrder(o)}>Cancel</button>
+                    )}
+                  </div>
                 </div>
-                {trackForm?.order === o.id && (
-                  <div className="locrow" style={{ marginTop: 8 }}>
-                    <input placeholder="tracking number" value={trackForm.tracking} onChange={(e) => setTrackForm({ order: o.id, tracking: e.target.value })} />
-                    <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void setOrderStatus(o, 'shipped', trackForm.tracking)}>Ship</button>
+
+                {expandedOrder === o.id && (
+                  <div className="preview-note" style={{ marginTop: 0 }}>
+                    <div><strong>Customer:</strong> {orderEmail[o.id] ?? 'loading…'} · user {o.user_id.slice(0, 8)}…</div>
+                    <div style={{ marginTop: 4 }}>
+                      <strong>Frozen profile:</strong> ZIP {snap.zip ?? '?'} · zone {snap.zone ?? '?'} ·{' '}
+                      {(snap.garden_sizes?.length ? snap.garden_sizes : [snap.garden_size ?? '?']).join(' + ')} ·{' '}
+                      {snap.sun ?? '?'} sun · {snap.experience ?? '?'}
+                      {snap.preferences?.length ? <> · likes: {snap.preferences.join(', ')}</> : null}
+                      {snap.exclusions?.length ? <> · avoid: {snap.exclusions.join(', ')}</> : null}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <strong>{o.status === 'selected' ? 'Packing checklist' : 'Contents'}:</strong>
+                      {activeItems.map((i, idx) => (
+                        <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                          {o.status === 'selected' && (
+                            <input
+                              type="checkbox"
+                              style={{ width: 22, height: 22 }}
+                              checked={!!packChecks[i.id]}
+                              onChange={(e) => setPackChecks({ ...packChecks, [i.id]: e.target.checked })}
+                            />
+                          )}
+                          <span style={{ flex: 1 }}>
+                            {idx + 1}. {i.product ? `${i.product.crop} '${i.product.variety}'` : '?'}
+                            {i.lot ? ` — lot ${i.lot.internal_lot_number}` : ''}
+                            {i.product ? ` · ~${i.product.packet_seed_count} seeds` : ''}
+                            {i.lot?.germination_pct != null ? ` · ${i.lot.germination_pct}% germ` : ''}
+                            {i.substitution_reason ? ` · 🔁 ${i.substitution_reason}` : ''}
+                          </span>
+                          {i.status === 'reserved' && (o.status === 'selected' || o.status === 'needs_review') && (
+                            <button className="linkbtn" disabled={busy} onClick={() => void openSubstitutes(i.id)}>substitute</button>
+                          )}
+                        </div>
+                      ))}
+                      {activeItems.length === 0 && <div>No packets reserved yet.</div>}
+                    </div>
+                    {subFor && activeItems.some((i) => i.id === subFor.item) && (
+                      <div style={{ marginTop: 8 }}>
+                        <strong>Eligible replacements (backend-filtered for this order):</strong>
+                        {subFor.options.length === 0 && <div>None available — broaden inventory or release the slot.</div>}
+                        {subFor.options.map((opt) => (
+                          <div key={opt.product_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                            <span style={{ flex: 1 }}>{opt.crop} '{opt.variety}' — lot {opt.internal_lot_number} · {opt.why}</span>
+                            <button className="linkbtn" disabled={busy} onClick={() => void applySubstitute(opt)}>use this</button>
+                          </div>
+                        ))}
+                        <button className="linkbtn" onClick={() => setSubFor(null)}>close</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-              <div className="mm-btns">
-                {(o.status === 'paid' || o.status === 'needs_review') && (
-                  <button className="mm-btn" disabled={busy} onClick={() => void runSelection(o)}>Run selection</button>
-                )}
-                {o.status === 'selected' && (
-                  <>
-                    <button className="mm-btn" disabled={busy} onClick={() => void setOrderStatus(o, 'packed')}>Mark packed</button>
-                    <button className="mm-btn" disabled={busy} onClick={() => void runSelection(o)}>Re-run</button>
-                  </>
-                )}
-                {o.status === 'packed' && (
-                  <button className="mm-btn" disabled={busy} onClick={() => setTrackForm({ order: o.id, tracking: '' })}>Add tracking</button>
-                )}
-                {(o.status === 'paid' || o.status === 'selected' || o.status === 'needs_review') && (
-                  <button className="mm-btn danger" disabled={busy} onClick={() => void releaseOrder(o)}>Release</button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

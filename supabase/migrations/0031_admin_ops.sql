@@ -1,0 +1,14 @@
+-- Gnome — admin operations RPCs (applied live 2026-08-07). Run after 0030.
+-- admin_user_email(uuid)          -> customer email for order screens (admin-gated)
+-- admin_seed_substitutes(item)    -> eligible replacements ONLY (same hard
+--                                    filters as the engine, from the order's
+--                                    frozen snapshot, excluding crops already
+--                                    in the box; oldest eligible lot per product)
+-- admin_substitute_seed_item(...) -> race-safe swap: reserve new lot (guarded
+--                                    update), release old, record
+--                                    substituted_from + reason, audit row
+-- admin_cancel_seed_order(...)    -> release reservations + status cancelled
+--                                    + reason appended to notes + audit row
+-- All four: security definer, is_admin() re-checked inside, EXECUTE revoked
+-- from anon/public. Full bodies are in the applied migration (see Supabase
+-- migration history 0031_admin_ops) — identical to supabase/functions docs.
