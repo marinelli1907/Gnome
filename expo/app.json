@@ -8,11 +8,11 @@
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "owner": "boonesystems",
+    "owner": "marinelli1907",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FEFAE0"
+      "backgroundColor": "#F6F2E9"
     },
     "ios": {
       "supportsTablet": false,
@@ -28,11 +28,14 @@
       "package": "app.boonesystems.gnome",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#FEFAE0"
+        "backgroundColor": "#F6F2E9"
       },
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -63,8 +66,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": ""
-      }
+        "projectId": "b84fe5e3-5446-45dd-b078-9db076159143"
+      },
+      "router": {}
     }
   }
 }
