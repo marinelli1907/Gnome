@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Fraunces, Inter } from 'next/font/google';
 import './globals.css';
 import { GnomeMark } from './components/art';
+import AuthNavLink from './components/AuthNavLink';
 import GnomeAssistant from './components/GnomeAssistant';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
@@ -90,6 +91,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </span>
                 <Link href="/pricing">Pricing</Link>
                 <Link href="/my">My Market</Link>
+                <AuthNavLink />
               </span>
               <Link className="btn btn-primary btn-sm" href="/sell">Sell</Link>
               <a className="btn btn-secondary btn-sm" href={IOS}>Get the app</a>
@@ -114,6 +116,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <h4>Explore</h4>
                 <ul>
                   <li><Link href="/browse">Browse near you</Link></li>
+                  <li><Link href="/following">Markets you follow</Link></li>
                   <li><Link href="/plots">Reserve a plot</Link></li>
                   <li><Link href="/garden">AI Garden Planner</Link></li>
                   <li><Link href="/seeds">The Seed Drop</Link></li>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import AppLink from '../../components/AppLink';
+import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
 import { areaLabel, TYPE_LABEL } from '@/lib/format';
 import { getMarketBySlug, getMarketListings } from '@/lib/gnome';
@@ -64,7 +65,7 @@ export default async function MarketPage({ params }: Params) {
             (m.name || '?').charAt(0).toUpperCase()
           )}
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <h1>{m.name}</h1>
           <div className="meta-line" style={{ margin: '4px 0' }}>
             {m.market_type ? <span className="tag type-free">{MARKET_TYPE_LABEL[m.market_type] ?? m.market_type}</span> : null}
@@ -72,6 +73,7 @@ export default async function MarketPage({ params }: Params) {
             <span style={{ marginLeft: 8 }}>{where} · {m.active_listing_count} active</span>
           </div>
         </div>
+        <FollowButton marketId={m.id} />
       </div>
 
       {m.description ? <p className="desc" style={{ maxWidth: 720 }}>{m.description}</p> : null}
