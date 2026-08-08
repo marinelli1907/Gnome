@@ -56,7 +56,30 @@ export default function GardenClient() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seedDrop, setSeedDrop] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Seed Drop → Planner: pull the exact varieties from the user's latest
+  // order so nobody retypes what Gnome itself shipped them.
+  useEffect(() => {
+    if (!uid) return;
+    supabaseBrowser()
+      .from('seed_orders')
+      .select('id,status,items:seed_order_items(status,product:seed_products(crop,variety))')
+      .eq('user_id', uid)
+      .in('status', ['selected', 'packed', 'shipped'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        const items = (data?.items ?? []) as unknown as { status: string; product: { crop: string; variety: string } | null }[];
+        setSeedDrop(
+          items
+            .filter((i) => i.status !== 'released' && i.product)
+            .map((i) => `${i.product!.crop} '${i.product!.variety}'`),
+        );
+      });
+  }, [uid]);
 
   useEffect(() => {
     if (!uid) return;
@@ -126,6 +149,20 @@ export default function GardenClient() {
           onChange={(e) => setLocation(e.target.value)}
         />
       </div>
+
+      {turns.length === 0 && seedDrop.length > 0 && (
+        <div className="preview-note" style={{ margin: 0 }}>
+          🌱 <strong>Your Seed Drop:</strong> {seedDrop.join(', ')}.{' '}
+          <button
+            className="linkbtn"
+            onClick={() => void ask(
+              `I received a Gnome Seed Drop with: ${seedDrop.join(', ')}. Build me a planting plan for these exact seeds — order of planting, timing for my location, and spacing.`,
+            )}
+          >
+            Build my planting plan →
+          </button>
+        </div>
+      )}
 
       {turns.length === 0 && (
         <div className="chips planner-starters">

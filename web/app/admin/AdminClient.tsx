@@ -28,7 +28,23 @@ interface Action {
   note: string | null; created_at: string;
 }
 
-type Tab = 'reports' | 'listings' | 'users' | 'audit';
+type Tab = 'reports' | 'listings' | 'users' | 'seeds' | 'drops' | 'audit';
+
+interface SeedLot {
+  id: string; internal_lot_number: string; current_qty: number; unit: string;
+  germination_pct: number | null; next_review_date: string | null; status: string;
+  received_date: string; supplier: string | null;
+}
+interface SeedProductRow {
+  id: string; crop: string; variety: string; category: string;
+  packet_seed_count: number; active: boolean; lots: SeedLot[];
+}
+interface SeedDropOrder {
+  id: string; user_id: string; status: string; packet_count: number;
+  tracking: string | null; created_at: string; profile_snapshot: Record<string, unknown>;
+  items: { id: string; status: string; product: { crop: string; variety: string } | null;
+           lot: { internal_lot_number: string } | null }[];
+}
 
 export default function AdminClient() {
   const { session, ready } = useSession();
@@ -42,6 +58,11 @@ export default function AdminClient() {
   const [actions, setActions] = useState<Action[]>([]);
   const [q, setQ] = useState('');
   const [note, setNote] = useState('');
+  const [seedRows, setSeedRows] = useState<SeedProductRow[]>([]);
+  const [drops, setDrops] = useState<SeedDropOrder[]>([]);
+  const [lotForm, setLotForm] = useState({ product: '', lotNo: '', qty: '', germ: '', supplier: '' });
+  const [testForm, setTestForm] = useState<{ lot: string; tested: string; germd: string } | null>(null);
+  const [trackForm, setTrackForm] = useState<{ order: string; tracking: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,13 +76,21 @@ export default function AdminClient() {
 
   const load = useCallback(async () => {
     const sb = supabaseBrowser();
-    const [r, a] = await Promise.all([
+    const [r, a, s, d] = await Promise.all([
       sb.from('reports').select('*').order('created_at', { ascending: false }).limit(50),
       sb.from('admin_actions').select('id,action,target_type,target_id,note,created_at')
+        .order('created_at', { ascending: false }).limit(50),
+      sb.from('seed_products')
+        .select('id,crop,variety,category,packet_seed_count,active,lots:seed_lots(id,internal_lot_number,current_qty,unit,germination_pct,next_review_date,status,received_date,supplier)')
+        .order('crop'),
+      sb.from('seed_orders')
+        .select('id,user_id,status,packet_count,tracking,created_at,profile_snapshot,items:seed_order_items(id,status,product:seed_products(crop,variety),lot:seed_lots(internal_lot_number))')
         .order('created_at', { ascending: false }).limit(50),
     ]);
     setReports((r.data as Report[]) ?? []);
     setActions((a.data as Action[]) ?? []);
+    setSeedRows((s.data as unknown as SeedProductRow[]) ?? []);
+    setDrops((d.data as unknown as SeedDropOrder[]) ?? []);
   }, []);
 
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
@@ -121,6 +150,109 @@ export default function AdminClient() {
     setBusy(false);
   }
 
+  // ---- Seed inventory actions (every change audited to seed_inventory_log) --
+  async function addLot() {
+    if (!lotForm.product || !lotForm.lotNo.trim() || !Number(lotForm.qty)) {
+      return setError('Lot needs a product, a lot number, and a quantity.');
+    }
+    setBusy(true); setError(null);
+    const sb = supabaseBrowser();
+    const { data: lot, error } = await sb.from('seed_lots').insert({
+      seed_product_id: lotForm.product,
+      internal_lot_number: lotForm.lotNo.trim(),
+      original_qty: Number(lotForm.qty),
+      current_qty: Number(lotForm.qty),
+      unit: 'packets',
+      germination_pct: lotForm.germ ? Number(lotForm.germ) : null,
+      germination_test_date: lotForm.germ ? new Date().toISOString().slice(0, 10) : null,
+      supplier: lotForm.supplier.trim() || null,
+      status: 'fresh',
+    }).select('id').single();
+    if (error) setError(error.message);
+    else {
+      await sb.from('seed_inventory_log').insert({ lot_id: lot.id, delta: Number(lotForm.qty), reason: 'received', actor: uid });
+      setLotForm({ product: '', lotNo: '', qty: '', germ: '', supplier: '' });
+      await load();
+    }
+    setBusy(false);
+  }
+
+  async function adjustLot(lot: SeedLot, delta: number, reason: string) {
+    setBusy(true); setError(null);
+    const sb = supabaseBrowser();
+    const newQty = Math.max(0, Number(lot.current_qty) + delta);
+    const { error } = await sb.from('seed_lots')
+      .update({ current_qty: newQty, status: newQty === 0 ? 'depleted' : lot.status === 'depleted' ? 'active' : lot.status })
+      .eq('id', lot.id);
+    if (error) setError(error.message);
+    else {
+      await sb.from('seed_inventory_log').insert({ lot_id: lot.id, delta, reason, actor: uid });
+      await load();
+    }
+    setBusy(false);
+  }
+
+  async function setLotStatus(lot: SeedLot, status: string) {
+    setBusy(true); setError(null);
+    const { error } = await supabaseBrowser().from('seed_lots').update({ status }).eq('id', lot.id);
+    if (error) setError(error.message);
+    else { await audit(`lot_${status}`, 'seed_lot', lot.id); await load(); }
+    setBusy(false);
+  }
+
+  async function recordTest() {
+    if (!testForm) return;
+    const tested = Number(testForm.tested), germd = Number(testForm.germd);
+    if (!tested || germd < 0 || germd > tested) return setError('Check the test numbers.');
+    setBusy(true); setError(null);
+    const sb = supabaseBrowser();
+    const pct = Math.round((germd / tested) * 1000) / 10;
+    const next = new Date(Date.now() + 180 * 86400_000).toISOString().slice(0, 10);
+    const { error } = await sb.from('germination_tests').insert({
+      lot_id: testForm.lot, seeds_tested: tested, germinated: germd, next_review_date: next, tester: 'admin',
+    });
+    if (!error) {
+      await sb.from('seed_lots').update({
+        germination_pct: pct,
+        germination_test_date: new Date().toISOString().slice(0, 10),
+        next_review_date: next,
+        status: pct >= 70 ? 'active' : 'failed',
+      }).eq('id', testForm.lot);
+    }
+    if (error) setError(error.message);
+    else { setTestForm(null); await load(); }
+    setBusy(false);
+  }
+
+  // ---- Seed Drop fulfillment ------------------------------------------------
+  async function runSelection(o: SeedDropOrder) {
+    setBusy(true); setError(null);
+    const { data, error } = await supabaseBrowser().rpc('admin_generate_seed_drop', { p_order: o.id });
+    if (error) setError(error.message);
+    else { await audit('seed_drop_selected', 'seed_order', o.id, `${data} packets`); await load(); }
+    setBusy(false);
+  }
+  async function releaseOrder(o: SeedDropOrder) {
+    setBusy(true); setError(null);
+    const { error } = await supabaseBrowser().rpc('admin_release_seed_drop', { p_order: o.id });
+    if (error) setError(error.message);
+    else { await audit('seed_drop_released', 'seed_order', o.id); await load(); }
+    setBusy(false);
+  }
+  async function setOrderStatus(o: SeedDropOrder, status: string, tracking?: string) {
+    setBusy(true); setError(null);
+    const sb = supabaseBrowser();
+    const patch: Record<string, unknown> = { status };
+    if (tracking) patch.tracking = tracking;
+    const { error } = await sb.from('seed_orders').update(patch).eq('id', o.id);
+    if (!error && (status === 'packed' || status === 'shipped')) {
+      await sb.from('seed_order_items').update({ status }).eq('order_id', o.id).eq('status', status === 'packed' ? 'reserved' : 'packed');
+    }
+    if (error) setError(error.message);
+    else { await audit(`seed_drop_${status}`, 'seed_order', o.id, tracking); setTrackForm(null); await load(); }
+    setBusy(false);
+  }
+
   if (!ready) return <div className="empty"><p>Loading…</p></div>;
   if (!session) return <SignInCard title="Moderation sign-in" blurb="Admins only." />;
   if (isAdmin === null) return <div className="empty"><p>Checking access…</p></div>;
@@ -145,8 +277,8 @@ export default function AdminClient() {
         </div>
       </div>
 
-      <div className="seg" style={{ maxWidth: 480, marginBottom: 18 }}>
-        {(['reports', 'listings', 'users', 'audit'] as Tab[]).map((t) => (
+      <div className="seg" style={{ maxWidth: 680, marginBottom: 18 }}>
+        {(['reports', 'listings', 'users', 'seeds', 'drops', 'audit'] as Tab[]).map((t) => (
           <button key={t} type="button" className={`seg-btn${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -243,6 +375,113 @@ export default function AdminClient() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'seeds' && (
+        <div>
+          <div className="preview-note" style={{ marginBottom: 14 }}>
+            <strong>Receive inventory:</strong>{' '}
+            <select value={lotForm.product} onChange={(e) => setLotForm({ ...lotForm, product: e.target.value })} style={{ width: 'auto', display: 'inline-block', padding: '6px 8px', marginRight: 6 }}>
+              <option value="">variety…</option>
+              {seedRows.map((p) => <option key={p.id} value={p.id}>{p.crop} · {p.variety}</option>)}
+            </select>
+            <input style={{ width: 110, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="lot #" value={lotForm.lotNo} onChange={(e) => setLotForm({ ...lotForm, lotNo: e.target.value })} />
+            <input style={{ width: 70, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="qty" inputMode="numeric" value={lotForm.qty} onChange={(e) => setLotForm({ ...lotForm, qty: e.target.value.replace(/[^0-9]/g, '') })} />
+            <input style={{ width: 70, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="germ %" inputMode="numeric" value={lotForm.germ} onChange={(e) => setLotForm({ ...lotForm, germ: e.target.value.replace(/[^0-9]/g, '') })} />
+            <input style={{ width: 120, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="supplier" value={lotForm.supplier} onChange={(e) => setLotForm({ ...lotForm, supplier: e.target.value })} />
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void addLot()}>Receive</button>
+          </div>
+
+          <div className="mm-list">
+            {seedRows.map((p) => (
+              <div key={p.id} className="mm-row" style={{ alignItems: 'flex-start' }}>
+                <div className="mm-info">
+                  <span className="mm-title">{p.crop} · {p.variety} <span className="mm-expiry">({p.category} · {p.packet_seed_count} seeds/packet)</span></span>
+                  <div className="mm-meta" style={{ flexWrap: 'wrap', gap: 6 }}>
+                    {p.lots.length === 0 && <span className="mm-expiry">no lots — out of stock</span>}
+                    {p.lots.map((l) => {
+                      const low = Number(l.current_qty) > 0 && Number(l.current_qty) < 5;
+                      const overdue = l.next_review_date && l.next_review_date < new Date().toISOString().slice(0, 10);
+                      return (
+                        <span key={l.id} className={`tag ${l.status === 'quarantined' || l.status === 'failed' ? 'type-sale' : low || overdue ? 'type-wanted' : 'type-free'}`}>
+                          {l.internal_lot_number}: {l.current_qty} {l.unit}
+                          {l.germination_pct != null ? ` · ${l.germination_pct}% germ` : ' · untested'}
+                          {' · '}{l.status}{overdue ? ' · RETEST DUE' : ''}
+                          {' '}
+                          <button className="linkbtn" disabled={busy} onClick={() => void adjustLot(l, 1, 'adjusted')}>+1</button>{' '}
+                          <button className="linkbtn" disabled={busy} onClick={() => void adjustLot(l, -1, 'adjusted')}>−1</button>{' '}
+                          <button className="linkbtn" disabled={busy} onClick={() => setTestForm({ lot: l.id, tested: '', germd: '' })}>test</button>{' '}
+                          {l.status !== 'quarantined'
+                            ? <button className="linkbtn" disabled={busy} onClick={() => void setLotStatus(l, 'quarantined')}>quarantine</button>
+                            : <button className="linkbtn" disabled={busy} onClick={() => void setLotStatus(l, 'active')}>restore</button>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {testForm && p.lots.some((l) => l.id === testForm.lot) && (
+                    <div className="locrow" style={{ marginTop: 8 }}>
+                      <input placeholder="seeds tested" inputMode="numeric" value={testForm.tested} onChange={(e) => setTestForm({ ...testForm, tested: e.target.value.replace(/[^0-9]/g, '') })} />
+                      <input placeholder="germinated" inputMode="numeric" value={testForm.germd} onChange={(e) => setTestForm({ ...testForm, germd: e.target.value.replace(/[^0-9]/g, '') })} />
+                      <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void recordTest()}>Record</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setTestForm(null)}>Cancel</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'drops' && (
+        <div className="mm-list">
+          {drops.length === 0 && <div className="empty"><p>No Seed Drop orders yet.</p></div>}
+          {drops.map((o) => (
+            <div key={o.id} className="mm-row" style={{ alignItems: 'flex-start' }}>
+              <div className="mm-thumb"><span>📦</span></div>
+              <div className="mm-info">
+                <span className="mm-title">
+                  {o.id.slice(0, 8)}… · {o.packet_count} packets · {new Date(o.created_at).toLocaleDateString()}
+                  {' · zone '}{String((o.profile_snapshot as { zone?: number })?.zone ?? '?')}
+                  {' · '}{String((o.profile_snapshot as { garden_size?: string })?.garden_size ?? '?')}
+                </span>
+                <div className="mm-meta" style={{ flexWrap: 'wrap', gap: 6 }}>
+                  <span className={`tag ${o.status === 'needs_review' ? 'type-sale' : 'type-free'}`}>{o.status}</span>
+                  {o.tracking && <span className="mm-expiry">{o.tracking}</span>}
+                  {o.items.filter((i) => i.status !== 'released').map((i) => (
+                    <span key={i.id} className="tag">
+                      {i.product ? `${i.product.crop}/${i.product.variety}` : '?'}
+                      {i.lot ? ` [${i.lot.internal_lot_number}]` : ''}
+                    </span>
+                  ))}
+                </div>
+                {trackForm?.order === o.id && (
+                  <div className="locrow" style={{ marginTop: 8 }}>
+                    <input placeholder="tracking number" value={trackForm.tracking} onChange={(e) => setTrackForm({ order: o.id, tracking: e.target.value })} />
+                    <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void setOrderStatus(o, 'shipped', trackForm.tracking)}>Ship</button>
+                  </div>
+                )}
+              </div>
+              <div className="mm-btns">
+                {(o.status === 'paid' || o.status === 'needs_review') && (
+                  <button className="mm-btn" disabled={busy} onClick={() => void runSelection(o)}>Run selection</button>
+                )}
+                {o.status === 'selected' && (
+                  <>
+                    <button className="mm-btn" disabled={busy} onClick={() => void setOrderStatus(o, 'packed')}>Mark packed</button>
+                    <button className="mm-btn" disabled={busy} onClick={() => void runSelection(o)}>Re-run</button>
+                  </>
+                )}
+                {o.status === 'packed' && (
+                  <button className="mm-btn" disabled={busy} onClick={() => setTrackForm({ order: o.id, tracking: '' })}>Add tracking</button>
+                )}
+                {(o.status === 'paid' || o.status === 'selected' || o.status === 'needs_review') && (
+                  <button className="mm-btn danger" disabled={busy} onClick={() => void releaseOrder(o)}>Release</button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import SeedProfileClient from './SeedProfileClient';
 
 // The Gnome Seed Drop — first-party, garage-run seed shop. Web-only by design:
 // the app stays a payment-free community marketplace and links out here.
@@ -21,9 +22,9 @@ const PLANS = [
     cadence: 'one-time · start here',
     highlight: true,
     blurb:
-      '5 hand-picked packets for your USDA zone and the current season, with a growing tip card for each. One-time, no subscription — the low-risk way to try the drop.',
-    link: process.env.NEXT_PUBLIC_SEED_LINK_STARTER,
-    cta: 'Get the Starter Pack',
+      '6 packets chosen for your garden profile from live inventory, with a growing tip card for each. One-time, no subscription — the low-risk way to try the drop.',
+    link: '#build',
+    cta: 'Build my box',
   },
   {
     id: 'season',
@@ -48,20 +49,30 @@ const PLANS = [
 ];
 
 const STEPS = [
-  { n: '📍', t: 'Tell us where you grow', d: 'Your zip sets your USDA zone and frost dates — the drop is picked for your actual garden, not a generic calendar.' },
-  { n: '🤖', t: 'AI picks the drop', d: 'Each drop is chosen for your zone and the week it ships — and every packet comes with its own growing tip card.' },
-  { n: '📦', t: 'Packed & shipped right', d: 'Hand-packed in Ohio and shipped by people who ship for a living. Track it to your door.' },
+  { n: '📍', t: 'Tell Gnome where you grow', d: 'ZIP, zone, space, sun, experience, likes and dislikes — five quick questions, saved to your garden profile.' },
+  { n: '🌱', t: 'Built after you order', d: 'Gnome checks real inventory — germination-tested, in-season, suited to your garden — and builds your box the day you buy. Selections depend on availability and planting timing.' },
+  { n: '📦', t: 'Shipped, then coached', d: 'Hand-packed in Ohio. After delivery, ask Gnome about the exact seeds you received — when to plant, how deep, and what to do when things sprout.' },
 ];
 
 export default function SeedsPage() {
   return (
     <main className="container">
       <section className="hero">
-        <h1>The Gnome Seed Drop 🌱</h1>
+        <h1>Seeds picked for your garden, right now.</h1>
         <p>
-          Seeds picked for <em>your</em> zone and the season — chosen by AI, packed by hand,
-          shipped to your door with a growing tip for every packet.
+          No generic box. Tell Gnome where you grow, and every order is built{' '}
+          <em>after</em> you buy — from seeds actually in stock, matched to your
+          location, season, space, sun, and experience. Then Gnome keeps helping
+          you grow exactly what shipped.
         </p>
+      </section>
+
+      <section className="section" style={{ maxWidth: 640 }}>
+        <div className="section-head"><h2>Build my Seed Drop</h2></div>
+        <p className="sub">
+          Five quick questions. Gnome does the choosing — from real inventory only.
+        </p>
+        <SeedProfileClient />
       </section>
 
       <section className="section">

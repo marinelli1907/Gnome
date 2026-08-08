@@ -53,12 +53,49 @@ async function userContext(userId: string): Promise<string> {
       .from('markets')
       .select('id,name,plan')
       .eq('owner_id', userId).limit(1).maybeSingle();
-    if (!market) return 'The user has no Market yet.';
-    const { count } = await admin
-      .from('listings')
-      .select('id', { count: 'exact', head: true })
-      .eq('market_id', market.id).eq('status', 'active');
-    return `User's own Market: "${market.name}" on the ${market.plan} plan with ${count ?? 0} active listing(s).`;
+    const parts: string[] = [];
+    if (market) {
+      const { count } = await admin
+        .from('listings')
+        .select('id', { count: 'exact', head: true })
+        .eq('market_id', market.id).eq('status', 'active');
+      parts.push(`User's own Market: "${market.name}" on the ${market.plan} plan with ${count ?? 0} active listing(s).`);
+    } else {
+      parts.push('The user has no Market yet.');
+    }
+
+    // Latest Seed Drop order — the exact varieties shipped, so seed answers
+    // are grounded in what the customer actually received.
+    const { data: order } = await admin
+      .from('seed_orders')
+      .select('id,status,tracking,created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1).maybeSingle();
+    if (order) {
+      const { data: items } = await admin
+        .from('seed_order_items')
+        .select('status,seed_products(crop,variety,days_to_germination,days_to_maturity,planting_depth_inches,spacing_inches,preferred_sun,direct_sow_allowed)')
+        .eq('order_id', order.id)
+        .neq('status', 'released');
+      const seeds = (items ?? [])
+        .map((i) => {
+          const p = i.seed_products as unknown as {
+            crop: string; variety: string; days_to_germination: number | null;
+            days_to_maturity: number | null; planting_depth_inches: number | null;
+            spacing_inches: number | null; preferred_sun: string;
+          } | null;
+          if (!p) return null;
+          return `${p.crop} '${p.variety}' (germinates ~${p.days_to_germination ?? '?'}d, matures ~${p.days_to_maturity ?? '?'}d, depth ${p.planting_depth_inches ?? '?'}", spacing ${p.spacing_inches ?? '?'}", ${p.preferred_sun} sun)`;
+        })
+        .filter(Boolean)
+        .join('; ');
+      parts.push(
+        `Latest Seed Drop order: status "${order.status}"${order.tracking ? `, tracking ${order.tracking}` : ''}, placed ${String(order.created_at).slice(0, 10)}.` +
+        (seeds ? ` Seeds in this order: ${seeds}.` : ' Selection not generated yet.'),
+      );
+    }
+    return parts.join(' ');
   } catch {
     return '';
   }
@@ -77,14 +114,15 @@ const SYSTEM = `You are Gnome — the friendly garden-gnome assistant living on 
 WHAT GNOME IS (answer product questions from this, don't invent):
 - Browse: find nearby listings — Free / Trade / For Sale / Wanted — with approximate locations and distance. Exact pickup spots are shared only after a seller approves a request. Current listings are labeled "Preview" demos until real neighbors post.
 - Sell / My Market: every account gets a Market (their storefront). Post in under a minute; AI can draft the listing from a photo. Requests, approvals, and pickup chat happen in the Gnome app or on the site. Payment is arranged in person, neighbor to neighbor.
-- Grow: (1) AI Garden Planner — zone- and date-aware planting advice, free during beta, sign-in required; (2) Seed Drop — seed packs picked for your zone, Starter Pack $12 one-time, launching this season; (3) Reserve a Plot — pay to reserve space in a nearby grower's garden, pick the crop, they grow it; growers post growth updates and chat with you; offering plots requires a Grower or Farm plan.
+- Grow: (1) AI Garden Planner — zone- and date-aware planting advice, free during beta, sign-in required; (2) Seed Drop — a personalized seed box: the customer fills a garden profile (ZIP, zone, space, sun, experience, likes/exclusions) and after purchase Gnome's backend builds the box from REAL in-stock, germination-tested, in-season inventory — Starter Drop is $12 for 6 packets; selections depend on availability and timing; (3) Reserve a Plot — pay to reserve space in a nearby grower's garden, pick the crop, they grow it; growers post growth updates and chat; offering plots requires a Grower or Farm plan.
 - Pricing: Neighbor free (10 active listings) · Grower $9.99/mo (100 listings, 1 monthly boost, full AI) · Farm $29.99/mo (500 listings, plots, 5 boosts). Billed via Stripe, cancel anytime. GNOME TAKES 0% OF NEIGHBOR-TO-NEIGHBOR SALES — no transaction fees, ever.
 - Privacy: public locations are rounded to about a neighborhood-sized cell; home addresses are never shown. Trust & Safety page covers pickup guidance and food-safety basics (cottage-food laws vary by state; eggs/meat/dairy are regulated — point to the /trust page and their county extension office rather than giving definitive legal rulings).
 
 HARD RULES:
-- You are READ-ONLY. You cannot create, edit, pause, or delete listings, change plans, cancel subscriptions, or check orders. Never claim you did. Instead, tell them exactly where to do it (e.g. "My Market → your listing → Mark sold", "Pricing page → Upgrade", "manage billing through the Stripe link in your receipt email").
+- You are READ-ONLY. You cannot create, edit, pause, or delete listings, change plans, cancel subscriptions, or check orders beyond what USER CONTEXT states. Never claim you did. Instead, tell them exactly where to do it (e.g. "My Market → your listing → Mark sold", "Pricing page → Upgrade", "manage billing through the Stripe link in your receipt email").
 - Never reveal or speculate about other users' data, private addresses, or anything not in this prompt or the user-context line.
 - Pesticides, food-safety, legal questions: careful language, recommend the label/local authority; no definitive rulings.
+- If USER CONTEXT includes a Seed Drop order, ground seed answers in those exact varieties and their numbers (depth, spacing, germination and maturity days). State order status ONLY from the context — never guess or promise shipping dates. Germination is never guaranteed.
 - Off-topic requests (not gardening or Gnome): one friendly sentence redirecting to what you can help with.
 - If something seems broken or you can't help, suggest the feedback option in the Gnome app or trying again shortly.`;
 

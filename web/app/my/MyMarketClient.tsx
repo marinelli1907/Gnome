@@ -46,6 +46,16 @@ interface Reservation {
   claimer: { name: string | null } | null;
 }
 
+// A Seed Drop order (mine), with the exact varieties the engine reserved.
+interface SeedOrder {
+  id: string;
+  status: string;
+  packet_count: number;
+  tracking: string | null;
+  created_at: string;
+  items: { id: string; status: string; product: { crop: string; variety: string } | null }[];
+}
+
 // A plot I reserved in someone else's garden (I'm the buyer).
 interface MyReservation {
   id: string;
@@ -83,6 +93,7 @@ export default function MyMarketClient() {
   const [listings, setListings] = useState<MyListing[] | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [myReservations, setMyReservations] = useState<MyReservation[]>([]);
+  const [seedOrders, setSeedOrders] = useState<SeedOrder[]>([]);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -125,6 +136,14 @@ export default function MyMarketClient() {
       .eq('claimer_id', uid)
       .order('created_at', { ascending: false });
     setMyReservations((mine as unknown as MyReservation[]) ?? []);
+
+    // My Seed Drop orders (own-row RLS; items embed the public catalog row).
+    const { data: sorders } = await supabase
+      .from('seed_orders')
+      .select('id,status,packet_count,tracking,created_at,items:seed_order_items(id,status,product:seed_products(crop,variety))')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false });
+    setSeedOrders((sorders as unknown as SeedOrder[]) ?? []);
 
     if (m?.id) {
       const { data: c } = await supabase.rpc('market_boost_credits_remaining', {
@@ -312,6 +331,47 @@ export default function MyMarketClient() {
                 </div>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {seedOrders.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Your Seed Drop <span className="mm-count">{seedOrders.length}</span></h2>
+          </div>
+          <p className="sub">
+            Built for your garden from live inventory. Tap the gnome any time for
+            help with the exact seeds you received.
+          </p>
+          <div className="mm-list">
+            {seedOrders.map((o) => (
+              <div key={o.id} className="mm-row">
+                <div className="mm-thumb"><span>📦</span></div>
+                <div className="mm-info">
+                  <span className="mm-title">
+                    Starter Drop · {new Date(o.created_at).toLocaleDateString()}
+                  </span>
+                  <div className="mm-meta">
+                    {o.status === 'paid' && <span className="tag type-wanted">Building your box…</span>}
+                    {o.status === 'selected' && <span className="tag type-free">Seeds picked — packing soon</span>}
+                    {o.status === 'needs_review' && <span className="tag type-wanted">Being reviewed by a human 🌱</span>}
+                    {o.status === 'packed' && <span className="tag type-free">Packed</span>}
+                    {o.status === 'shipped' && <span className="tag type-free">Shipped{o.tracking ? ` · ${o.tracking}` : ''}</span>}
+                    {(o.status === 'cancelled' || o.status === 'refunded') && <span className="tag">{o.status}</span>}
+                  </div>
+                  {o.items.filter((i) => i.status !== 'released').length > 0 && (
+                    <div className="mm-meta" style={{ marginTop: 4 }}>
+                      {o.items.filter((i) => i.status !== 'released').map((i) => (
+                        <span key={i.id} className="tag type-free">
+                          {i.product ? `${i.product.crop} · ${i.product.variety}` : 'Seed packet'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       )}
