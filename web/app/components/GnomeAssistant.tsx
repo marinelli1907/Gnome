@@ -26,7 +26,7 @@ const ACTIONS: { match: (p: string) => boolean; chips: string[] }[] = [
   },
   {
     match: (p) => p.startsWith('/seeds'),
-    chips: ['Which seed pack fits me?', 'What’s a hardiness zone?', 'What can I plant this month?'],
+    chips: ['How does personalization work?', 'Where is my Seed Drop?', 'What can I plant this month?', 'Which seeds work for containers?'],
   },
   {
     match: (p) => p.startsWith('/plots'),

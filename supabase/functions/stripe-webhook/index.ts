@@ -79,6 +79,38 @@ Deno.serve(async (req: Request) => {
         const session = event.data.object as Stripe.Checkout.Session;
         const ref = session.client_reference_id ?? '';
 
+        if (session.mode === 'payment' && ref.startsWith('seed_')) {
+          // Seed Drop Starter: verified payment → create the order (idempotent
+          // on session id) → snapshot the profile → run the deterministic
+          // selection engine. AI never touches this path.
+          const buyerId = ref.slice('seed_'.length);
+          const { data: prof } = await admin
+            .from('seed_profiles').select('*').eq('user_id', buyerId).maybeSingle();
+          const { data: order, error: oerr } = await admin
+            .from('seed_orders')
+            .insert({
+              user_id: buyerId,
+              product: 'starter',
+              packet_count: 6,
+              status: 'paid',
+              stripe_session_id: session.id,
+              amount_cents: session.amount_total ?? null,
+              profile_snapshot: prof ?? {},
+            })
+            .select('id')
+            .single();
+          if (oerr) {
+            // 23505 = duplicate webhook delivery for the same session — done.
+            if (!oerr.message.includes('duplicate')) console.error('seed order insert:', oerr);
+            break;
+          }
+          const { data: reserved, error: gerr } = await admin
+            .rpc('generate_seed_drop', { p_order: order.id });
+          if (gerr) console.error('generate_seed_drop:', gerr);
+          console.log(`seed drop order ${order.id}: ${reserved ?? '?'} packets reserved`);
+          break;
+        }
+
         if (session.mode === 'payment' && ref.startsWith('boost_')) {
           // One-off paid boost → 7-day promotion (source 'manual': the M7
           // trigger reserves 'paid' for a future in-app flow; service-role
