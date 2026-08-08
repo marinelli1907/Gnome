@@ -41,7 +41,28 @@ interface SeedLot {
 interface SeedProductRow {
   id: string; crop: string; variety: string; category: string;
   packet_seed_count: number; active: boolean; lots: SeedLot[];
+  description: string | null; preferred_sun: string; container_friendly: boolean;
+  beginner_friendly: boolean; days_to_germination: number | null;
+  days_to_maturity: number | null; planting_depth_inches: number | null;
+  spacing_inches: number | null; sow_months: number[];
 }
+
+// Editable variety form state (strings for painless inputs).
+interface VarietyForm {
+  id: string | null;          // null = creating a new variety
+  crop: string; variety: string; category: string; description: string;
+  preferred_sun: string; container_friendly: boolean; beginner_friendly: boolean;
+  days_to_germination: string; days_to_maturity: string;
+  planting_depth_inches: string; spacing_inches: string;
+  packet_seed_count: string; sow_months: number[]; active: boolean;
+}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const emptyVariety = (): VarietyForm => ({
+  id: null, crop: '', variety: '', category: 'vegetable', description: '',
+  preferred_sun: 'full', container_friendly: false, beginner_friendly: true,
+  days_to_germination: '', days_to_maturity: '', planting_depth_inches: '',
+  spacing_inches: '', packet_seed_count: '25', sow_months: [], active: true,
+});
 interface SeedDropOrder {
   id: string; user_id: string; status: string; packet_count: number;
   tracking: string | null; created_at: string; profile_snapshot: Record<string, unknown>;
@@ -79,6 +100,8 @@ export default function AdminClient() {
   const [orderEmail, setOrderEmail] = useState<Record<string, string>>({});
   const [packChecks, setPackChecks] = useState<Record<string, boolean>>({});
   const [subFor, setSubFor] = useState<{ item: string; options: SubOption[] } | null>(null);
+  const [varietyForm, setVarietyForm] = useState<VarietyForm | null>(null);
+  const [lotFormFor, setLotFormFor] = useState<string | null>(null); // product id → inline "add lot"
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,7 +120,7 @@ export default function AdminClient() {
       sb.from('admin_actions').select('id,action,target_type,target_id,note,created_at')
         .order('created_at', { ascending: false }).limit(50),
       sb.from('seed_products')
-        .select('id,crop,variety,category,packet_seed_count,active,lots:seed_lots(id,internal_lot_number,current_qty,unit,germination_pct,next_review_date,status,received_date,supplier)')
+        .select('id,crop,variety,category,packet_seed_count,active,description,preferred_sun,container_friendly,beginner_friendly,days_to_germination,days_to_maturity,planting_depth_inches,spacing_inches,sow_months,lots:seed_lots(id,internal_lot_number,current_qty,unit,germination_pct,next_review_date,status,received_date,supplier)')
         .order('crop'),
       sb.from('seed_orders')
         .select('id,user_id,status,packet_count,tracking,created_at,profile_snapshot,items:seed_order_items(id,status,qty_packets,substitution_reason,product:seed_products!seed_order_items_seed_product_id_fkey(crop,variety,packet_seed_count),lot:seed_lots(internal_lot_number,germination_pct))')
@@ -238,6 +261,39 @@ export default function AdminClient() {
     if (error) setError(error.message);
     else { setTestForm(null); await load(); }
     setBusy(false);
+  }
+
+  // Create or edit a seed variety — plain form, no SQL required.
+  async function saveVariety() {
+    if (!varietyForm) return;
+    const f = varietyForm;
+    if (!f.crop.trim() || !f.variety.trim()) return setError('A variety needs at least a crop and a variety name.');
+    if (f.sow_months.length === 0) return setError('Pick at least one sowing month — the engine needs a window.');
+    setBusy(true); setError(null);
+    const row = {
+      crop: f.crop.trim(), variety: f.variety.trim(), category: f.category,
+      description: f.description.trim() || null,
+      preferred_sun: f.preferred_sun,
+      container_friendly: f.container_friendly, beginner_friendly: f.beginner_friendly,
+      days_to_germination: f.days_to_germination ? Number(f.days_to_germination) : null,
+      days_to_maturity: f.days_to_maturity ? Number(f.days_to_maturity) : null,
+      planting_depth_inches: f.planting_depth_inches ? Number(f.planting_depth_inches) : null,
+      spacing_inches: f.spacing_inches ? Number(f.spacing_inches) : null,
+      packet_seed_count: Number(f.packet_seed_count) || 25,
+      sow_months: f.sow_months, active: f.active,
+      updated_at: new Date().toISOString(),
+    };
+    const sb = supabaseBrowser();
+    const { error } = f.id
+      ? await sb.from('seed_products').update(row).eq('id', f.id)
+      : await sb.from('seed_products').insert(row);
+    setBusy(false);
+    if (error) setError(error.message.includes('duplicate') ? 'That crop + variety already exists.' : error.message);
+    else {
+      await audit(f.id ? 'variety_updated' : 'variety_created', 'seed_product', f.id, `${row.crop} ${row.variety}`);
+      setVarietyForm(null);
+      await load();
+    }
   }
 
   // Reasoned adjustment (never a silent overwrite) + audit log row.
@@ -604,18 +660,83 @@ export default function AdminClient() {
 
       {tab === 'seeds' && (
         <div>
-          <div className="preview-note" style={{ marginBottom: 14 }}>
-            <strong>Receive inventory:</strong>{' '}
-            <select value={lotForm.product} onChange={(e) => setLotForm({ ...lotForm, product: e.target.value })} style={{ width: 'auto', display: 'inline-block', padding: '6px 8px', marginRight: 6 }}>
-              <option value="">variety…</option>
-              {seedRows.map((p) => <option key={p.id} value={p.id}>{p.crop} · {p.variety}</option>)}
-            </select>
-            <input style={{ width: 110, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="lot #" value={lotForm.lotNo} onChange={(e) => setLotForm({ ...lotForm, lotNo: e.target.value })} />
-            <input style={{ width: 70, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="qty" inputMode="numeric" value={lotForm.qty} onChange={(e) => setLotForm({ ...lotForm, qty: e.target.value.replace(/[^0-9]/g, '') })} />
-            <input style={{ width: 70, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="germ %" inputMode="numeric" value={lotForm.germ} onChange={(e) => setLotForm({ ...lotForm, germ: e.target.value.replace(/[^0-9]/g, '') })} />
-            <input style={{ width: 120, display: 'inline-block', marginRight: 6, padding: '6px 8px' }} placeholder="supplier" value={lotForm.supplier} onChange={(e) => setLotForm({ ...lotForm, supplier: e.target.value })} />
-            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void addLot()}>Receive</button>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => setVarietyForm(emptyVariety())}>+ New variety</button>
           </div>
+
+          {varietyForm && (
+            <div className="preview-note" style={{ marginBottom: 14 }}>
+              <strong>{varietyForm.id ? `Edit ${varietyForm.crop} · ${varietyForm.variety}` : 'New seed variety'}</strong>
+              <div className="field-row" style={{ marginTop: 10 }}>
+                <div className="field"><label>Crop</label>
+                  <input value={varietyForm.crop} placeholder="Tomato" onChange={(e) => setVarietyForm({ ...varietyForm, crop: e.target.value })} /></div>
+                <div className="field"><label>Variety</label>
+                  <input value={varietyForm.variety} placeholder="San Marzano" onChange={(e) => setVarietyForm({ ...varietyForm, variety: e.target.value })} /></div>
+              </div>
+              <div className="field-row" style={{ marginTop: 8 }}>
+                <div className="field"><label>Category</label>
+                  <select value={varietyForm.category} onChange={(e) => setVarietyForm({ ...varietyForm, category: e.target.value })}>
+                    {['vegetable', 'herb', 'flower', 'pollinator', 'salad', 'fruit'].map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select></div>
+                <div className="field"><label>Sun</label>
+                  <select value={varietyForm.preferred_sun} onChange={(e) => setVarietyForm({ ...varietyForm, preferred_sun: e.target.value })}>
+                    {['full', 'partial', 'shade', 'any'].map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select></div>
+                <div className="field"><label>Seeds/packet</label>
+                  <input inputMode="numeric" value={varietyForm.packet_seed_count} onChange={(e) => setVarietyForm({ ...varietyForm, packet_seed_count: e.target.value.replace(/[^0-9]/g, '') })} /></div>
+              </div>
+              <div className="field" style={{ marginTop: 8 }}><label>Description</label>
+                <textarea rows={2} value={varietyForm.description} onChange={(e) => setVarietyForm({ ...varietyForm, description: e.target.value })} /></div>
+              <div className="field-row" style={{ marginTop: 8 }}>
+                <div className="field"><label>Days to germinate</label>
+                  <input inputMode="numeric" value={varietyForm.days_to_germination} onChange={(e) => setVarietyForm({ ...varietyForm, days_to_germination: e.target.value.replace(/[^0-9]/g, '') })} /></div>
+                <div className="field"><label>Days to mature</label>
+                  <input inputMode="numeric" value={varietyForm.days_to_maturity} onChange={(e) => setVarietyForm({ ...varietyForm, days_to_maturity: e.target.value.replace(/[^0-9]/g, '') })} /></div>
+                <div className="field"><label>Depth (in)</label>
+                  <input inputMode="decimal" value={varietyForm.planting_depth_inches} onChange={(e) => setVarietyForm({ ...varietyForm, planting_depth_inches: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                <div className="field"><label>Spacing (in)</label>
+                  <input inputMode="decimal" value={varietyForm.spacing_inches} onChange={(e) => setVarietyForm({ ...varietyForm, spacing_inches: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+              </div>
+              <div className="field" style={{ marginTop: 8 }}>
+                <label>Sowing months (zone-6 baseline — when can this go in?)</label>
+                <div className="chiprow">
+                  {MONTHS.map((m, idx) => {
+                    const mo = idx + 1;
+                    const on = varietyForm.sow_months.includes(mo);
+                    return (
+                      <button key={m} type="button" className={`chip${on ? ' active' : ''}`}
+                        onClick={() => setVarietyForm({
+                          ...varietyForm,
+                          sow_months: on ? varietyForm.sow_months.filter((x) => x !== mo) : [...varietyForm.sow_months, mo].sort((a, b) => a - b),
+                        })}>
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="chiprow" style={{ marginTop: 8 }}>
+                <button type="button" className={`chip${varietyForm.container_friendly ? ' active' : ''}`}
+                  onClick={() => setVarietyForm({ ...varietyForm, container_friendly: !varietyForm.container_friendly })}>
+                  🪴 Container-friendly
+                </button>
+                <button type="button" className={`chip${varietyForm.beginner_friendly ? ' active' : ''}`}
+                  onClick={() => setVarietyForm({ ...varietyForm, beginner_friendly: !varietyForm.beginner_friendly })}>
+                  🌱 Beginner-friendly
+                </button>
+                <button type="button" className={`chip${varietyForm.active ? ' active' : ''}`}
+                  onClick={() => setVarietyForm({ ...varietyForm, active: !varietyForm.active })}>
+                  {varietyForm.active ? '✓ Active in catalog' : 'Inactive (hidden from engine)'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void saveVariety()}>
+                  {busy ? 'Saving…' : varietyForm.id ? 'Save changes' : 'Create variety'}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setVarietyForm(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button className="mm-btn" onClick={() => exportCsv('seed-inventory', seedRows.flatMap((p) => p.lots.map((l) => ({
@@ -628,26 +749,69 @@ export default function AdminClient() {
             {seedRows.map((p) => (
               <div key={p.id} className="mm-row" style={{ alignItems: 'flex-start' }}>
                 <div className="mm-info">
-                  <span className="mm-title">{p.crop} · {p.variety} <span className="mm-expiry">({p.category} · {p.packet_seed_count} seeds/packet)</span></span>
-                  <div className="mm-meta" style={{ flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span className="mm-title">
+                      {p.crop} · {p.variety}
+                      {!p.active && <span className="tag" style={{ marginLeft: 6 }}>inactive</span>}
+                    </span>
+                    <span className="mm-expiry">
+                      {p.category} · {p.packet_seed_count} seeds/pkt · {p.preferred_sun} sun
+                      {p.container_friendly ? ' · 🪴' : ''} · sow {p.sow_months.map((m) => MONTHS[m - 1]).join(' ')}
+                    </span>
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                      <button className="mm-btn" disabled={busy} onClick={() => setVarietyForm({
+                        id: p.id, crop: p.crop, variety: p.variety, category: p.category,
+                        description: p.description ?? '', preferred_sun: p.preferred_sun,
+                        container_friendly: p.container_friendly, beginner_friendly: p.beginner_friendly,
+                        days_to_germination: p.days_to_germination?.toString() ?? '',
+                        days_to_maturity: p.days_to_maturity?.toString() ?? '',
+                        planting_depth_inches: p.planting_depth_inches?.toString() ?? '',
+                        spacing_inches: p.spacing_inches?.toString() ?? '',
+                        packet_seed_count: String(p.packet_seed_count),
+                        sow_months: p.sow_months ?? [], active: p.active,
+                      })}>✏️ Edit</button>
+                      <button className="mm-btn" disabled={busy} onClick={() => {
+                        setLotFormFor(lotFormFor === p.id ? null : p.id);
+                        setLotForm({ product: p.id, lotNo: '', qty: '', germ: '', supplier: '' });
+                      }}>+ Lot</button>
+                    </span>
+                  </div>
+
+                  {lotFormFor === p.id && (
+                    <div className="locrow" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                      <input style={{ maxWidth: 140 }} placeholder="lot # (e.g. LT-2026-1)" value={lotForm.lotNo} onChange={(e) => setLotForm({ ...lotForm, lotNo: e.target.value })} />
+                      <input style={{ maxWidth: 90 }} placeholder="packets" inputMode="numeric" value={lotForm.qty} onChange={(e) => setLotForm({ ...lotForm, qty: e.target.value.replace(/[^0-9]/g, '') })} />
+                      <input style={{ maxWidth: 90 }} placeholder="germ %" inputMode="numeric" value={lotForm.germ} onChange={(e) => setLotForm({ ...lotForm, germ: e.target.value.replace(/[^0-9]/g, '') })} />
+                      <input style={{ maxWidth: 140 }} placeholder="supplier" value={lotForm.supplier} onChange={(e) => setLotForm({ ...lotForm, supplier: e.target.value })} />
+                      <button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => { await addLot(); setLotFormFor(null); }}>Receive</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setLotFormFor(null)}>Cancel</button>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 6 }}>
                     {p.lots.length === 0 && <span className="mm-expiry">no lots — out of stock</span>}
                     {p.lots.map((l) => {
                       const low = Number(l.current_qty) > 0 && Number(l.current_qty) < 5;
                       const overdue = l.next_review_date && l.next_review_date < new Date().toISOString().slice(0, 10);
+                      const bad = l.status === 'quarantined' || l.status === 'failed' || l.status === 'discarded';
                       return (
-                        <span key={l.id} className={`tag ${l.status === 'quarantined' || l.status === 'failed' ? 'type-sale' : low || overdue ? 'type-wanted' : 'type-free'}`}>
-                          {l.internal_lot_number}: {l.current_qty} {l.unit}
-                          {l.germination_pct != null ? ` · ${l.germination_pct}% germ` : ' · untested'}
-                          {' · '}{l.status}{overdue ? ' · RETEST DUE' : ''}
-                          {' '}
-                          <button className="linkbtn" disabled={busy} onClick={() => { setAdjustForm({ lot: l.id, delta: '', reason: '' }); setCountForm(null); }}>adjust</button>{' '}
-                          <button className="linkbtn" disabled={busy} onClick={() => { setCountForm({ lot: l.id, counted: '' }); setAdjustForm(null); }}>count</button>{' '}
-                          <button className="linkbtn" disabled={busy} onClick={() => void showHistory(l.id)}>log</button>{' '}
-                          <button className="linkbtn" disabled={busy} onClick={() => setTestForm({ lot: l.id, tested: '', germd: '' })}>test</button>{' '}
-                          {l.status !== 'quarantined'
-                            ? <button className="linkbtn" disabled={busy} onClick={() => void setLotStatus(l, 'quarantined')}>quarantine</button>
-                            : <button className="linkbtn" disabled={busy} onClick={() => void setLotStatus(l, 'active')}>restore</button>}
-                        </span>
+                        <div key={l.id} className="lot-row">
+                          <span className={`tag ${bad ? 'type-sale' : low || overdue ? 'type-wanted' : 'type-free'}`}>
+                            {l.internal_lot_number} · {l.current_qty} {l.unit}
+                            {l.germination_pct != null ? ` · ${l.germination_pct}%` : ' · untested'}
+                            {' · '}{l.status}{overdue ? ' · RETEST DUE' : ''}
+                          </span>
+                          {l.supplier && <span className="mm-expiry">{l.supplier}</span>}
+                          <span className="lot-actions">
+                            <button className="mm-btn" disabled={busy} onClick={() => { setAdjustForm({ lot: l.id, delta: '', reason: '' }); setCountForm(null); }}>Adjust</button>
+                            <button className="mm-btn" disabled={busy} onClick={() => { setCountForm({ lot: l.id, counted: '' }); setAdjustForm(null); }}>Count</button>
+                            <button className="mm-btn" disabled={busy} onClick={() => setTestForm({ lot: l.id, tested: '', germd: '' })}>Test</button>
+                            <button className="mm-btn" disabled={busy} onClick={() => void showHistory(l.id)}>Log</button>
+                            {l.status !== 'quarantined'
+                              ? <button className="mm-btn danger" disabled={busy} onClick={() => void setLotStatus(l, 'quarantined')}>Quarantine</button>
+                              : <button className="mm-btn" disabled={busy} onClick={() => void setLotStatus(l, 'active')}>Restore</button>}
+                          </span>
+                        </div>
                       );
                     })}
                   </div>

@@ -544,6 +544,11 @@ body {
 .gp-auth { padding: 12px; overflow-y: auto; }
 .gp-auth .authcard { max-width: none; border: none; padding: 8px 4px; }
 
+/* Admin: lot rows with real buttons (was tiny links inside chips) */
+.lot-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+.lot-row:last-child { border-bottom: none; }
+.lot-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+
 /* Admin dashboard cards */
 .dash-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
 @media (max-width: 900px) { .dash-cards { grid-template-columns: repeat(2, 1fr); } }
