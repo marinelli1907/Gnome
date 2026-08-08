@@ -77,6 +77,7 @@ export default function TrustPage() {
           <li><strong>Eggs</strong> — many states (including Ohio) have small-flock rules on labeling, refrigeration, and where they can be sold. Check yours before selling.</li>
           <li><strong>Baked &amp; canned goods</strong> — usually covered by state “cottage food” laws that limit what can be sold from a home kitchen and require labels. Look up your state’s list.</li>
           <li><strong>Meat &amp; dairy</strong> — heavily regulated nearly everywhere and mostly not legal to sell neighbor-to-neighbor without licenses. When in doubt, don’t.</li>
+          <li><strong>Pet treats &amp; food</strong> — homemade dog biscuits and similar goods are welcome where legal, but pet food is regulated in most states (labeling, ingredients, sometimes registration). List ingredients and the intended species, skip medical claims entirely (&ldquo;helps joints&rdquo; is a claim), and check your state&rsquo;s feed rules before selling.</li>
           <li><strong>Not welcome on Gnome</strong> — alcohol, cannabis, tobacco, prescription products, weapons, and unsafe chemicals. Pesticides and fertilizers only in original labeled packaging.</li>
         </ul>
         <p className="authhint" style={{ marginTop: 14 }}>

@@ -11,6 +11,121 @@ import { SignInCard, useSession } from '../components/auth';
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'reset' | 'code';
 
+// Account + profile: name, town, ZIP, avatar. Writes the user's own
+// profiles row (profiles_update_self RLS); avatar goes to the public
+// listing-images bucket under the user's own folder.
+function AccountView({ email, uid, onSetPassword }: { email: string; uid: string; onSetPassword: () => void }) {
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('OH');
+  const [zip, setZip] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabaseBrowser().from('profiles').select('name,city,state,zip_code,avatar_url').eq('id', uid).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        setName(data.name ?? '');
+        setCity(data.city ?? '');
+        setState(data.state ?? 'OH');
+        setZip(data.zip_code ?? '');
+        setAvatarUrl(data.avatar_url ?? null);
+      });
+  }, [uid]);
+
+  async function saveProfile() {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    const { error } = await supabaseBrowser().from('profiles').update({
+      name: name.trim() || null,
+      city: city.trim() || null,
+      state: state.trim().toUpperCase() || null,
+      zip_code: zip.trim() || null,
+    }).eq('id', uid);
+    setBusy(false);
+    setMsg(error ? error.message : 'Profile saved.');
+  }
+
+  async function uploadAvatar(file: File) {
+    setBusy(true); setMsg(null);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 400 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), 'image/jpeg', 0.85));
+      const sb = supabaseBrowser();
+      const path = `${uid}/avatar-${Date.now()}.jpg`;
+      const { error: upErr } = await sb.storage.from('listing-images').upload(path, blob, { contentType: 'image/jpeg' });
+      if (upErr) throw new Error(upErr.message);
+      const url = sb.storage.from('listing-images').getPublicUrl(path).data.publicUrl;
+      const { error } = await sb.from('profiles').update({ avatar_url: url }).eq('id', uid);
+      if (error) throw new Error(error.message);
+      setAvatarUrl(url);
+      setMsg('Photo updated.');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Upload failed — try a smaller photo.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="authcard">
+      <h2>Your account</h2>
+      <p className="sub">{email}</p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '10px 0' }}>
+        <div className="avatar lg" style={{ overflow: 'hidden', flex: 'none' }}>
+          {avatarUrl
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={avatarUrl} alt="Your photo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : (name || email).charAt(0).toUpperCase()}
+        </div>
+        <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+          {busy ? 'Working…' : avatarUrl ? 'Change photo' : 'Add photo'}
+          <input type="file" accept="image/*" hidden
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadAvatar(f); e.target.value = ''; }} />
+        </label>
+      </div>
+
+      <div className="field"><label>Display name</label>
+        <input maxLength={40} value={name} placeholder="Daniel M." onChange={(e) => setName(e.target.value)} /></div>
+      <div className="field-row" style={{ marginTop: 8 }}>
+        <div className="field"><label>City</label>
+          <input value={city} placeholder="Richmond Heights" onChange={(e) => setCity(e.target.value)} /></div>
+        <div className="field" style={{ maxWidth: 80 }}><label>State</label>
+          <input maxLength={2} value={state} onChange={(e) => setState(e.target.value)} /></div>
+        <div className="field" style={{ maxWidth: 110 }}><label>ZIP</label>
+          <input inputMode="numeric" maxLength={5} value={zip} onChange={(e) => setZip(e.target.value.replace(/[^0-9]/g, ''))} /></div>
+      </div>
+      <p className="authhint" style={{ marginTop: 6 }}>
+        Your name and photo show on your Market and listings. Your town powers
+        nearby search — your exact address is never shown.
+      </p>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void saveProfile()}>Save profile</button>
+        <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
+        <button className="btn btn-secondary btn-sm"
+          onClick={async () => { await supabaseBrowser().auth.signOut(); window.location.reload(); }}>
+          Sign out
+        </button>
+      </div>
+      {msg && <p className="authhint" style={{ marginTop: 10, color: 'var(--green)', fontWeight: 700 }}>{msg}</p>}
+      <p className="authhint" style={{ marginTop: 8 }}>
+        Want a password (or a new one)?{' '}
+        <button className="linkbtn" onClick={onSetPassword}>Set password</button>
+      </p>
+    </div>
+  );
+}
+
 export default function LoginClient() {
   const { session, ready } = useSession();
   const [mode, setMode] = useState<Mode>('signin');
@@ -86,27 +201,9 @@ export default function LoginClient() {
 
   if (!ready) return <div className="empty"><p>Loading…</p></div>;
 
-  // Signed in (and not mid-recovery): account view.
+  // Signed in (and not mid-recovery): account + profile view.
   if (session && mode !== 'reset') {
-    return (
-      <div className="authcard">
-        <h2>You’re signed in</h2>
-        <p className="sub">{session.user.email}</p>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <a className="btn btn-primary btn-sm" href="/my">My Market</a>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={async () => { await supabaseBrowser().auth.signOut(); window.location.reload(); }}
-          >
-            Sign out
-          </button>
-        </div>
-        <p className="authhint" style={{ marginTop: 12 }}>
-          Want a password (or a new one)?{' '}
-          <button className="linkbtn" onClick={() => setMode('reset')}>Set password</button>
-        </p>
-      </div>
-    );
+    return <AccountView email={session.user.email ?? ''} uid={session.user.id} onSetPassword={() => setMode('reset')} />;
   }
 
   if (mode === 'code') {

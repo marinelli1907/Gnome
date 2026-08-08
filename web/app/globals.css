@@ -544,6 +544,14 @@ body {
 .gp-auth { padding: 12px; overflow-y: auto; }
 .gp-auth .authcard { max-width: none; border: none; padding: 8px 4px; }
 
+/* Market storefront themes — subtle preset accents on the default banner */
+.banner.theme-garden { background: linear-gradient(120deg, #1B4332, #2D6A4F 60%, #87A96B); }
+.banner.theme-harvest { background: linear-gradient(120deg, #7a3f1d, #b5651d 55%, #E9C46A); }
+.banner.theme-herb { background: linear-gradient(120deg, #2D6A4F, #87A96B 60%, #cfe3b8); }
+.banner.theme-farm_stand { background: linear-gradient(120deg, #6b1d1f, #BC4749 60%, #E9C46A); }
+.banner.theme-minimal { background: linear-gradient(120deg, #DAD7CD, #F4F1E4); }
+.market-tagline { font-family: var(--font-display), Georgia, serif; font-style: italic; font-size: 19px; color: var(--green); margin: 2px 0 8px; }
+
 /* Admin: lot rows with real buttons (was tiny links inside chips) */
 .lot-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px dashed var(--border); }
 .lot-row:last-child { border-bottom: none; }
@@ -599,7 +607,15 @@ body {
 .mm-btn:disabled { opacity: .5; cursor: default; }
 @media (max-width: 560px) {
   .mm-row { flex-wrap: wrap; }
-  .mm-btns { width: 100%; justify-content: flex-end; }
+  .mm-info { flex: 1 1 100%; }
+  .mm-btns { width: 100%; justify-content: flex-start; flex-wrap: wrap; margin-top: 6px; }
+  .mm-btn { min-height: 42px; padding: 9px 14px; font-size: 14px; }
+  .mm-actions { width: 100%; flex-wrap: wrap; }
+  .mm-actions .btn { flex: 1 1 45%; }
+  .lot-actions { margin-left: 0; width: 100%; }
+  .lot-actions .mm-btn { min-height: 42px; }
+  .dash-card { padding: 12px; }
+  .dc-value { font-size: 21px; }
 }
 
 /* Browse page */

@@ -5,6 +5,7 @@
 // with promotion status and the quick actions that make sense on the web:
 // mark sold, remove, relist. Full editing stays in the app for now.
 import { useCallback, useEffect, useState } from 'react';
+import { logWeb } from '../../lib/analytics';
 import { categoryFor } from '../../lib/categories';
 import { formatPrice, listingPath, timeLeft, TYPE_LABEL } from '../../lib/format';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
@@ -16,7 +17,7 @@ import PlotThread from '../components/PlotThread';
 const BOOST_LINK = process.env.NEXT_PUBLIC_STRIPE_LINK_BOOST;
 
 const COLS =
-  'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until';
+  'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until,market_position,market_featured,inventory_count';
 
 interface MyListing {
   id: string;
@@ -31,9 +32,33 @@ interface MyListing {
   expires_at: string;
   is_featured: boolean | null;
   featured_until: string | null;
+  market_position: number | null;
+  market_featured: boolean;
+  inventory_count: number | null;
 }
 
-interface MyMarket { id: string; name: string; slug: string; plan: string | null }
+interface MyMarket {
+  id: string; name: string; slug: string; plan: string | null;
+  tagline: string | null; theme: string; description: string | null;
+}
+
+interface Txn {
+  id: string; listing_id: string | null; quantity: number;
+  gross_cents: number; discount_cents: number; fee_cents: number; net_cents: number;
+  payment_method: string; buyer_label: string | null; notes: string | null;
+  status: string; sold_at: string;
+}
+interface Expense {
+  id: string; spent_at: string; category: string; amount_cents: number;
+  vendor: string | null; notes: string | null; status: string;
+}
+const PAY_METHODS = [
+  ['cash', 'Cash'], ['venmo', 'Venmo'], ['zelle', 'Zelle'], ['cashapp', 'Cash App'],
+  ['check', 'Check'], ['external_card', 'Card (external)'], ['other', 'Other'],
+] as const;
+const THEMES = ['garden', 'harvest', 'herb', 'farm_stand', 'minimal'] as const;
+const EXPENSE_CATS = ['seeds', 'soil', 'fertilizer', 'packaging', 'market_fees', 'supplies', 'mileage', 'other'] as const;
+const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 // A plot-reservation request on one of MY plot listings (I'm the grower).
 interface Reservation {
@@ -94,6 +119,15 @@ export default function MyMarketClient() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [myReservations, setMyReservations] = useState<MyReservation[]>([]);
   const [seedOrders, setSeedOrders] = useState<SeedOrder[]>([]);
+  const [txns, setTxns] = useState<Txn[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [custForm, setCustForm] = useState({ name: '', tagline: '', description: '', theme: 'garden' });
+  const [saleOpen, setSaleOpen] = useState(false);
+  const [saleForm, setSaleForm] = useState({ listing: '', qty: '1', amount: '', discount: '', fee: '', method: 'cash', buyer: '', notes: '' });
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [expForm, setExpForm] = useState({ category: 'seeds', amount: '', vendor: '', notes: '' });
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -103,7 +137,7 @@ export default function MyMarketClient() {
     if (!uid) return;
     const supabase = supabaseBrowser();
     const [{ data: m }, { data: ls, error: lerr }] = await Promise.all([
-      supabase.from('markets').select('id,name,slug,plan').eq('owner_id', uid).limit(1).maybeSingle(),
+      supabase.from('markets').select('id,name,slug,plan,tagline,theme,description').eq('owner_id', uid).limit(1).maybeSingle(),
       supabase.from('listings').select(COLS).eq('owner_id', uid).order('created_at', { ascending: false }),
     ]);
     if (lerr) setError(lerr.message);
@@ -150,6 +184,16 @@ export default function MyMarketClient() {
         p_market_id: (m as MyMarket).id,
       });
       setCredits(typeof c === 'number' ? c : 0);
+      const [{ data: tx }, { data: ex }] = await Promise.all([
+        supabase.from('seller_transactions').select('*').eq('market_id', (m as MyMarket).id)
+          .order('sold_at', { ascending: false }).limit(200),
+        supabase.from('seller_expenses').select('*').eq('market_id', (m as MyMarket).id)
+          .order('spent_at', { ascending: false }).limit(100),
+      ]);
+      setTxns((tx as Txn[]) ?? []);
+      setExpenses((ex as Expense[]) ?? []);
+      const mm = m as MyMarket;
+      setCustForm({ name: mm.name, tagline: mm.tagline ?? '', description: mm.description ?? '', theme: mm.theme ?? 'garden' });
     }
   }, [uid]);
 
@@ -202,6 +246,128 @@ export default function MyMarketClient() {
     setBusyId(null);
     if (error) setError(error.message);
     else await load();
+  }
+
+  async function saveCustomize() {
+    if (!market) return;
+    const name = custForm.name.trim();
+    if (name.length < 3 || name.length > 60) return setError('Market name needs 3–60 characters.');
+    setBusyId('customize'); setError(null);
+    const { error } = await supabaseBrowser().from('markets').update({
+      name,
+      tagline: custForm.tagline.trim().slice(0, 120) || null,
+      description: custForm.description.trim() || null,
+      theme: custForm.theme,
+    }).eq('id', market.id);
+    setBusyId(null);
+    if (error) setError(error.message);
+    else { logWeb('market_customized'); setCustomizeOpen(false); await load(); }
+  }
+
+  async function recordSale() {
+    if (!market) return;
+    const gross = Math.round(Number(saleForm.amount) * 100);
+    if (!gross || gross <= 0) return setError('Enter the sale amount.');
+    setBusyId('sale'); setError(null);
+    const { error } = await supabaseBrowser().rpc('record_sale', {
+      p_market: market.id,
+      p_listing: saleForm.listing || null,
+      p_claim: null,
+      p_quantity: Math.max(1, Number(saleForm.qty) || 1),
+      p_gross_cents: gross,
+      p_discount_cents: Math.round(Number(saleForm.discount || 0) * 100),
+      p_fee_cents: Math.round(Number(saleForm.fee || 0) * 100),
+      p_payment_method: saleForm.method,
+      p_buyer_label: saleForm.buyer.trim() || null,
+      p_notes: saleForm.notes.trim() || null,
+      p_source: 'manual',
+    });
+    setBusyId(null);
+    if (error) {
+      setError(error.message.includes('INSUFFICIENT_INVENTORY')
+        ? 'Not enough inventory on that listing — check the quantity.'
+        : error.message);
+    } else {
+      logWeb('sale_recorded', { method: saleForm.method });
+      setSaleOpen(false);
+      setSaleForm({ listing: '', qty: '1', amount: '', discount: '', fee: '', method: 'cash', buyer: '', notes: '' });
+      await load();
+    }
+  }
+
+  async function voidTxn(t: Txn) {
+    const reason = window.prompt('Void this recorded sale? It stays in your history as voided, and any inventory it used is restored. Reason:', 'entered by mistake');
+    if (reason === null) return;
+    setBusyId(t.id); setError(null);
+    const { error } = await supabaseBrowser().rpc('void_sale', { p_txn: t.id, p_reason: reason });
+    setBusyId(null);
+    if (error) setError(error.message); else await load();
+  }
+
+  async function addExpense() {
+    if (!market) return;
+    const amt = Math.round(Number(expForm.amount) * 100);
+    if (!amt || amt <= 0) return setError('Enter the expense amount.');
+    setBusyId('expense'); setError(null);
+    const { error } = await supabaseBrowser().from('seller_expenses').insert({
+      market_id: market.id, category: expForm.category, amount_cents: amt,
+      vendor: expForm.vendor.trim() || null, notes: expForm.notes.trim() || null,
+    });
+    setBusyId(null);
+    if (error) setError(error.message);
+    else { logWeb('expense_recorded'); setExpenseOpen(false); setExpForm({ category: 'seeds', amount: '', vendor: '', notes: '' }); await load(); }
+  }
+
+  // Presentation-only reordering: writes market_position under the owner's own
+  // listing RLS (a foreign listing update simply matches zero rows).
+  async function moveListing(l: MyListing, dir: 'up' | 'down' | 'top') {
+    const live = (listings ?? []).filter(isLiveGroup);
+    const ordered = [...live].sort((a, b) =>
+      (a.market_position ?? 1e9) - (b.market_position ?? 1e9)
+      || +new Date(b.created_at) - +new Date(a.created_at));
+    const idx = ordered.findIndex((x) => x.id === l.id);
+    if (idx < 0) return;
+    const next = [...ordered];
+    next.splice(idx, 1);
+    next.splice(dir === 'top' ? 0 : dir === 'up' ? Math.max(0, idx - 1) : Math.min(next.length, idx + 1), 0, l);
+    setBusyId(l.id);
+    const sb = supabaseBrowser();
+    await Promise.all(next.map((x, i) => sb.from('listings').update({ market_position: i + 1 }).eq('id', x.id)));
+    setBusyId(null);
+    logWeb('market_reordered');
+    await load();
+  }
+
+  async function toggleFeatured(l: MyListing) {
+    const featuredCount = (listings ?? []).filter((x) => x.market_featured).length;
+    if (!l.market_featured && featuredCount >= 4) return setError('Up to 4 featured listings — unfeature one first.');
+    setBusyId(l.id);
+    await supabaseBrowser().from('listings').update({ market_featured: !l.market_featured }).eq('id', l.id);
+    setBusyId(null);
+    await load();
+  }
+
+  function exportLedgerCsv() {
+    const rows = txns.map((t) => ({
+      date: t.sold_at.slice(0, 10),
+      listing: (listings ?? []).find((x) => x.id === t.listing_id)?.title ?? '',
+      quantity: t.quantity,
+      gross: (t.gross_cents / 100).toFixed(2),
+      discount: (t.discount_cents / 100).toFixed(2),
+      fee: (t.fee_cents / 100).toFixed(2),
+      net: (t.net_cents / 100).toFixed(2),
+      payment_method: t.payment_method,
+      buyer: t.buyer_label ?? '',
+      status: t.status,
+      notes: t.notes ?? '',
+    }));
+    if (rows.length === 0) return;
+    const cols = Object.keys(rows[0]);
+    const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => JSON.stringify((r as Record<string, unknown>)[c] ?? '')).join(','))].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `gnome-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
   }
 
   const markSold = (l: MyListing) => setStatus(l, 'completed');
@@ -267,6 +433,187 @@ export default function MyMarketClient() {
       </div>
 
       {error && <p className="autherror">{error}</p>}
+
+      {/* ---------------- Seller business dashboard ---------------- */}
+      {market && (() => {
+        const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        const done = txns.filter((t) => t.status === 'completed');
+        const monthTx = done.filter((t) => new Date(t.sold_at) >= monthStart);
+        const gross = monthTx.reduce((s, t) => s + t.net_cents, 0);
+        const items = monthTx.reduce((s, t) => s + Number(t.quantity), 0);
+        const byMethod = new Map<string, number>();
+        monthTx.forEach((t) => byMethod.set(t.payment_method, (byMethod.get(t.payment_method) ?? 0) + t.net_cents));
+        const byListing = new Map<string, number>();
+        monthTx.forEach((t) => { if (t.listing_id) byListing.set(t.listing_id, (byListing.get(t.listing_id) ?? 0) + t.net_cents); });
+        const top = [...byListing.entries()].sort((a, b) => b[1] - a[1])[0];
+        const topTitle = top ? listings.find((l) => l.id === top[0])?.title : null;
+        const monthExp = expenses.filter((e) => e.status === 'recorded' && new Date(e.spent_at) >= monthStart)
+          .reduce((s, e) => s + e.amount_cents, 0);
+        return (
+          <section className="section" style={{ paddingTop: 8 }}>
+            <div className="section-head"><h2>This month</h2></div>
+            <div className="dash-cards" style={{ marginBottom: 10 }}>
+              <div className="dash-card" style={{ cursor: 'default' }}>
+                <span className="dc-value">{money(gross)}</span><span className="dc-label">recorded sales</span>
+              </div>
+              <div className="dash-card" style={{ cursor: 'default' }}>
+                <span className="dc-value">{monthTx.length}</span><span className="dc-label">sales · {items} items</span>
+              </div>
+              <div className="dash-card" style={{ cursor: 'default' }}>
+                <span className="dc-value" style={{ fontSize: 16, lineHeight: 1.3 }}>{topTitle ?? '—'}</span>
+                <span className="dc-label">top seller{top ? ` · ${money(top[1])}` : ''}</span>
+              </div>
+              <div className="dash-card" style={{ cursor: 'default' }}>
+                <span className="dc-value" style={{ fontSize: 15, lineHeight: 1.4 }}>
+                  {byMethod.size === 0 ? '—'
+                    : [...byMethod.entries()].sort((a, b) => b[1] - a[1])
+                        .map(([m, c]) => `${PAY_METHODS.find(([k]) => k === m)?.[1] ?? m} ${money(c)}`).join(' · ')}
+                </span>
+                <span className="dc-label">how you were paid{monthExp > 0 ? ` · expenses ${money(monthExp)}` : ''}</span>
+              </div>
+            </div>
+            <div className="mm-actions" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setSaleOpen(!saleOpen); setExpenseOpen(false); setCustomizeOpen(false); }}>
+                💵 Record sale
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setExpenseOpen(!expenseOpen); setSaleOpen(false); setCustomizeOpen(false); }}>
+                Record expense
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setLedgerOpen(!ledgerOpen)}>
+                {ledgerOpen ? 'Hide ledger' : `Ledger (${done.length})`}
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setCustomizeOpen(!customizeOpen); setSaleOpen(false); setExpenseOpen(false); }}>
+                🎨 Customize Market
+              </button>
+            </div>
+
+            {saleOpen && (
+              <div className="preview-note" style={{ marginTop: 12 }}>
+                <strong>Record a sale</strong>
+                <div className="field-row" style={{ marginTop: 8 }}>
+                  <div className="field"><label>Listing (optional)</label>
+                    <select value={saleForm.listing} onChange={(e) => setSaleForm({ ...saleForm, listing: e.target.value })}>
+                      <option value="">Quick sale — no listing</option>
+                      {listings.filter(isLiveGroup).map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.title}{l.inventory_count != null ? ` (${l.inventory_count} left)` : ''}
+                        </option>
+                      ))}
+                    </select></div>
+                  <div className="field" style={{ maxWidth: 90 }}><label>Qty</label>
+                    <input inputMode="numeric" value={saleForm.qty} onChange={(e) => setSaleForm({ ...saleForm, qty: e.target.value.replace(/[^0-9]/g, '') })} /></div>
+                  <div className="field" style={{ maxWidth: 120 }}><label>Amount $</label>
+                    <input inputMode="decimal" placeholder="12.00" value={saleForm.amount} onChange={(e) => setSaleForm({ ...saleForm, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                </div>
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>How were you paid?</label>
+                  <div className="chiprow">
+                    {PAY_METHODS.map(([v, l]) => (
+                      <button key={v} type="button" className={`chip${saleForm.method === v ? ' active' : ''}`}
+                        onClick={() => setSaleForm({ ...saleForm, method: v })}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="field-row" style={{ marginTop: 8 }}>
+                  <div className="field"><label>Buyer (optional)</label>
+                    <input placeholder="Walk-up, Sarah from the app…" value={saleForm.buyer} onChange={(e) => setSaleForm({ ...saleForm, buyer: e.target.value })} /></div>
+                  <div className="field" style={{ maxWidth: 110 }}><label>Discount $</label>
+                    <input inputMode="decimal" value={saleForm.discount} onChange={(e) => setSaleForm({ ...saleForm, discount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                  <div className="field" style={{ maxWidth: 110 }}><label>Fee $</label>
+                    <input inputMode="decimal" value={saleForm.fee} onChange={(e) => setSaleForm({ ...saleForm, fee: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                </div>
+                <div className="field" style={{ marginTop: 8 }}><label>Notes (private)</label>
+                  <input value={saleForm.notes} onChange={(e) => setSaleForm({ ...saleForm, notes: e.target.value })} /></div>
+                <p className="authhint" style={{ margin: '8px 0 0' }}>
+                  Gnome is recording this sale for your records — payment was handled
+                  {saleForm.method === 'gnome' ? ' by Gnome' : ' outside Gnome'}.
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                  <button className="btn btn-primary btn-sm" disabled={busyId === 'sale'} onClick={() => void recordSale()}>
+                    {busyId === 'sale' ? 'Saving…' : 'Save sale'}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSaleOpen(false)}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {expenseOpen && (
+              <div className="preview-note" style={{ marginTop: 12 }}>
+                <strong>Record an expense</strong>
+                <div className="field-row" style={{ marginTop: 8 }}>
+                  <div className="field"><label>Category</label>
+                    <select value={expForm.category} onChange={(e) => setExpForm({ ...expForm, category: e.target.value })}>
+                      {EXPENSE_CATS.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+                    </select></div>
+                  <div className="field" style={{ maxWidth: 120 }}><label>Amount $</label>
+                    <input inputMode="decimal" value={expForm.amount} onChange={(e) => setExpForm({ ...expForm, amount: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                  <div className="field"><label>Vendor (optional)</label>
+                    <input value={expForm.vendor} onChange={(e) => setExpForm({ ...expForm, vendor: e.target.value })} /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                  <button className="btn btn-primary btn-sm" disabled={busyId === 'expense'} onClick={() => void addExpense()}>Save expense</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setExpenseOpen(false)}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {customizeOpen && (
+              <div className="preview-note" style={{ marginTop: 12 }}>
+                <strong>Customize your Market</strong>
+                <div className="field" style={{ marginTop: 8 }}><label>Market name</label>
+                  <input maxLength={60} value={custForm.name} placeholder="Marinelli Backyard Market" onChange={(e) => setCustForm({ ...custForm, name: e.target.value })} /></div>
+                <div className="field" style={{ marginTop: 8 }}><label>Tagline (shows under your name)</label>
+                  <input maxLength={120} value={custForm.tagline} placeholder="Backyard vegetables, herbs, and homemade dog treats." onChange={(e) => setCustForm({ ...custForm, tagline: e.target.value })} /></div>
+                <div className="field" style={{ marginTop: 8 }}><label>About your Market</label>
+                  <textarea rows={3} value={custForm.description} onChange={(e) => setCustForm({ ...custForm, description: e.target.value })} /></div>
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>Theme</label>
+                  <div className="chiprow">
+                    {THEMES.map((t) => (
+                      <button key={t} type="button" className={`chip${custForm.theme === t ? ' active' : ''}`}
+                        onClick={() => setCustForm({ ...custForm, theme: t })}>{t.replace('_', ' ')}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary btn-sm" disabled={busyId === 'customize'} onClick={() => void saveCustomize()}>Save</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setCustomizeOpen(false)}>Cancel</button>
+                  {market.slug && <a className="btn btn-secondary btn-sm" href={`/market/${market.slug}`}>Preview public page</a>}
+                </div>
+              </div>
+            )}
+
+            {ledgerOpen && (
+              <div className="preview-note" style={{ marginTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong>Sales ledger</strong>
+                  <button className="mm-btn" onClick={exportLedgerCsv}>⬇ Export CSV</button>
+                </div>
+                {txns.length === 0 && <p className="authhint">No sales recorded yet — tap “Record sale” after your next exchange.</p>}
+                {txns.map((t) => (
+                  <div key={t.id} className="lot-row">
+                    <span style={{ textDecoration: t.status === 'void' ? 'line-through' : 'none' }}>
+                      {t.sold_at.slice(0, 10)} · {listings.find((l) => l.id === t.listing_id)?.title ?? 'Quick sale'}
+                      {' · '}×{t.quantity} · {money(t.net_cents)} · {PAY_METHODS.find(([k]) => k === t.payment_method)?.[1] ?? t.payment_method}
+                      {t.buyer_label ? ` · ${t.buyer_label}` : ''}
+                    </span>
+                    {t.status === 'void' && <span className="tag">void</span>}
+                    {t.status === 'completed' && (
+                      <span className="lot-actions">
+                        <button className="mm-btn danger" disabled={busyId === t.id} onClick={() => void voidTxn(t)}>Void</button>
+                      </span>
+                    )}
+                  </div>
+                ))}
+                <p className="authhint" style={{ marginTop: 8 }}>
+                  Recorded sales are for your own tracking and may not represent complete
+                  tax or accounting records.
+                </p>
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {reservations.length > 0 && (
         <section className="section">
@@ -451,7 +798,11 @@ export default function MyMarketClient() {
       )}
 
       {GROUPS.map((g) => {
-        const rows = listings.filter(g.match);
+        const rows = listings.filter(g.match).sort((a, b) =>
+          g.key === 'live'
+            ? (a.market_position ?? 1e9) - (b.market_position ?? 1e9)
+              || +new Date(b.created_at) - +new Date(a.created_at)
+            : +new Date(b.created_at) - +new Date(a.created_at));
         if (rows.length === 0) return null;
         return (
           <section key={g.key} className="section">
@@ -493,6 +844,17 @@ export default function MyMarketClient() {
                     <div className="mm-btns">
                       {live && (
                         <>
+                          <button className="mm-btn" title="Move up" disabled={busyId === l.id} onClick={() => void moveListing(l, 'up')}>↑</button>
+                          <button className="mm-btn" title="Move down" disabled={busyId === l.id} onClick={() => void moveListing(l, 'down')}>↓</button>
+                          <button className="mm-btn" title="Move to top" disabled={busyId === l.id} onClick={() => void moveListing(l, 'top')}>⤒</button>
+                          <button
+                            className="mm-btn"
+                            title={l.market_featured ? 'Remove from your featured section' : 'Feature in your Market (max 4)'}
+                            disabled={busyId === l.id}
+                            onClick={() => void toggleFeatured(l)}
+                          >
+                            {l.market_featured ? '★' : '☆'}
+                          </button>
                           {!boosted && l.status === 'active' && credits > 0 && (
                             <button className="mm-btn" disabled={busyId === l.id} onClick={() => void boost(l)}>
                               ✨ Boost
