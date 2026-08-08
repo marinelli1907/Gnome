@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
   },
   valueChipText: { fontSize: 14, fontFamily: fonts.bold, color: Colors.text },
   body: { padding: 14, gap: 4 },
-  title: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text },
+  title: { fontSize: 19, fontFamily: fonts.displayBold, color: Colors.text },
   market: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.secondary },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2, flexWrap: 'wrap' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },

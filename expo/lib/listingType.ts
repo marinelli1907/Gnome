@@ -9,12 +9,13 @@ export const TYPE_LABEL: Record<ListingType, string> = {
   plot: 'Plot',
 };
 
+// Rork type palette: moss / sky / terracotta / plum, plot keeps the deep green.
 export const TYPE_COLOR: Record<ListingType, string> = {
-  free: Colors.primary, // Deep Garden Green
-  trade: Colors.secondary, // Sage
-  sale: Colors.accent, // Tomato
-  wanted: Colors.textSecondary, // Muted
-  plot: Colors.primaryLight, // Fresh Green
+  free: Colors.free,
+  trade: Colors.sky,
+  sale: Colors.sell,
+  wanted: Colors.plum,
+  plot: Colors.primary,
 };
 
 export const TYPE_FILTERS: { value: 'all' | ListingType; label: string }[] = [

@@ -1,58 +1,66 @@
-// Gnome locked palette (Market Architecture v2 §22 / M5).
-// Deep Garden Green, Sage, Tomato, Harvest Gold, Warm Cream, Charcoal, Muted.
+// Gnome palette v3 — ported from the Rork design pass Daniel preferred
+// (parchment + ink + terracotta, serif display type). Raw HSL tokens live in
+// the Rork prototype's src/index.css; converted to hex here.
 const Colors = {
-  primary: '#1B4332', // Deep Garden Green
-  primaryLight: '#2D6A4F',
-  primaryDark: '#143023',
+  primary: '#1F3D2E', // Deep Garden Green (ink-green)
+  primaryLight: '#2E5943',
+  primaryDark: '#152820',
 
-  secondary: '#87A96B', // Sage
-  secondaryLight: '#A7C088',
-  accent: '#BC4749', // Tomato
-  accentLight: '#D46A6A',
+  secondary: '#618049', // Moss
+  secondaryLight: '#7FA065',
+  accent: '#C6633A', // Terracotta
+  accentLight: '#D98A66',
 
-  background: '#FEFAE0', // Warm Cream
-  backgroundSecondary: '#F4F1E4',
-  surface: '#FFFDF8', // Surface
+  background: '#F6F2E9', // Parchment
+  backgroundSecondary: '#EBE6DA',
+  surface: '#FBF8F3', // Card
   surfaceElevated: '#FFFFFF',
 
-  text: '#1F2421', // Charcoal
-  textSecondary: '#6B705C', // Muted
-  textTertiary: '#9A9E8C',
-  textInverse: '#FFFFFF',
-  textOnPrimary: '#FFFFFF',
+  text: '#152820', // Ink
+  textSecondary: '#556D63', // Muted green-gray
+  textTertiary: '#8A9689',
+  textInverse: '#F8F5EC',
+  textOnPrimary: '#F8F5EC',
 
-  border: '#DAD7CD',
-  borderLight: '#E7E4D7',
-  divider: '#E7E4D7',
+  border: '#DCD5C6',
+  borderLight: '#E7E1D3',
+  divider: '#E7E1D3',
 
-  success: '#1B4332',
-  warning: '#E9C46A',
-  error: '#BC4749',
-  info: '#5C7A6A',
+  success: '#517439',
+  warning: '#DFA23A',
+  error: '#BA352C',
+  info: '#38728A',
 
-  free: '#1B4332',
-  sell: '#BC4749',
-  trade: '#87A96B',
+  free: '#517439', // moss green
+  sell: '#AE5832', // deep terracotta
+  trade: '#38728A', // sky teal
 
-  shadow: 'rgba(20, 48, 35, 0.10)',
-  overlay: 'rgba(31, 36, 33, 0.5)',
+  shadow: 'rgba(21, 40, 32, 0.10)',
+  overlay: 'rgba(21, 40, 32, 0.5)',
 
-  tabBar: '#FFFDF8',
-  tabBarBorder: '#DAD7CD',
-  tabBarActive: '#1B4332',
-  tabBarInactive: '#9A9E8C',
+  tabBar: '#FBF8F3',
+  tabBarBorder: '#DCD5C6',
+  tabBarActive: '#1F3D2E',
+  tabBarInactive: '#8A9689',
 
-  cardShadow: 'rgba(20, 48, 35, 0.07)',
+  cardShadow: 'rgba(21, 40, 32, 0.07)',
 
-  chatBubbleUser: '#1B4332',
-  chatBubbleAI: '#EFEDE0',
-  chatBubbleUserText: '#FFFFFF',
-  chatBubbleAIText: '#1F2421',
+  chatBubbleUser: '#1F3D2E',
+  chatBubbleAI: '#EBE6DA',
+  chatBubbleUserText: '#F8F5EC',
+  chatBubbleAIText: '#152820',
 
-  gold: '#E9C46A', // Harvest Gold
-  goldLight: '#FBF1D2',
-  freshGreen: '#2D6A4F',
-  urgentOrange: '#D46A6A',
+  gold: '#DFA23A', // Marigold
+  goldLight: '#F7EAC9',
+  freshGreen: '#2E5943',
+  urgentOrange: '#D98A66',
+
+  // Rork accent set, available to new UI.
+  terracotta: '#C6633A',
+  marigold: '#DFA23A',
+  moss: '#618049',
+  sky: '#38728A',
+  plum: '#6B538D',
 };
 
 export default Colors;

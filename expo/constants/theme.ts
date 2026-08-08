@@ -18,13 +18,18 @@ export const palette = {
   border: '#E8E2D0',
 } as const;
 
-// Loaded via @expo-google-fonts/inter in the root layout. Use these family names
+// Loaded via @expo-google-fonts/* in the root layout. Use these family names
 // in styles (RN custom fonts don't respond to fontWeight, so pick the family).
+// display* = Fraunces serif — the editorial voice from the Rork design pass —
+// for headings and card titles; Inter stays the body face.
 export const fonts = {
   regular: 'Inter_400Regular',
   medium: 'Inter_500Medium',
   semibold: 'Inter_600SemiBold',
   bold: 'Inter_700Bold',
+  display: 'Fraunces_600SemiBold',
+  displayBold: 'Fraunces_700Bold',
+  displayBlack: 'Fraunces_900Black',
 } as const;
 
 export const typography = {

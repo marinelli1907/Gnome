@@ -197,7 +197,7 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 32 },
   emoji: { fontSize: 56, textAlign: 'center', marginBottom: 8 },
-  title: { fontSize: 26, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  title: { fontSize: 28, fontFamily: 'Fraunces_700Bold', color: Colors.text, textAlign: 'center' },
   subtitle: {
     fontSize: 15,
     color: Colors.textSecondary,

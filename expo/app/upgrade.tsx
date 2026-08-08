@@ -54,7 +54,7 @@ export default function UpgradeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingTop: 16 },
-  heading: { fontSize: 24, fontWeight: '800', color: Colors.text },
+  heading: { fontSize: 25, fontFamily: 'Fraunces_700Bold', color: Colors.text },
   sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 6, marginBottom: 18, lineHeight: 20 },
   tier: {
     flexDirection: 'row',

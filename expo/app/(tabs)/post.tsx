@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
   marketEdit: { fontSize: 13, fontWeight: '700', color: Colors.primary },
   banner: { backgroundColor: Colors.secondary + '22', borderRadius: 12, padding: 12, marginBottom: 16 },
   bannerText: { fontSize: 13, color: Colors.text, lineHeight: 19 },
-  heading: { fontSize: 24, fontWeight: '800', color: Colors.text, marginBottom: 16 },
+  heading: { fontSize: 25, fontFamily: 'Fraunces_700Bold', color: Colors.text, marginBottom: 16 },
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   photo: { width: 84, height: 84, borderRadius: 12, overflow: 'hidden' },
   photoImg: { width: '100%', height: '100%' },

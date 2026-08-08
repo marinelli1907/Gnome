@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   list: { paddingBottom: 32 },
   header: { alignItems: 'center', padding: 20, gap: 6 },
-  name: { fontSize: 24, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },
+  name: { fontSize: 25, fontFamily: fonts.displayBold, color: Colors.text, textAlign: 'center' },
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
   tagline: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.primaryLight, textAlign: 'center', fontStyle: 'italic', marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },

@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   heroFallback: { alignItems: 'center', justifyContent: 'center' },
   body: { padding: 20 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { fontSize: 24, fontFamily: fonts.bold, color: Colors.text, flex: 1 },
+  title: { fontSize: 25, fontFamily: fonts.displayBold, color: Colors.text, flex: 1 },
   value: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, marginTop: 6 },
   category: { fontSize: 15, color: Colors.textSecondary, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },

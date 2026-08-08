@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ListingCard from '@/components/ListingCard';
@@ -49,8 +50,11 @@ export default function BrowseScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Text style={styles.brand}>🍅 Gnome</Text>
-      <Text style={styles.tagline}>Fresh surplus from neighbors near you</Text>
+      <View style={styles.brandRow}>
+        <Image source={require('../../assets/images/badge.png')} style={styles.brandBadge} />
+        <Text style={styles.brand}>Gnome</Text>
+      </View>
+      <Text style={styles.tagline}>Fresh from the garden next door.</Text>
 
       <Pressable style={styles.plannerBanner} onPress={() => router.push('/garden')}>
         <Text style={styles.plannerEmoji}>✨</Text>
@@ -242,7 +246,8 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: Colors.surface },
   segmentText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   segmentTextActive: { color: Colors.primary, fontWeight: '700' },
-  brand: { fontSize: 28, fontFamily: fonts.bold, color: Colors.primaryDark },
+  brandBadge: { width: 34, height: 34, borderRadius: 17, marginRight: 10 },
+  brand: { fontSize: 30, fontFamily: fonts.displayBlack, color: Colors.primaryDark },
   plannerBanner: {
     flexDirection: 'row',
     alignItems: 'center',

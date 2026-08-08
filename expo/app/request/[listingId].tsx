@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   container: { padding: 20, paddingTop: 16 },
-  heading: { fontSize: 22, fontWeight: '800', color: Colors.text },
+  heading: { fontSize: 23, fontFamily: 'Fraunces_700Bold', color: Colors.text },
   sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
   priceBox: {
     backgroundColor: Colors.surface,
