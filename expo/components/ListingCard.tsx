@@ -25,6 +25,7 @@ function shortValue(l: Listing, type: ListingType): string {
   if (type === 'sale') return l.price_cents != null ? formatPrice(l.price_cents, l.unit) : 'For sale';
   if (type === 'trade') return 'Trade';
   if (type === 'wanted') return 'Wanted';
+  if (type === 'plot') return l.price_cents != null ? formatPrice(l.price_cents) : 'Plot';
   return 'Free';
 }
 
@@ -78,6 +79,11 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
           {promoted ? (
             <View style={styles.promotedTag}>
               <Text style={styles.promotedText}>Promoted</Text>
+            </View>
+          ) : null}
+          {listing.is_demo ? (
+            <View style={styles.previewTag}>
+              <Text style={styles.previewText}>Preview</Text>
             </View>
           ) : null}
         </View>
@@ -150,6 +156,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   promotedText: { fontSize: 11, fontFamily: fonts.bold, color: Colors.text },
+  previewTag: {
+    backgroundColor: 'rgba(31,36,33,0.72)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  previewText: { fontSize: 11, fontFamily: fonts.bold, color: '#fff' },
   valueChip: {
     position: 'absolute',
     top: 12,

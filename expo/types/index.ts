@@ -16,7 +16,7 @@ export type UserType =
   | 'market'
   | 'municipality';
 
-export type ClaimType = 'claim' | 'trade_offer' | 'purchase_request' | 'wanted_response';
+export type ClaimType = 'claim' | 'trade_offer' | 'purchase_request' | 'wanted_response' | 'plot_reservation';
 
 export type ClaimStatus =
   | 'pending'
@@ -29,7 +29,9 @@ export type ClaimStatus =
 export type ListingKind = 'offer' | 'wanted';
 
 // M2: listing_type is the source of truth (kind is a derived/deprecated mirror).
-export type ListingType = 'free' | 'trade' | 'sale' | 'wanted';
+// M11: 'plot' = a garden plot offered for reservation (priced; reserved via a
+// claim of type 'plot_reservation'; payment settles in person like every sale).
+export type ListingType = 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
 
 export interface Profile {
   id: string;
@@ -94,6 +96,8 @@ export interface Market {
   plan?: MarketPlan;
   avatar_url: string | null;
   banner_url?: string | null;
+  tagline?: string | null;
+  theme?: string | null;
   description: string | null;
   city: string | null;
   county: string | null;
@@ -132,6 +136,7 @@ export interface Listing {
   photos: string[];
   status: ListingStatus;
   delivery_available?: boolean; // future (V2 delivery), dormant in V1
+  is_demo?: boolean | null; // sample content — always labeled "Preview" in the UI
   created_at: string;
   expires_at: string;
   // Joined / derived (not columns):
@@ -165,6 +170,9 @@ export interface ClaimMessage {
   claim_id: string;
   sender_id: string;
   body: string;
+  /** 'update' = grower growth update on a plot reservation (0026); default 'message'. */
+  kind?: 'message' | 'update';
+  photo_url?: string | null;
   created_at: string;
   reported_at: string | null;
 }

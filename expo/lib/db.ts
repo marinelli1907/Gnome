@@ -72,7 +72,7 @@ export const keys = {
 const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
   'category,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
-  'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,status,created_at,expires_at';
+  'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at';
 const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count)`;
 
 function shapeListing(row: any): Listing {

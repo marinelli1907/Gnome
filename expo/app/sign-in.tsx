@@ -26,10 +26,15 @@ export default function SignInScreen() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
+  // Google/Apple need their providers enabled in the Supabase dashboard first.
+  // Until then the buttons would only produce errors — keep them hidden.
+  const OAUTH_READY = false;
+
   useEffect(() => {
-    if (Platform.OS === 'ios') {
+    if (OAUTH_READY && Platform.OS === 'ios') {
       AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onApple = async () => {
@@ -74,8 +79,10 @@ export default function SignInScreen() {
     setBusy(true);
     try {
       if (mode === 'up') {
-        await signUp(email.trim(), password, name.trim() || 'Neighbor');
-        Alert.alert('Check your inbox', 'Confirm your email if required, then sign in.');
+        const { needsConfirm } = await signUp(email.trim(), password, name.trim() || 'Neighbor');
+        if (needsConfirm) {
+          Alert.alert('Check your inbox', 'Confirm your email, then sign in.');
+        }
       } else {
         await signIn(email.trim(), password);
       }
@@ -142,26 +149,30 @@ export default function SignInScreen() {
           loading={busy}
         />
 
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {OAUTH_READY && (
+          <>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-        <Pressable
-          onPress={onGoogle}
-          disabled={googleBusy || busy}
-          style={({ pressed }) => [
-            styles.googleBtn,
-            (googleBusy || busy) && styles.googleBtnDisabled,
-            pressed && styles.googleBtnPressed,
-          ]}
-        >
-          <Text style={styles.googleG}>G</Text>
-          <Text style={styles.googleText}>
-            {googleBusy ? 'Connecting…' : 'Continue with Google'}
-          </Text>
-        </Pressable>
+            <Pressable
+              onPress={onGoogle}
+              disabled={googleBusy || busy}
+              style={({ pressed }) => [
+                styles.googleBtn,
+                (googleBusy || busy) && styles.googleBtnDisabled,
+                pressed && styles.googleBtnPressed,
+              ]}
+            >
+              <Text style={styles.googleG}>G</Text>
+              <Text style={styles.googleText}>
+                {googleBusy ? 'Connecting…' : 'Continue with Google'}
+              </Text>
+            </Pressable>
+          </>
+        )}
 
         {appleAvailable && (
           <AppleAuthentication.AppleAuthenticationButton

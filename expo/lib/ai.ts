@@ -44,10 +44,19 @@ export interface PlannerTurn {
 export async function askGardenPlanner(input: {
   location: string;
   messages: PlannerTurn[];
+  /** Optional plant photo → the planner diagnoses from it (garden-planner v9). */
+  imageBase64?: string;
+  mediaType?: string;
 }): Promise<string> {
   if (!isSupabaseConfigured) throw new Error('Not connected.');
   const { data, error } = await supabase.functions.invoke('garden-planner', {
-    body: { location: input.location, messages: input.messages },
+    body: {
+      location: input.location,
+      messages: input.messages,
+      ...(input.imageBase64
+        ? { imageBase64: input.imageBase64, mediaType: input.mediaType ?? 'image/jpeg' }
+        : {}),
+    },
   });
   if (error) {
     const body = await (error as { context?: Response }).context?.json?.().catch(() => null);

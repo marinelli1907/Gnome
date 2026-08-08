@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, ShieldAlert } from 'lucide-react-native';
@@ -124,10 +125,25 @@ export default function PickupChatScreen() {
 
   const renderItem = ({ item }: { item: ClaimMessage }) => {
     const mine = item.sender_id === userId;
+    const isUpdate = item.kind === 'update'; // grower growth update on a plot reservation
     return (
       <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
-        <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{item.body}</Text>
+        <View
+          style={[
+            styles.bubble,
+            mine ? styles.bubbleMine : styles.bubbleTheirs,
+            isUpdate && styles.bubbleUpdate,
+          ]}
+        >
+          {isUpdate ? <Text style={styles.updateTag}>🌱 Growth update</Text> : null}
+          {item.photo_url ? (
+            <Image source={{ uri: item.photo_url }} style={styles.updatePhoto} contentFit="cover" />
+          ) : null}
+          {item.body ? (
+            <Text style={[styles.bubbleText, mine && !isUpdate && styles.bubbleTextMine]}>
+              {item.body}
+            </Text>
+          ) : null}
         </View>
       </View>
     );
@@ -206,6 +222,14 @@ const styles = StyleSheet.create({
   bubbleTheirs: { backgroundColor: Colors.chatBubbleAI, borderBottomLeftRadius: 4 },
   bubbleText: { fontSize: 15, color: Colors.chatBubbleAIText, lineHeight: 20 },
   bubbleTextMine: { color: Colors.chatBubbleUserText },
+  bubbleUpdate: {
+    backgroundColor: Colors.goldLight,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+    gap: 6,
+  },
+  updateTag: { fontSize: 12, fontWeight: '700', color: Colors.primary },
+  updatePhoto: { width: 220, height: 160, borderRadius: 10, backgroundColor: Colors.backgroundSecondary },
   footer: {
     backgroundColor: Colors.surface,
     borderTopWidth: 1,

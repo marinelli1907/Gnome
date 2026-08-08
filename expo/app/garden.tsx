@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
@@ -48,7 +49,7 @@ export default function GardenPlannerScreen() {
       });
   }, [userId]);
 
-  const ask = async (question: string) => {
+  const ask = async (question: string, photo?: { base64: string; mediaType: string }) => {
     const q = question.trim();
     if (!q || busy) return;
     if (!location.trim()) {
@@ -61,7 +62,12 @@ export default function GardenPlannerScreen() {
     setInput('');
     setBusy(true);
     try {
-      const reply = await askGardenPlanner({ location: location.trim(), messages: next });
+      const reply = await askGardenPlanner({
+        location: location.trim(),
+        messages: next,
+        imageBase64: photo?.base64,
+        mediaType: photo?.mediaType,
+      });
       setTurns([...next, { role: 'assistant', content: reply }]);
       void logEvent('garden_planner_used', { userId: userId ?? undefined, metadata: { q } });
     } catch (e: any) {
@@ -71,6 +77,30 @@ export default function GardenPlannerScreen() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // 🌿 Check a plant: snap or pick a photo → the planner diagnoses it.
+  const checkPlant = async () => {
+    if (busy) return;
+    if (!location.trim()) {
+      setError('First tell the planner where your garden is (city + state).');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.4, // keep the upload small; plenty for a diagnosis
+      base64: true,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset?.base64) {
+      setError('Couldn’t read that photo — try another one.');
+      return;
+    }
+    void ask('📷 What’s wrong with this plant? Please diagnose from the photo.', {
+      base64: asset.base64,
+      mediaType: asset.mimeType ?? 'image/jpeg',
+    });
   };
 
   if (!userId) {
@@ -141,6 +171,13 @@ export default function GardenPlannerScreen() {
       </ScrollView>
 
       <View style={styles.inputRow}>
+        <Pressable
+          style={[styles.plantBtn, busy && styles.sendDisabled]}
+          disabled={busy}
+          onPress={() => void checkPlant()}
+        >
+          <Text style={styles.plantBtnText}>🌿</Text>
+        </Pressable>
         <TextInput
           style={styles.input}
           value={input}
@@ -240,4 +277,14 @@ const styles = StyleSheet.create({
   },
   sendDisabled: { opacity: 0.4 },
   sendText: { fontFamily: fonts.bold, color: Colors.textInverse, fontSize: 15 },
+  plantBtn: {
+    width: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '10',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plantBtnText: { fontSize: 20 },
 });
