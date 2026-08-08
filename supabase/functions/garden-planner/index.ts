@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: "You've hit today's free planner limit — Grower and Farm plans get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
     }
 
-    const { location, messages } = await req.json();
+    const { location, messages, imageBase64, mediaType } = await req.json();
     if (typeof location !== 'string' || location.trim().length < 2) {
       return json({ error: 'Tell us where your garden is (city + state).' }, 400);
     }
@@ -113,12 +113,40 @@ Deno.serve(async (req: Request) => {
       year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York',
     });
 
+    // Optional plant photo (the "check my plant" flow): attach it to the
+    // final user turn as a vision block. Size-capped; key stays server-side.
+    const hasPhoto = typeof imageBase64 === 'string'
+      && imageBase64.length > 100 && imageBase64.length < 11_000_000;
+    const apiMessages: Anthropic.MessageParam[] = turns.map((t, i) => {
+      if (hasPhoto && i === turns.length - 1 && t.role === 'user') {
+        return {
+          role: 'user',
+          content: [
+            {
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: (typeof mediaType === 'string' && /^image\/(jpeg|png|webp)$/.test(mediaType)
+                  ? mediaType : 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/webp',
+                data: imageBase64,
+              },
+            },
+            { type: 'text' as const, text: t.content },
+          ],
+        };
+      }
+      return { role: t.role, content: t.content };
+    });
+
     const anthropic = new Anthropic({ apiKey });
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-5',
       max_tokens: 1200,
-      system: `${SYSTEM_BASE}\n\nGardener's location: ${loc}\nToday's date: ${today}`,
-      messages: turns,
+      system: `${SYSTEM_BASE}\n\nGardener's location: ${loc}\nToday's date: ${today}`
+        + (hasPhoto
+          ? `\n\nA PLANT PHOTO IS ATTACHED. Diagnose what you can actually see: identify the plant if possible, then the most likely issue(s) — disease, pest, nutrient deficiency, or water stress — with your confidence level, and 2-4 concrete next steps. If the photo is unclear or it could be several things, say so honestly. Never recommend a specific pesticide product or dosage; for chemical treatment say to follow the label and check with the county extension office.`
+          : ''),
+      messages: apiMessages,
     });
 
     if (response.stop_reason === 'refusal') {

@@ -8,6 +8,18 @@ import { SignInCard, useSession } from '../components/auth';
 
 interface Turn { role: 'user' | 'assistant'; content: string }
 
+// Downscale a plant photo before shipping it to the vision-enabled planner.
+async function toJpegB64(file: File, maxDim = 1280): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
 const STARTERS = [
   'What should I plant right now?',
   'Plan a 4×8 raised bed for salads',
@@ -97,7 +109,7 @@ export default function GardenClient() {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [turns, busy]);
 
-  async function ask(question: string) {
+  async function ask(question: string, photoB64?: string) {
     const q = question.trim();
     if (!q || busy) return;
     if (!location.trim()) {
@@ -111,7 +123,11 @@ export default function GardenClient() {
     setBusy(true);
     try {
       const { data, error } = await supabaseBrowser().functions.invoke('garden-planner', {
-        body: { location: location.trim(), messages: nextTurns },
+        body: {
+          location: location.trim(),
+          messages: nextTurns,
+          ...(photoB64 ? { imageBase64: photoB64, mediaType: 'image/jpeg' } : {}),
+        },
       });
       if (error) {
         const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
@@ -195,6 +211,33 @@ export default function GardenClient() {
         />
         <button className="btn btn-primary btn-sm" disabled={busy || !input.trim()}>
           {busy ? '…' : 'Ask'}
+        </button>
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          id="plant-photo-input"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f || busy) return;
+            try {
+              const b64 = await toJpegB64(f);
+              void ask(input.trim() || '📷 What’s wrong with this plant? Please diagnose from the photo.', b64);
+            } catch {
+              setError('Couldn’t read that photo — try another one.');
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={busy}
+          title="Snap or upload a plant photo for a diagnosis"
+          onClick={() => document.getElementById('plant-photo-input')?.click()}
+        >
+          🌿 Check a plant
         </button>
       </form>
     </div>
