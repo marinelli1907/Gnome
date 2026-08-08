@@ -9,6 +9,7 @@ import { categoryFor } from '../../lib/categories';
 import { formatPrice, listingPath, timeLeft, TYPE_LABEL } from '../../lib/format';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
+import PlotThread from '../components/PlotThread';
 
 // Explicit column list — post-0010 the base table rejects select=* for
 // non-service roles (lat/lng/slug are revoked; everything else is granted).
@@ -45,6 +46,16 @@ interface Reservation {
   claimer: { name: string | null } | null;
 }
 
+// A plot I reserved in someone else's garden (I'm the buyer).
+interface MyReservation {
+  id: string;
+  status: Reservation['status'];
+  buyer_note: string | null;
+  agreed_price_cents: number | null;
+  created_at: string;
+  listing: { id: string; title: string; status: string } | null;
+}
+
 const GROUPS: { key: string; title: string; blurb: string; match: (l: MyListing) => boolean }[] = [
   {
     key: 'live', title: 'Live', blurb: 'Visible to neighbors right now.',
@@ -71,6 +82,8 @@ export default function MyMarketClient() {
   const [market, setMarket] = useState<MyMarket | null>(null);
   const [listings, setListings] = useState<MyListing[] | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [myReservations, setMyReservations] = useState<MyReservation[]>([]);
+  const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +115,16 @@ export default function MyMarketClient() {
     } else {
       setReservations([]);
     }
+
+    // Plots I reserved elsewhere (buyer side). The listing embed works even
+    // after the plot flips to 'claimed' thanks to 0026's claimer-read policy.
+    const { data: mine } = await supabase
+      .from('claims')
+      .select('id,status,buyer_note,agreed_price_cents,created_at,listing:listings!claims_listing_id_fkey(id,title,status)')
+      .eq('claim_type', 'plot_reservation')
+      .eq('claimer_id', uid)
+      .order('created_at', { ascending: false });
+    setMyReservations((mine as unknown as MyReservation[]) ?? []);
 
     if (m?.id) {
       const { data: c } = await supabase.rpc('market_boost_credits_remaining', {
@@ -240,37 +263,117 @@ export default function MyMarketClient() {
             {reservations.map((r) => {
               const plot = listings.find((l) => l.id === r.listing_id);
               const who = r.claimer?.name || 'A neighbor';
+              const chatable = r.status === 'approved' || r.status === 'completed';
               return (
-                <div key={r.id} className="mm-row">
-                  <div className="mm-thumb"><span>🧑‍🌾</span></div>
-                  <div className="mm-info">
-                    <span className="mm-title">
-                      {who} · {plot?.title ?? 'your plot'}
-                      {r.agreed_price_cents != null && r.agreed_price_cents > 0
-                        ? ` · ${formatPrice(r.agreed_price_cents)}`
-                        : ''}
-                    </span>
-                    <div className="mm-meta">
-                      {r.status === 'pending' && <span className="tag type-wanted">New request</span>}
-                      {r.status === 'approved' && <span className="tag type-free">Reserved ✓</span>}
-                      {(r.status === 'declined' || r.status === 'cancelled') && (
-                        <span className="tag">{r.status === 'declined' ? 'Declined' : 'Cancelled'}</span>
+                <div key={r.id}>
+                  <div className="mm-row">
+                    <div className="mm-thumb"><span>🧑‍🌾</span></div>
+                    <div className="mm-info">
+                      <span className="mm-title">
+                        {who} · {plot?.title ?? 'your plot'}
+                        {r.agreed_price_cents != null && r.agreed_price_cents > 0
+                          ? ` · ${formatPrice(r.agreed_price_cents)}`
+                          : ''}
+                      </span>
+                      <div className="mm-meta">
+                        {r.status === 'pending' && <span className="tag type-wanted">New request</span>}
+                        {r.status === 'approved' && <span className="tag type-free">Reserved ✓</span>}
+                        {r.status === 'completed' && <span className="tag type-free">Season complete</span>}
+                        {(r.status === 'declined' || r.status === 'cancelled') && (
+                          <span className="tag">{r.status === 'declined' ? 'Declined' : 'Cancelled'}</span>
+                        )}
+                        {r.buyer_note && <span className="mm-expiry">“{r.buyer_note}”</span>}
+                      </div>
+                    </div>
+                    <div className="mm-btns">
+                      {r.status === 'pending' && (
+                        <>
+                          <button className="mm-btn" disabled={busyId === r.id} onClick={() => void setReservation(r, 'approved')}>
+                            Approve
+                          </button>
+                          <button className="mm-btn danger" disabled={busyId === r.id} onClick={() => void setReservation(r, 'declined')}>
+                            Decline
+                          </button>
+                        </>
                       )}
-                      {r.buyer_note && <span className="mm-expiry">“{r.buyer_note}”</span>}
+                      {chatable && (
+                        <button
+                          className="mm-btn"
+                          onClick={() => setOpenThread(openThread === r.id ? null : r.id)}
+                        >
+                          {openThread === r.id ? 'Close' : '🌱 Updates & chat'}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="mm-btns">
-                    {r.status === 'pending' && (
-                      <>
-                        <button className="mm-btn" disabled={busyId === r.id} onClick={() => void setReservation(r, 'approved')}>
-                          Approve
+                  {openThread === r.id && chatable && (
+                    <PlotThread claimId={r.id} isGrower readOnly={r.status === 'completed'} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {myReservations.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Plots you’ve reserved <span className="mm-count">{myReservations.length}</span></h2>
+          </div>
+          <p className="sub">
+            Your grower posts growth updates here, and you can message them any time.
+          </p>
+          <div className="mm-list">
+            {myReservations.map((r) => {
+              const chatable = r.status === 'approved' || r.status === 'completed';
+              const key = `mine-${r.id}`;
+              return (
+                <div key={r.id}>
+                  <div className="mm-row">
+                    <div className="mm-thumb"><span>🌱</span></div>
+                    <div className="mm-info">
+                      <span className="mm-title">
+                        {r.listing?.title ?? 'A plot'}
+                        {r.agreed_price_cents != null && r.agreed_price_cents > 0
+                          ? ` · ${formatPrice(r.agreed_price_cents)}`
+                          : ''}
+                      </span>
+                      <div className="mm-meta">
+                        {r.status === 'pending' && <span className="tag type-wanted">Awaiting grower</span>}
+                        {r.status === 'approved' && <span className="tag type-free">Reserved — growing for you</span>}
+                        {r.status === 'completed' && <span className="tag type-free">Season complete</span>}
+                        {(r.status === 'declined' || r.status === 'cancelled') && (
+                          <span className="tag">{r.status === 'declined' ? 'Declined' : 'Cancelled'}</span>
+                        )}
+                        {r.buyer_note && <span className="mm-expiry">“{r.buyer_note}”</span>}
+                      </div>
+                    </div>
+                    <div className="mm-btns">
+                      {r.status === 'pending' && (
+                        <button
+                          className="mm-btn danger"
+                          disabled={busyId === r.id}
+                          onClick={async () => {
+                            setBusyId(r.id);
+                            await supabaseBrowser().from('claims').update({ status: 'cancelled' }).eq('id', r.id);
+                            setBusyId(null);
+                            await load();
+                          }}
+                        >
+                          Cancel request
                         </button>
-                        <button className="mm-btn danger" disabled={busyId === r.id} onClick={() => void setReservation(r, 'declined')}>
-                          Decline
+                      )}
+                      {chatable && (
+                        <button className="mm-btn" onClick={() => setOpenThread(openThread === key ? null : key)}>
+                          {openThread === key ? 'Close' : '🌱 Updates & chat'}
                         </button>
-                      </>
-                    )}
+                      )}
+                    </div>
                   </div>
+                  {openThread === key && chatable && (
+                    <PlotThread claimId={r.id} isGrower={false} readOnly={r.status === 'completed'} />
+                  )}
                 </div>
               );
             })}

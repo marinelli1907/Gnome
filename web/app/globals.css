@@ -453,6 +453,16 @@ body {
 .radius-row input[type='range'] { flex: 1; min-width: 140px; max-width: 320px; accent-color: var(--green); height: 34px; }
 .radius-num { width: 64px; text-align: center; height: 38px; padding: 0 8px; }
 .radius-unit { color: var(--muted); font-weight: 700; font-size: 14px; }
+
+/* Plot reservation thread (claim chat + growth updates) */
+.thread { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin: 4px 0 12px; }
+.thread .chatlog { max-height: 420px; overflow-y: auto; }
+.thread-composer { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.thread-composer input[type='text'], .thread-composer input:not([type]) { flex: 1; min-width: 160px; height: 40px; }
+.growth-update { background: var(--surface); border: 1.5px solid var(--sage); border-radius: 16px; padding: 12px 14px; max-width: 92%; }
+.growth-update .gu-head { font-weight: 800; font-size: 13px; color: var(--green); margin-bottom: 6px; }
+.growth-update img { width: 100%; max-width: 420px; border-radius: 12px; margin: 4px 0 6px; }
+.growth-update p { margin: 0; font-size: 15px; line-height: 1.5; }
 .chip.active { background: var(--green); color: #fff; border-color: var(--green); }
 .chip.active:hover { color: #fff; }
 
