@@ -379,6 +379,14 @@ export default function BrowseClient() {
         {locError && <p className="autherror">{locError}</p>}
       </div>
 
+      {filtered !== null && filtered.length > 0 && (
+        <p className="browse-count">
+          <strong>{filtered.length}</strong> thing{filtered.length === 1 ? '' : 's'} growing{' '}
+          {coords && radius > 0 ? `within ${radius} miles` : 'nearby'}
+          {manualLabel && geoState === 'manual' ? ` of ${manualLabel.split(',')[0]}` : ''}
+        </p>
+      )}
+
       {filtered !== null && filtered.length > 0 && filtered.every((l) => l.is_demo) && (
         <p className="geo-note" style={{ marginBottom: 14 }}>
           🌱 These are <strong>preview listings</strong> showing how Gnome works — real
