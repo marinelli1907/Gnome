@@ -127,7 +127,7 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   header: { paddingHorizontal: 16, paddingBottom: 4 },
-  title: { fontSize: 26, fontFamily: fonts.bold, color: Colors.primaryDark, marginBottom: 10 },
+  title: { fontSize: 26, fontFamily: fonts.displayBlack, color: Colors.primaryDark, marginBottom: 10 },
   chips: { gap: 8, paddingBottom: 10 },
   chip: {
     paddingHorizontal: 14,

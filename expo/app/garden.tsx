@@ -228,8 +228,8 @@ const styles = StyleSheet.create({
   logContent: { padding: 16, gap: 10 },
   starters: { gap: 10, paddingTop: 8 },
   startersTitle: {
-    fontFamily: fonts.bold,
-    fontSize: 16,
+    fontFamily: fonts.displayBold,
+    fontSize: 18,
     color: Colors.text,
     marginBottom: 4,
     textAlign: 'center',

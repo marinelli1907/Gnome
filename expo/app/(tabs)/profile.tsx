@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   content: { padding: 16, paddingBottom: 40 },
   headerCard: { alignItems: 'center', gap: 6, paddingVertical: 12 },
-  name: { fontSize: 22, fontWeight: '800', color: Colors.text },
+  name: { fontSize: 23, fontFamily: 'Fraunces_700Bold', color: Colors.text },
   zip: { fontSize: 14, color: Colors.textSecondary },
   trustRow: {
     flexDirection: 'row',

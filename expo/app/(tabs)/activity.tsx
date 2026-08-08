@@ -125,7 +125,7 @@ export default function MyGnomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
-  h1: { fontSize: 28, fontFamily: fonts.bold, color: Colors.text, paddingHorizontal: 16, paddingTop: 6 },
+  h1: { fontSize: 28, fontFamily: fonts.displayBlack, color: Colors.text, paddingHorizontal: 16, paddingTop: 6 },
   segRow: { marginTop: 10, flexGrow: 0 },
   segRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
   seg: {

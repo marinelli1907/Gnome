@@ -13,6 +13,11 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
+import {
+  Fraunces_600SemiBold,
+  Fraunces_700Bold,
+  Fraunces_900Black,
+} from '@expo-google-fonts/fraunces';
 import { AuthProvider } from '@/providers/AuthProvider';
 import OfflineBanner from '@/components/OfflineBanner';
 import { useNotificationRouting } from '@/lib/useNotificationRouting';
@@ -42,6 +47,9 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    Fraunces_600SemiBold,
+    Fraunces_700Bold,
+    Fraunces_900Black,
   });
 
   // Route notification taps (cold start + warm) once the navigator is mounted.
