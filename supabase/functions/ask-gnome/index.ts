@@ -75,7 +75,7 @@ async function userContext(userId: string): Promise<string> {
     if (order) {
       const { data: items } = await admin
         .from('seed_order_items')
-        .select('status,seed_products(crop,variety,days_to_germination,days_to_maturity,planting_depth_inches,spacing_inches,preferred_sun,direct_sow_allowed)')
+        .select('status,seed_products!seed_order_items_seed_product_id_fkey(crop,variety,days_to_germination,days_to_maturity,planting_depth_inches,spacing_inches,preferred_sun,direct_sow_allowed)')
         .eq('order_id', order.id)
         .neq('status', 'released');
       const seeds = (items ?? [])

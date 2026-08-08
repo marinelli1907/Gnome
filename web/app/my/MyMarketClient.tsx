@@ -140,7 +140,7 @@ export default function MyMarketClient() {
     // My Seed Drop orders (own-row RLS; items embed the public catalog row).
     const { data: sorders } = await supabase
       .from('seed_orders')
-      .select('id,status,packet_count,tracking,created_at,items:seed_order_items(id,status,product:seed_products(crop,variety))')
+      .select('id,status,packet_count,tracking,created_at,items:seed_order_items(id,status,product:seed_products!seed_order_items_seed_product_id_fkey(crop,variety))')
       .eq('user_id', uid)
       .order('created_at', { ascending: false });
     setSeedOrders((sorders as unknown as SeedOrder[]) ?? []);
