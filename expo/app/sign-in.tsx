@@ -28,9 +28,9 @@ export default function SignInScreen() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
-  // Google/Apple need their providers enabled in the Supabase dashboard first.
-  // Until then the buttons would only produce errors — keep them hidden.
-  const OAUTH_READY = false;
+  // Google + Apple providers were enabled in Supabase on 2026-08-08
+  // (Google Cloud project "Gnome Farmers Market"; Apple native via bundle id).
+  const OAUTH_READY = true;
 
   useEffect(() => {
     if (OAUTH_READY && Platform.OS === 'ios') {
