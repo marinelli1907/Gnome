@@ -17,11 +17,13 @@ import Colors from '@/constants/colors';
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn, signUp, signInWithGoogle, signInWithApple, configured } = useAuth();
-  const [mode, setMode] = useState<'in' | 'up'>('up');
+  const { signIn, signUp, requestEmailCode, verifyEmailCode, signInWithGoogle, signInWithApple, configured } = useAuth();
+  const [mode, setMode] = useState<'in' | 'up' | 'code'>('up');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
@@ -67,6 +69,44 @@ export default function SignInScreen() {
     }
   };
 
+  // Email-code flow — the same door as the website, so code-only web users
+  // can sign into the app without ever setting a password.
+  const sendCode = async () => {
+    if (!configured) {
+      Alert.alert('Supabase not connected', 'Add your Supabase keys to .env to enable accounts.');
+      return;
+    }
+    if (!email.trim()) {
+      Alert.alert('Missing info', 'Enter your email address.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await requestEmailCode(email.trim());
+      setCodeSent(true);
+    } catch (e: any) {
+      Alert.alert('Couldn’t send the code', e?.message ?? 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async () => {
+    if (code.trim().length < 6) {
+      Alert.alert('Check the code', 'Enter the 6-digit code from your email.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await verifyEmailCode(email.trim(), code.trim());
+      if (router.canGoBack()) router.back();
+    } catch (e: any) {
+      Alert.alert('Code didn’t match', e?.message ?? 'Check the code and try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async () => {
     if (!configured) {
       Alert.alert('Supabase not connected', 'Add your Supabase keys to .env to enable accounts.');
@@ -102,7 +142,7 @@ export default function SignInScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.emoji}>🍅</Text>
         <Text style={styles.title}>
-          {mode === 'up' ? 'Join your neighborhood' : 'Welcome back'}
+          {mode === 'code' ? 'Sign in with a code' : mode === 'up' ? 'Join your neighborhood' : 'Welcome back'}
         </Text>
         <Text style={styles.subtitle}>
           Share your garden surplus and grab what neighbors have to spare.
@@ -135,19 +175,50 @@ export default function SignInScreen() {
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Field
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          placeholder="••••••••"
-          secureTextEntry
-        />
+        {mode !== 'code' && (
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="••••••••"
+            secureTextEntry
+          />
+        )}
+        {mode === 'code' && codeSent && (
+          <Field
+            label="6-digit code from your email"
+            value={code}
+            onChangeText={setCode}
+            placeholder="123456"
+            keyboardType="number-pad"
+            autoCorrect={false}
+          />
+        )}
 
-        <Button
-          label={mode === 'up' ? 'Create account' : 'Sign in'}
-          onPress={submit}
-          loading={busy}
-        />
+        {mode === 'code' ? (
+          codeSent ? (
+            <>
+              <Button label="Verify code" onPress={submitCode} loading={busy} />
+              <Pressable onPress={sendCode} disabled={busy} style={styles.toggle}>
+                <Text style={styles.toggleText}>Send a new code</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Button label="Email me a code" onPress={sendCode} loading={busy} />
+          )
+        ) : (
+          <Button
+            label={mode === 'up' ? 'Create account' : 'Sign in'}
+            onPress={submit}
+            loading={busy}
+          />
+        )}
+
+        {mode !== 'code' && (
+          <Pressable onPress={() => { setMode('code'); setCodeSent(false); setCode(''); }} style={styles.toggle}>
+            <Text style={styles.toggleText}>Email me a code instead — no password needed</Text>
+          </Pressable>
+        )}
 
         {OAUTH_READY && (
           <>
@@ -184,9 +255,16 @@ export default function SignInScreen() {
           />
         )}
 
-        <Pressable onPress={() => setMode(mode === 'up' ? 'in' : 'up')} style={styles.toggle}>
+        <Pressable
+          onPress={() => setMode(mode === 'code' ? 'in' : mode === 'up' ? 'in' : 'up')}
+          style={styles.toggle}
+        >
           <Text style={styles.toggleText}>
-            {mode === 'up' ? 'Already have an account? Sign in' : 'New here? Create an account'}
+            {mode === 'code'
+              ? '← Use a password instead'
+              : mode === 'up'
+                ? 'Already have an account? Sign in'
+                : 'New here? Create an account'}
           </Text>
         </Pressable>
       </ScrollView>
