@@ -17,6 +17,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { askGardenPlanner, type PlannerTurn } from '@/lib/ai';
 import { logEvent } from '@/lib/db';
+import { currentPlaceLabel } from '@/lib/location';
 import { supabase } from '@/lib/supabase';
 
 const STARTERS = [
@@ -25,6 +26,47 @@ const STARTERS = [
   'What can I still start from seed this month?',
   'Low-effort crops for a beginner?',
 ];
+
+/**
+ * Minimal markdown for the planner's replies — the model writes `### headings`,
+ * `- bullets` and `**bold**`, and without this the user reads the raw symbols.
+ * Deliberately tiny: headings, bullets, bold. Anything else is a paragraph.
+ */
+function PlannerMarkdown({ text }: { text: string }) {
+  const lines = text.split('\n');
+  return (
+    <View style={{ gap: 6 }}>
+      {lines.map((raw, i) => {
+        const line = raw.trimEnd();
+        if (!line.trim()) return null;
+        const heading = line.match(/^#{1,4}\s+(.*)$/);
+        if (heading) {
+          return <Text key={i} style={styles.mdHeading}>{inlineBold(heading[1], i)}</Text>;
+        }
+        const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+        if (bullet) {
+          return (
+            <View key={i} style={styles.mdBulletRow}>
+              <Text style={styles.bubbleAIText}>• </Text>
+              <Text style={[styles.bubbleAIText, { flex: 1 }]}>{inlineBold(bullet[1], i)}</Text>
+            </View>
+          );
+        }
+        return <Text key={i} style={styles.bubbleAIText}>{inlineBold(line, i)}</Text>;
+      })}
+    </View>
+  );
+}
+
+function inlineBold(s: string, keyBase: number) {
+  return s.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') ? (
+      <Text key={`${keyBase}-${i}`} style={styles.mdBold}>{part.slice(2, -2)}</Text>
+    ) : (
+      part
+    ),
+  );
+}
 
 export default function GardenPlannerScreen() {
   const router = useRouter();
@@ -36,17 +78,27 @@ export default function GardenPlannerScreen() {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Prefill from the profile's town (set at signup / in settings).
+  // Prefill from the profile's town, falling back to the device's location.
+  // Without this, anyone who never set a town sees only a grey placeholder and
+  // every question they ask is rejected for having no location.
   useEffect(() => {
     if (!userId) return;
-    void supabase
-      .from('profiles')
-      .select('city,state')
-      .eq('id', userId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.city) setLocation((l) => l || `${data.city}, ${data.state ?? 'OH'}`);
-      });
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('city,state')
+        .eq('id', userId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data?.city) {
+        setLocation((l) => l || `${data.city}, ${data.state ?? 'OH'}`);
+        return;
+      }
+      const place = await currentPlaceLabel();
+      if (!cancelled && place) setLocation((l) => l || place);
+    })();
+    return () => { cancelled = true; };
   }, [userId]);
 
   const ask = async (question: string, photo?: { base64: string; mediaType: string }) => {
@@ -155,9 +207,11 @@ export default function GardenPlannerScreen() {
             key={i}
             style={[styles.bubble, t.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
           >
-            <Text style={t.role === 'user' ? styles.bubbleUserText : styles.bubbleAIText}>
-              {t.content}
-            </Text>
+            {t.role === 'user' ? (
+              <Text style={styles.bubbleUserText}>{t.content}</Text>
+            ) : (
+              <PlannerMarkdown text={t.content} />
+            )}
           </View>
         ))}
         {busy && (
@@ -248,6 +302,9 @@ const styles = StyleSheet.create({
   bubbleAI: { alignSelf: 'flex-start', backgroundColor: Colors.chatBubbleAI },
   bubbleUserText: { fontFamily: fonts.medium, color: Colors.chatBubbleUserText, fontSize: 15, lineHeight: 21 },
   bubbleAIText: { fontFamily: fonts.medium, color: Colors.chatBubbleAIText, fontSize: 15, lineHeight: 22 },
+  mdHeading: { fontFamily: fonts.displayBold, color: Colors.text, fontSize: 16, marginTop: 6 },
+  mdBold: { fontFamily: fonts.bold, color: Colors.text },
+  mdBulletRow: { flexDirection: 'row', alignItems: 'flex-start' },
   thinking: { color: Colors.textSecondary, fontStyle: 'italic' },
   error: { fontFamily: fonts.semibold, color: Colors.error, fontSize: 13, paddingTop: 4 },
   inputRow: {
