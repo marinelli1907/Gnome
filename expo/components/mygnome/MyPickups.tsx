@@ -1,9 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Avatar, Badge, EmptyState } from '@/components/ui';
+import { Avatar, Badge, EmptyState, ErrorState } from '@/components/ui';
 import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useMyClaims } from '@/lib/db';
 import type { ClaimStatus } from '@/types';
 
@@ -28,6 +29,9 @@ export default function MyPickups({ uid }: { uid: string }) {
         <RowSkeleton />
       </View>
     );
+  }
+  if (mine.error) {
+    return <ErrorState message="Couldn’t load your pickups." onRetry={() => void mine.refetch()} />;
   }
   if (claims.length === 0) {
     return (
@@ -80,8 +84,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  title: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1 },
+  title: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
+  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1, fontFamily: fonts.regular },
   right: { alignItems: 'flex-end', gap: 6 },
-  link: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  link: { color: Colors.primary, fontSize: 13, fontFamily: fonts.bold },
 });

@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
@@ -35,6 +36,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -43,15 +45,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSession(data.session))
+      .catch(() => {}) // never strand the app on a loading splash
+      .finally(() => setLoading(false));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
+      setLoading(false);
+      // Queries fetched before the session hydrated ran as anon and came back
+      // empty (RLS), with nothing to retrigger them — refetch on any auth change.
+      if (event === 'SIGNED_OUT') queryClient.clear();
+      else void queryClient.invalidateQueries();
     });
     return () => sub.subscription.unsubscribe();
-  }, []);
+  }, [queryClient]);
 
   const signUp = useCallback(async (email: string, password: string, name: string) => {
     const { data, error } = await supabase.auth.signUp({

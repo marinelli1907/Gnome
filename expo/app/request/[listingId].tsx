@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Field, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import { formatPrice } from '@/lib/listingType';
 import { useAuth } from '@/providers/AuthProvider';
@@ -189,7 +190,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   container: { padding: 20, paddingTop: 16 },
   heading: { fontSize: 23, fontFamily: 'Fraunces_700Bold', color: Colors.text },
-  sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
+  sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4, marginBottom: 18, fontFamily: fonts.regular },
   priceBox: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -198,8 +199,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  priceLabel: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase' },
-  price: { fontSize: 26, fontWeight: '800', color: Colors.sell, marginTop: 2 },
-  priceNote: { fontSize: 12, color: Colors.textTertiary, marginTop: 6, lineHeight: 17 },
+  priceLabel: { fontSize: 12, color: Colors.textSecondary, textTransform: 'uppercase', fontFamily: fonts.bold },
+  price: { fontSize: 26, color: Colors.sell, marginTop: 2, fontFamily: fonts.bold },
+  priceNote: { fontSize: 12, color: Colors.textTertiary, marginTop: 6, lineHeight: 17, fontFamily: fonts.regular },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
 });

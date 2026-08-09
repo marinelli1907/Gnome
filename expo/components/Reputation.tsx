@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   },
   stats: { flexDirection: 'row' },
   stat: { flex: 1, alignItems: 'center', gap: 2 },
-  statEmoji: { fontSize: 18 },
+  statEmoji: { fontSize: 18, fontFamily: fonts.regular },
   statN: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text },
   statLabel: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary },
   resp: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.primary, textAlign: 'center' },

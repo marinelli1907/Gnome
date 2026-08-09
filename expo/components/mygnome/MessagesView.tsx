@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Avatar, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { isUnread } from '@/lib/chatReads';
 import type { ChatSummary } from '@/types';
 
@@ -64,10 +65,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  name: { fontSize: 15, fontWeight: '600', color: Colors.text },
-  bold: { fontWeight: '800' },
-  listing: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
-  preview: { fontSize: 13, color: Colors.textTertiary, marginTop: 2 },
-  previewUnread: { color: Colors.text, fontWeight: '600' },
+  name: { fontSize: 15, color: Colors.text, fontFamily: fonts.semibold },
+  bold: {  fontFamily: fonts.bold },
+  listing: { fontSize: 12, color: Colors.textSecondary, marginTop: 1, fontFamily: fonts.regular },
+  preview: { fontSize: 13, color: Colors.textTertiary, marginTop: 2, fontFamily: fonts.regular },
+  previewUnread: { color: Colors.text, fontFamily: fonts.semibold },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
 });

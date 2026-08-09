@@ -188,8 +188,10 @@ export function useIncomingClaims(uid?: string) {
       const { data, error } = await supabase
         .from('claims')
         // claims has two FKs to profiles (claimer_id + dormant assigned_fulfiller_id),
-        // so disambiguate the claimer embed by FK constraint name.
-        .select('*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings!inner(*)')
+        // so disambiguate the claimer embed by FK constraint name. The listing embed
+        // must name its columns too: `listings(*)` expands to every column including
+        // lat/lng, whose SELECT is revoked → 42501 kills the whole query.
+        .select(`*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings!inner(${LISTING_FIELDS})`)
         .eq('listing.owner_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -206,7 +208,7 @@ export function useMyClaims(uid?: string) {
     queryFn: async (): Promise<Claim[]> => {
       const { data, error } = await supabase
         .from('claims')
-        .select('*, listing:listings(*, owner:profiles(*))')
+        .select(`*, listing:listings(${LISTING_FIELDS}, owner:profiles(*))`)
         .eq('claimer_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -351,11 +353,13 @@ export function useUpdateClaim(uid?: string) {
       status: 'approved' | 'declined' | 'cancelled';
       title?: string;
     }): Promise<void> => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('claims')
         .update({ status: input.status })
-        .eq('id', input.claimId);
+        .eq('id', input.claimId)
+        .select('id');
       if (error) throw error;
+      if (!data?.length) throw new Error('That request could no longer be updated.');
     },
     onSuccess: (_d, input) => {
       if (input.status === 'approved') void notifyCounterparty('approved', input.claimId);
@@ -426,7 +430,10 @@ export function useUpdateListing(uid?: string) {
       quantity: string;
       category: string;
     }): Promise<void> => {
-      const { error } = await supabase
+      if (!uid) throw new Error('You must be signed in to edit a listing.');
+      // Return the id so an RLS-rejected update (0 rows, no error) is caught
+      // here instead of looking like a successful save.
+      const { data, error } = await supabase
         .from('listings')
         .update({
           title: input.title,
@@ -434,8 +441,10 @@ export function useUpdateListing(uid?: string) {
           quantity: input.quantity || null,
           category: input.category,
         })
-        .eq('id', input.listingId);
+        .eq('id', input.listingId)
+        .select('id');
       if (error) throw error;
+      if (!data?.length) throw new Error('You can only edit your own listings.');
     },
     onSuccess: (_d, input) => {
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
@@ -689,8 +698,14 @@ export function useUpdateMarket(uid?: string) {
         description: input.description || null,
       };
       if (input.avatar_url !== undefined) patch.avatar_url = input.avatar_url;
-      const { error } = await supabase.from('markets').update(patch).eq('id', input.marketId);
+      if (!uid) throw new Error('You must be signed in to edit your Market.');
+      const { data, error } = await supabase
+        .from('markets')
+        .update(patch)
+        .eq('id', input.marketId)
+        .select('id');
       if (error) throw error;
+      if (!data?.length) throw new Error('You can only edit your own Market.');
     },
     onSuccess: (_d, input) => {
       qc.invalidateQueries({ queryKey: keys.myMarket(uid) });
@@ -816,7 +831,7 @@ export function useClaimThread(claimId?: string) {
     queryFn: async (): Promise<Claim | null> => {
       const { data, error } = await supabase
         .from('claims')
-        .select('*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings(*, owner:profiles(*))')
+        .select(`*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings(${LISTING_FIELDS}, owner:profiles(*))`)
         .eq('id', claimId as string)
         .maybeSingle();
       if (error) throw error;
@@ -899,17 +914,6 @@ export function useSendMessage(claimId?: string, uid?: string) {
   });
 }
 
-export function useReportClaim(claimId?: string, uid?: string) {
-  return useMutation({
-    mutationFn: async (reason: string): Promise<void> => {
-      if (!uid || !claimId) throw new Error('Not signed in.');
-      const { error } = await supabase
-        .from('claim_reports')
-        .insert({ claim_id: claimId, reporter_id: uid, reason: reason || null });
-      if (error) throw error;
-    },
-  });
-}
 
 // ---------------------------------------------------------------------------
 // My Gnome — Activity history + Messages list (V1.4)

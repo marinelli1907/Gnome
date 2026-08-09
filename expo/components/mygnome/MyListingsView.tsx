@@ -1,9 +1,10 @@
 import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Badge, Button, EmptyState } from '@/components/ui';
+import { Badge, Button, EmptyState, ErrorState } from '@/components/ui';
 import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import { useMyListings, useUpdateListingStatus } from '@/lib/db';
 import type { Listing } from '@/types';
@@ -39,6 +40,9 @@ export default function MyListingsView({ uid }: { uid: string }) {
         <RowSkeleton />
       </View>
     );
+  }
+  if (myListings.error) {
+    return <ErrorState message="Couldn’t load your listings." onRetry={() => void myListings.refetch()} />;
   }
   if (listings.length === 0) {
     return (
@@ -77,6 +81,9 @@ export default function MyListingsView({ uid }: { uid: string }) {
         title: l.title,
         quantity: l.quantity ?? '',
         description: l.description ?? '',
+        // nonce so re-posting the same listing twice still re-seeds the form
+        // (the Post screen keys its seeding effect on these params)
+        n: String(Date.now()),
       },
     });
 
@@ -131,8 +138,8 @@ export default function MyListingsView({ uid }: { uid: string }) {
 }
 
 const styles = StyleSheet.create({
-  section: { fontSize: 16, fontWeight: '800', color: Colors.text },
-  count: { fontSize: 14, fontWeight: '700', color: Colors.textTertiary },
+  section: { fontSize: 16, color: Colors.text, fontFamily: fonts.bold },
+  count: { fontSize: 14, color: Colors.textTertiary, fontFamily: fonts.bold },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -144,10 +151,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderLight,
   },
   main: { flex: 1 },
-  title: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  sub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  title: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
+  sub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2, fontFamily: fonts.regular },
   actions: { alignItems: 'flex-end', gap: 6 },
-  link: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
-  linkDanger: { color: Colors.error, fontWeight: '600', fontSize: 13 },
-  featured: { color: Colors.text, fontWeight: '700', fontSize: 13 },
+  link: { color: Colors.primary, fontSize: 13, fontFamily: fonts.bold },
+  linkDanger: { color: Colors.error, fontSize: 13, fontFamily: fonts.semibold },
+  featured: { color: Colors.text, fontSize: 13, fontFamily: fonts.bold },
 });

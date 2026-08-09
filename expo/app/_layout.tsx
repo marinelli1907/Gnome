@@ -25,12 +25,11 @@ import Colors from '@/constants/colors';
 
 void SplashScreen.preventAutoHideAsync();
 
-// Default any text without an explicit fontFamily to Inter (regular). Components
-// that need a weight set the Inter_* family directly in their styles.
-const TextAny = RNText as unknown as { defaultProps?: { style?: unknown } };
-TextAny.defaultProps = { ...(TextAny.defaultProps ?? {}), style: { fontFamily: 'Inter_400Regular' } };
-const InputAny = RNTextInput as unknown as { defaultProps?: { style?: unknown } };
-InputAny.defaultProps = { ...(InputAny.defaultProps ?? {}), style: { fontFamily: 'Inter_400Regular' } };
+// NOTE: there is deliberately no global font default here. React 19 ignores
+// defaultProps on function components (RN's Text/TextInput are function
+// components), so the old `Text.defaultProps` trick silently did nothing and
+// half the app rendered in the system font. Every text style now names its
+// Inter family explicitly — see constants/theme.ts `fonts`.
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },

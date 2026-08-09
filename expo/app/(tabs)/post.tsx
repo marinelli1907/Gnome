@@ -18,6 +18,7 @@ import { Button, Field, EmptyState } from '@/components/ui';
 import { CATEGORIES } from '@/constants/categories';
 import { TYPE_CHOICES } from '@/lib/listingType';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyMarket, logEvent } from '@/lib/db';
 import { draftListingFromPhoto } from '@/lib/ai';
@@ -57,6 +58,7 @@ export default function PostScreen() {
     quantity?: string;
     description?: string;
     fulfilledBy?: string;
+    n?: string;
   }>();
 
   const initialType = (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)
@@ -77,7 +79,7 @@ export default function PostScreen() {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
 
-  const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}`;
+  const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}|${params.n ?? ''}`;
   useEffect(() => {
     if (params.fulfilledBy || params.title || params.category || params.type) {
       if (params.type && (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)) {
@@ -415,8 +417,8 @@ const styles = StyleSheet.create({
   },
   typeBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
   typeBtnDisabled: { opacity: 0.4 },
-  typeEmoji: { fontSize: 22 },
-  typeText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  typeEmoji: { fontSize: 22, fontFamily: fonts.regular },
+  typeText: { fontSize: 14, color: Colors.textSecondary, fontFamily: fonts.semibold },
   typeTextActive: { color: Colors.primary },
   marketLine: {
     flexDirection: 'row',
@@ -428,10 +430,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 14,
   },
-  marketText: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.text },
-  marketEdit: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  marketText: { flex: 1, fontSize: 13, color: Colors.text, fontFamily: fonts.semibold },
+  marketEdit: { fontSize: 13, color: Colors.primary, fontFamily: fonts.bold },
   banner: { backgroundColor: Colors.secondary + '22', borderRadius: 12, padding: 12, marginBottom: 16 },
-  bannerText: { fontSize: 13, color: Colors.text, lineHeight: 19 },
+  bannerText: { fontSize: 13, color: Colors.text, lineHeight: 19, fontFamily: fonts.regular },
   heading: { fontSize: 25, fontFamily: 'Fraunces_700Bold', color: Colors.text, marginBottom: 16 },
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   photo: { width: 84, height: 84, borderRadius: 12, overflow: 'hidden' },
@@ -459,7 +461,7 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingHorizontal: 4,
   },
-  addPhotoText: { fontSize: 10, color: Colors.primary, fontWeight: '600', textAlign: 'center' },
+  addPhotoText: { fontSize: 10, color: Colors.primary, textAlign: 'center', fontFamily: fonts.semibold },
   aiBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -474,16 +476,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   aiBtnBusy: { opacity: 0.6 },
-  aiBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  aiBtnText: { fontSize: 14, color: Colors.primary, fontFamily: fonts.bold },
   typeFields: { gap: 0 },
   rowFields: { flexDirection: 'row', gap: 12 },
-  hint: { fontSize: 12, color: Colors.textTertiary, marginTop: -6, marginBottom: 8 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 8 },
+  hint: { fontSize: 12, color: Colors.textTertiary, marginTop: -6, marginBottom: 8, fontFamily: fonts.regular },
+  fieldLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontFamily: fonts.semibold },
   catWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   catChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   catChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  catText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  catText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.semibold },
   catTextActive: { color: Colors.textInverse },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
-  note: { fontSize: 13, color: Colors.textTertiary, marginBottom: 16, lineHeight: 18 },
+  note: { fontSize: 13, color: Colors.textTertiary, marginBottom: 16, lineHeight: 18, fontFamily: fonts.regular },
 });

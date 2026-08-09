@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Avatar, Badge, Button, EmptyState, ErrorState } from '@/components/ui';
 import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { formatPrice } from '@/lib/listingType';
 import { useIncomingClaims, useUpdateClaim } from '@/lib/db';
 import type { Claim } from '@/types';
@@ -21,6 +22,12 @@ function summarize(c: Claim): { verb: string; context: string | null; note: stri
       };
     case 'wanted_response':
       return { verb: 'has', context: c.buyer_note ?? null, note: null };
+    case 'plot_reservation':
+      return {
+        verb: 'wants to reserve',
+        context: c.agreed_price_cents ? formatPrice(c.agreed_price_cents) : null,
+        note: c.buyer_note ?? null, // what they want grown
+      };
     default:
       return { verb: 'wants', context: c.buyer_note ?? null, note: null };
   }
@@ -130,7 +137,7 @@ function timeAgo(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  section: { fontSize: 14, fontWeight: '700', color: Colors.textSecondary },
+  section: { fontSize: 14, color: Colors.textSecondary, fontFamily: fonts.bold },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -149,10 +156,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  name: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1 },
+  name: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
+  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 1, fontFamily: fonts.regular },
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  context: { fontSize: 14, color: Colors.text, fontStyle: 'italic', marginTop: 4 },
-  note: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
-  link: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  context: { fontSize: 14, color: Colors.text, fontStyle: 'italic', marginTop: 4, fontFamily: fonts.regular },
+  note: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, fontFamily: fonts.regular },
+  link: { color: Colors.primary, fontSize: 13, fontFamily: fonts.bold },
 });

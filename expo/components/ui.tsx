@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: 12, fontFamily: fonts.bold },
   empty: { alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
-  emptyEmoji: { fontSize: 48 },
+  emptyEmoji: { fontSize: 48, fontFamily: fonts.regular },
   emptyTitle: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },
   emptySub: {
     fontSize: 14,

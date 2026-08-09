@@ -59,8 +59,10 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
     router.push(`/listing/${listing.id}`);
   };
 
+  const isOwner = !!userId && userId === listing.owner_id;
+
   const onCta = () => {
-    if (type === 'free') open();
+    if (isOwner || type === 'free') open();
     else router.push(`/request/${listing.id}`);
   };
 
@@ -121,8 +123,13 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
           ) : null}
         </View>
 
-        <Pressable onPress={onCta} style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}>
-          <Text style={styles.ctaText}>{ctaLabel(type)}</Text>
+        <Pressable
+          onPress={onCta}
+          style={({ pressed }) => [styles.cta, isOwner && styles.ctaOwn, pressed && { opacity: 0.85 }]}
+        >
+          <Text style={[styles.ctaText, isOwner && styles.ctaTextOwn]}>
+            {isOwner ? 'Your listing · View' : ctaLabel(type)}
+          </Text>
         </Pressable>
       </View>
     </Pressable>
@@ -147,7 +154,7 @@ const styles = StyleSheet.create({
   imageWrap: { position: 'relative' },
   image: { width: '100%', height: 190, backgroundColor: Colors.backgroundSecondary },
   fallback: { alignItems: 'center', justifyContent: 'center' },
-  fallbackEmoji: { fontSize: 64 },
+  fallbackEmoji: { fontSize: 64, fontFamily: fonts.regular },
   badgeWrap: { position: 'absolute', top: 12, left: 12, gap: 6, alignItems: 'flex-start' },
   promotedTag: {
     backgroundColor: Colors.gold,
@@ -188,4 +195,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   ctaText: { color: Colors.textInverse, fontSize: 15, fontFamily: fonts.bold },
+  ctaOwn: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: Colors.border },
+  ctaTextOwn: { color: Colors.textSecondary },
 });

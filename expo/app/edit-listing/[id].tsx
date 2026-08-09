@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Field, EmptyState } from '@/components/ui';
 import { CATEGORIES } from '@/constants/categories';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useListing, useUpdateListing } from '@/lib/db';
 
@@ -42,7 +43,10 @@ export default function EditListingScreen() {
   }, [listing, seeded]);
 
   if (isLoading) return <View style={styles.screen} />;
-  if (!listing || (userId && listing.owner_id !== userId)) {
+  // Fail closed when signed out too: RLS would reject the update, but a
+  // rejected UPDATE returns 0 rows and no error, so the save would look like it
+  // worked. Never render the form without a matching owner.
+  if (!listing || listing.owner_id !== userId) {
     return (
       <View style={[styles.screen, styles.center]}>
         <EmptyState emoji="🔒" title="Can't edit this" subtitle="You can only edit your own listings." />
@@ -91,11 +95,11 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   container: { padding: 20, paddingTop: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 8 },
+  label: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontFamily: fonts.semibold },
   catWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  chipText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.semibold },
   chipTextActive: { color: Colors.textInverse },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
 });

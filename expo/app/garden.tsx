@@ -286,5 +286,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  plantBtnText: { fontSize: 20 },
+  plantBtnText: { fontSize: 20, fontFamily: fonts.regular },
 });

@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarDays, Package, HandHeart, LogOut, ChevronRight } from 'lucide-react-native';
 import { Avatar, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useProfile, useProfileStats } from '@/lib/db';
 
@@ -94,7 +95,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   headerCard: { alignItems: 'center', gap: 6, paddingVertical: 12 },
   name: { fontSize: 23, fontFamily: 'Fraunces_700Bold', color: Colors.text },
-  zip: { fontSize: 14, color: Colors.textSecondary },
+  zip: { fontSize: 14, color: Colors.textSecondary, fontFamily: fonts.regular },
   trustRow: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,
@@ -105,8 +106,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderLight,
   },
   trustItem: { flex: 1, alignItems: 'center', gap: 4 },
-  trustValue: { fontSize: 18, fontWeight: '800', color: Colors.text },
-  trustLabel: { fontSize: 12, color: Colors.textSecondary },
+  trustValue: { fontSize: 18, color: Colors.text, fontFamily: fonts.bold },
+  trustLabel: { fontSize: 12, color: Colors.textSecondary, fontFamily: fonts.regular },
   link: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -117,7 +118,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  linkText: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  linkText: { fontSize: 15, color: Colors.text, fontFamily: fonts.semibold },
   signOut: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -126,5 +127,5 @@ const styles = StyleSheet.create({
     marginTop: 28,
     padding: 14,
   },
-  signOutText: { color: Colors.error, fontWeight: '700', fontSize: 15 },
+  signOutText: { color: Colors.error, fontSize: 15, fontFamily: fonts.bold },
 });
