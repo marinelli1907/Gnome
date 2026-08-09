@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { logEvent, usePlanLimits } from '@/lib/db';
 import { formatPrice } from '@/lib/listingType';
@@ -92,8 +93,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  body: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, lineHeight: 18 },
+  title: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
+  body: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, lineHeight: 18, fontFamily: fonts.regular },
   cta: { backgroundColor: Colors.primary, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
-  ctaText: { color: Colors.textInverse, fontWeight: '700', fontSize: 13 },
+  ctaText: { color: Colors.textInverse, fontSize: 13, fontFamily: fonts.bold },
 });

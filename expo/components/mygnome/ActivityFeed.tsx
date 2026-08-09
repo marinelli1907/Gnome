@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { EmptyState } from '@/components/ui';
 import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useMyEvents } from '@/lib/db';
 import type { GnomeEvent } from '@/types';
 
@@ -32,6 +33,8 @@ function describe(ev: GnomeEvent): { emoji: string; text: string } | null {
       return { emoji: '🏷️', text: `Listed ${title} for sale` };
     case 'listing_created_wanted':
       return { emoji: '🔎', text: `Posted a want: ${title}` };
+    case 'listing_created_plot':
+      return { emoji: '🌾', text: `Offered a plot: ${title}` };
     case 'listing_claim_started':
       return { emoji: '🙌', text: `Requested ${title}` };
     case 'listing_claim_approved':
@@ -58,7 +61,9 @@ function describe(ev: GnomeEvent): { emoji: string; text: string } | null {
     case 'offer_matched_to_want':
       return { emoji: '🤝', text: `Offered to help with a want` };
     default:
-      return { emoji: '•', text: ev.event_type.replace(/_/g, ' ') };
+      // Anything not spelled out above is telemetry, not history — never show a
+      // user a raw event name like "listing card opened".
+      return null;
   }
 }
 
@@ -115,7 +120,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
   },
-  emoji: { fontSize: 18, width: 24, textAlign: 'center' },
-  text: { flex: 1, fontSize: 14, color: Colors.text },
-  when: { fontSize: 12, color: Colors.textTertiary },
+  emoji: { fontSize: 18, width: 24, textAlign: 'center', fontFamily: fonts.regular },
+  text: { flex: 1, fontSize: 14, color: Colors.text, fontFamily: fonts.regular },
+  when: { fontSize: 12, color: Colors.textTertiary, fontFamily: fonts.regular },
 });

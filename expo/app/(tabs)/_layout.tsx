@@ -3,6 +3,7 @@ import { Sprout, Map as MapIcon, PlusCircle, Home, User } from 'lucide-react-nat
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { registerForPushNotifications } from '@/lib/notifications';
 
@@ -25,7 +26,7 @@ export default function TabLayout() {
           borderTopWidth: 1,
           ...(Platform.OS === 'web' ? { height: 60 } : {}),
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 11, fontFamily: fonts.semibold },
       }}
     >
       <Tabs.Screen

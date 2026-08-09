@@ -76,7 +76,11 @@ export default function ListingDetailScreen() {
   const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
   const isWanted = type === 'wanted';
   const value = listingValueLabel(listing);
-  const existingClaim = (myClaims.data ?? []).find((c) => c.listing_id === listing.id);
+  // Only a live request blocks re-requesting — a declined or cancelled one
+  // should leave the neighbor free to ask again.
+  const existingClaim = (myClaims.data ?? []).find(
+    (c) => c.listing_id === listing.id && ['pending', 'approved', 'completed'].includes(c.status),
+  );
   const isActive = listing.status === 'active';
 
   // Trade / Sale / Wanted go through the shared request sheet; Free claims inline.
@@ -285,18 +289,18 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { fontSize: 25, fontFamily: fonts.displayBold, color: Colors.text, flex: 1 },
   value: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, marginTop: 6 },
-  category: { fontSize: 15, color: Colors.textSecondary, marginTop: 4 },
+  category: { fontSize: 15, color: Colors.textSecondary, marginTop: 4, fontFamily: fonts.regular },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText: { fontSize: 13, color: Colors.textSecondary },
+  metaText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.regular },
   previewNote: {
     backgroundColor: Colors.goldLight,
     borderRadius: 10,
     padding: 10,
     marginTop: 10,
   },
-  previewNoteText: { fontSize: 12, color: Colors.text, lineHeight: 17 },
-  description: { fontSize: 15, color: Colors.text, lineHeight: 22, marginTop: 18 },
+  previewNoteText: { fontSize: 12, color: Colors.text, lineHeight: 17, fontFamily: fonts.regular },
+  description: { fontSize: 15, color: Colors.text, lineHeight: 22, marginTop: 18, fontFamily: fonts.regular },
   owner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,8 +311,8 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.borderLight,
   },
   ownerName: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text },
-  ownerSub: { fontSize: 13, color: Colors.textSecondary },
-  visit: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  ownerSub: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.regular },
+  visit: { fontSize: 14, color: Colors.primary, fontFamily: fonts.bold },
   actionsRow: { flexDirection: 'row', gap: 22, alignItems: 'center' },
   reportRow: { marginTop: 18, alignSelf: 'flex-start', paddingVertical: 4 },
   reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
@@ -324,5 +328,5 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  footerNote: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 8 },
+  footerNote: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 8, fontFamily: fonts.regular },
 });

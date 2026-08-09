@@ -5,6 +5,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { Avatar } from '@/components/ui';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useBoostCreditsRemaining, useMarketListings, useMyMarket, usePlanLimits } from '@/lib/db';
 import type { MarketPlan } from '@/types';
 
@@ -85,10 +86,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  label: { fontSize: 11, fontWeight: '700', color: Colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  name: { fontSize: 17, fontWeight: '800', color: Colors.text, marginTop: 1 },
-  meta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  boosts: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  label: { fontSize: 11, color: Colors.primary, textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: fonts.bold },
+  name: { fontSize: 17, color: Colors.text, marginTop: 1, fontFamily: fonts.bold },
+  meta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2, fontFamily: fonts.regular },
+  boosts: { fontSize: 12, color: Colors.textSecondary, fontFamily: fonts.semibold },
   barTrack: { height: 6, borderRadius: 3, backgroundColor: Colors.backgroundSecondary, overflow: 'hidden' },
   barFill: { height: 6, borderRadius: 3 },
   editBtn: {
@@ -98,5 +99,5 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
   },
-  editText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  editText: { color: Colors.primary, fontSize: 13, fontFamily: fonts.bold },
 });

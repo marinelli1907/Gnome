@@ -151,6 +151,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  badgeText: { color: '#fff', fontSize: 11, fontFamily: fonts.bold },
   body: { padding: 16, paddingBottom: 40 },
 });

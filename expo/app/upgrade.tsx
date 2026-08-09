@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check } from 'lucide-react-native';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyMarket, usePlanLimits } from '@/lib/db';
 import { formatPrice } from '@/lib/listingType';
@@ -55,7 +56,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingTop: 16 },
   heading: { fontSize: 25, fontFamily: 'Fraunces_700Bold', color: Colors.text },
-  sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 6, marginBottom: 18, lineHeight: 20 },
+  sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 6, marginBottom: 18, lineHeight: 20, fontFamily: fonts.regular },
   tier: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -67,6 +68,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderLight,
   },
   tierCurrent: { borderColor: Colors.primary, backgroundColor: Colors.primary + '0A' },
-  tierName: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  tierMeta: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  tierName: { fontSize: 16, color: Colors.text, fontFamily: fonts.bold },
+  tierMeta: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, fontFamily: fonts.regular },
 });

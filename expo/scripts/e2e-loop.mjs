@@ -134,7 +134,8 @@ async function main() {
         lat: 41.5573,
         lng: -81.5101,
       })
-      .select('*')
+      // never RETURNING * — lat/lng SELECT is revoked, which 42501s the insert
+      .select('id,status,delivery_available')
       .single();
     check('listing inserted by owner', !error && !!data, error?.message);
     check('listing defaults to active', data?.status === 'active', `status=${data?.status}`);

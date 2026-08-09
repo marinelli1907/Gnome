@@ -120,8 +120,7 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 48 },
   sectionTitle: { fontSize: 17, fontFamily: fonts.bold, color: Colors.text, marginTop: 26, marginBottom: 6 },
   sectionHint: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 19, marginBottom: 10 },
-  feedbackInput: {
-    minHeight: 90,
+  feedbackInput: { minHeight: 90,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -130,8 +129,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
     textAlignVertical: 'top',
-    marginBottom: 12,
-  },
+    marginBottom: 12, fontFamily: fonts.regular },
   blockRow: {
     flexDirection: 'row',
     alignItems: 'center',

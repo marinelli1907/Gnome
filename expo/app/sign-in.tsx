@@ -14,6 +14,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '@/providers/AuthProvider';
 import { Button, Field } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -274,26 +275,24 @@ export default function SignInScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 32 },
-  emoji: { fontSize: 56, textAlign: 'center', marginBottom: 8 },
+  emoji: { fontSize: 56, textAlign: 'center', marginBottom: 8, fontFamily: fonts.regular },
   title: { fontSize: 28, fontFamily: 'Fraunces_700Bold', color: Colors.text, textAlign: 'center' },
-  subtitle: {
-    fontSize: 15,
+  subtitle: { fontSize: 15,
     color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: 6,
     marginBottom: 24,
-    lineHeight: 21,
-  },
+    lineHeight: 21, fontFamily: fonts.regular },
   notice: {
     backgroundColor: Colors.warning + '22',
     borderRadius: 12,
     padding: 14,
     marginBottom: 20,
   },
-  noticeText: { color: Colors.text, fontSize: 13, lineHeight: 19 },
+  noticeText: { color: Colors.text, fontSize: 13, lineHeight: 19, fontFamily: fonts.regular },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
-  dividerText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  dividerText: { color: Colors.textSecondary, fontSize: 13, fontFamily: fonts.semibold },
   googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,9 +306,9 @@ const styles = StyleSheet.create({
   },
   googleBtnDisabled: { opacity: 0.5 },
   googleBtnPressed: { opacity: 0.7 },
-  googleG: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
-  googleText: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  googleG: { fontSize: 18, color: '#4285F4', fontFamily: fonts.bold },
+  googleText: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
   appleBtn: { height: 50, marginTop: 10 },
   toggle: { marginTop: 18, alignItems: 'center' },
-  toggleText: { color: Colors.primary, fontWeight: '600', fontSize: 14 },
+  toggleText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.semibold },
 });

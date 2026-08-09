@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'lucide-react-native';
 import { Avatar, Button, Field, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMarket, useUpdateMarket } from '@/lib/db';
 import { uploadListingImages } from '@/lib/images';
@@ -51,7 +52,7 @@ export default function EditMarketScreen() {
       </View>
     );
   }
-  if (!market.data || (userId && market.data.owner_id !== userId)) {
+  if (!market.data || market.data.owner_id !== userId) {
     return (
       <View style={[styles.screen, styles.center]}>
         <EmptyState emoji="🔒" title="Can't edit this garden" subtitle="You can only edit your own Market." />
@@ -126,9 +127,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   container: { padding: 20, paddingTop: 16 },
-  intro: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20, marginBottom: 18 },
+  intro: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20, marginBottom: 18, fontFamily: fonts.regular },
   avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 18 },
   avatarBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  avatarBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
+  avatarBtnText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.bold },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
 });

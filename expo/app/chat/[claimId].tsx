@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, ShieldAlert } from 'lucide-react-native';
 import { EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
+import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   useClaimMessages,
@@ -220,7 +221,7 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '78%', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 16 },
   bubbleMine: { backgroundColor: Colors.chatBubbleUser, borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: Colors.chatBubbleAI, borderBottomLeftRadius: 4 },
-  bubbleText: { fontSize: 15, color: Colors.chatBubbleAIText, lineHeight: 20 },
+  bubbleText: { fontSize: 15, color: Colors.chatBubbleAIText, lineHeight: 20, fontFamily: fonts.regular },
   bubbleTextMine: { color: Colors.chatBubbleUserText },
   bubbleUpdate: {
     backgroundColor: Colors.goldLight,
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.gold,
     gap: 6,
   },
-  updateTag: { fontSize: 12, fontWeight: '700', color: Colors.primary },
+  updateTag: { fontSize: 12, color: Colors.primary, fontFamily: fonts.bold },
   updatePhoto: { width: 220, height: 160, borderRadius: 10, backgroundColor: Colors.backgroundSecondary },
   footer: {
     backgroundColor: Colors.surface,
@@ -238,12 +239,11 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   guidanceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  guidance: { flex: 1, fontSize: 11, color: Colors.textTertiary, lineHeight: 15 },
+  guidance: { flex: 1, fontSize: 11, color: Colors.textTertiary, lineHeight: 15, fontFamily: fonts.regular },
   reportBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  reportText: { fontSize: 12, color: Colors.error, fontWeight: '600' },
+  reportText: { fontSize: 12, color: Colors.error, fontFamily: fonts.semibold },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  input: {
-    flex: 1,
+  input: { flex: 1,
     maxHeight: 110,
     backgroundColor: Colors.background,
     borderWidth: 1,
@@ -253,8 +253,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
     fontSize: 15,
-    color: Colors.text,
-  },
+    color: Colors.text, fontFamily: fonts.regular },
   sendBtn: {
     width: 44,
     height: 44,
@@ -264,10 +263,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.4 },
-  closedNote: {
-    textAlign: 'center',
+  closedNote: { textAlign: 'center',
     color: Colors.textSecondary,
     fontSize: 14,
-    paddingVertical: 12,
-  },
+    paddingVertical: 12, fontFamily: fonts.regular },
 });
