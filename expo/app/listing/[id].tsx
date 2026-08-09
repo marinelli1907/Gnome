@@ -155,8 +155,11 @@ export default function ListingDetailScreen() {
           const msg = e?.message ?? '';
           if (/BLOCKED_USER/i.test(msg)) {
             Alert.alert('Not available', 'You can’t send requests to this neighbor.');
+          } else if (/duplicate|unique|23505/i.test(msg)) {
+            Alert.alert('Already requested', 'You already have a request on this listing.');
           } else {
-            Alert.alert('Could not claim', msg || 'Try again.');
+            // never surface a raw Postgres constraint string to a neighbour
+            Alert.alert('Could not claim', /^[a-z_]+ (violates|constraint)/i.test(msg) ? 'Please try again.' : msg || 'Try again.');
           }
         },
       },

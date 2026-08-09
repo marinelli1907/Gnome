@@ -315,21 +315,35 @@ export function useClaimListing(uid?: string) {
   return useMutation({
     mutationFn: async (input: NewClaim): Promise<Claim> => {
       if (!uid) throw new Error('You must be signed in to make a request.');
-      const { data, error } = await supabase
-        .from('claims')
-        .insert({
-          listing_id: input.listingId,
-          claimer_id: uid,
-          claim_type: input.claimType ?? 'claim',
-          buyer_note: input.buyerNote || null,
-          trade_offer_text: input.tradeOfferText || null,
-          agreed_price_cents: input.agreedPriceCents ?? null,
-          payment_status: input.paymentStatus ?? 'none',
-        })
-        .select('*')
-        .single();
-      if (error) throw error;
-      return data as Claim;
+      const row = {
+        listing_id: input.listingId,
+        claimer_id: uid,
+        claim_type: input.claimType ?? 'claim',
+        buyer_note: input.buyerNote || null,
+        trade_offer_text: input.tradeOfferText || null,
+        agreed_price_cents: input.agreedPriceCents ?? null,
+        payment_status: input.paymentStatus ?? 'none',
+      };
+      const { data, error } = await supabase.from('claims').insert(row).select('*').single();
+      if (!error) return data as Claim;
+
+      // claims is UNIQUE (listing_id, claimer_id), so a neighbour whose earlier
+      // request was declined or cancelled has no row to insert. Re-open that
+      // row instead of failing with a raw constraint error.
+      if (error.code === '23505') {
+        const { data: revived, error: reviveError } = await supabase
+          .from('claims')
+          .update({ ...row, status: 'pending' })
+          .eq('listing_id', input.listingId)
+          .eq('claimer_id', uid)
+          .in('status', ['declined', 'cancelled', 'expired'])
+          .select('*')
+          .maybeSingle();
+        if (reviveError) throw reviveError;
+        if (revived) return revived as Claim;
+        throw new Error('You already have a request on this listing.');
+      }
+      throw error;
     },
     onSuccess: (claim, input) => {
       void notifyCounterparty('claim', claim.id);
