@@ -46,6 +46,27 @@ export async function getCurrentCoords(): Promise<Coords | null> {
   }
 }
 
+/**
+ * "Cleveland Heights, OH" for the device's current position, or null. Fills the
+ * Garden Planner for users who never set a town on their profile — without it
+ * the planner rejects every question for having no location.
+ */
+export async function currentPlaceLabel(): Promise<string | null> {
+  try {
+    const coords = await getCurrentCoords();
+    if (!coords) return null;
+    const [place] = await Location.reverseGeocodeAsync({
+      latitude: coords.lat,
+      longitude: coords.lng,
+    });
+    const town = place?.city ?? place?.subregion;
+    if (!town) return null;
+    return place?.region ? `${town}, ${place.region}` : town;
+  } catch {
+    return null;
+  }
+}
+
 /** "Near Me" is treated as a 2-mile bubble. */
 export function radiusToMiles(r: RadiusOption): number {
   return r === 'near' ? 2 : r;
