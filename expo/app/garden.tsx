@@ -9,7 +9,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
@@ -17,6 +16,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { askGardenPlanner, type PlannerTurn } from '@/lib/ai';
 import { logEvent } from '@/lib/db';
+import { pickImages } from '@/lib/images';
 import { currentPlaceLabel } from '@/lib/location';
 import { supabase } from '@/lib/supabase';
 
@@ -138,13 +138,11 @@ export default function GardenPlannerScreen() {
       setError('First tell the planner where your garden is (city + state).');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.4, // keep the upload small; plenty for a diagnosis
-      base64: true,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
+    // Normalized on pick: re-encoding drops the photo's GPS/EXIF before any of
+    // it is sent off-device, and converts HEIC so the vision model can read it.
+    const picked = await pickImages({ selectionLimit: 1 });
+    if (!picked.length) return;
+    const asset = picked[0];
     if (!asset?.base64) {
       setError('Couldn’t read that photo — try another one.');
       return;

@@ -47,13 +47,19 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Gnome uses your location to show surplus produce listings near you."
+          "locationWhenInUsePermission": "Gnome uses your location to show surplus produce listings near you.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Gnome needs access to your photos so you can add pictures to your listings."
+          "photosPermission": "Gnome needs access to your photos so you can add pictures to your listings.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "expo-notifications",

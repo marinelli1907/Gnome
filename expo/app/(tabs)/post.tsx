@@ -22,7 +22,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyMarket, logEvent } from '@/lib/db';
 import { draftListingFromPhoto } from '@/lib/ai';
-import { uploadListingImages } from '@/lib/images';
+import { pickImages, uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
 import type { ListingType } from '@/types';
 
@@ -111,15 +111,12 @@ export default function PostScreen() {
 
   const isWanted = type === 'wanted';
 
-  const pickImages = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: true,
-      selectionLimit: MAX_PHOTOS - assets.length,
-      quality: 0.6,
-      base64: true,
-    });
-    if (!result.canceled) setAssets((prev) => [...prev, ...result.assets].slice(0, MAX_PHOTOS));
+  const onAddPhotos = async () => {
+    // pickImages re-encodes to JPEG, which strips the original camera metadata
+    // (an iPhone library photo still carries its GPS EXIF) before it can be
+    // uploaded to the public bucket or sent to the AI drafter.
+    const picked = await pickImages({ selectionLimit: MAX_PHOTOS - assets.length });
+    if (picked.length) setAssets((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS));
   };
 
   const removeAsset = (uri: string) => setAssets((prev) => prev.filter((a) => a.uri !== uri));
@@ -294,7 +291,7 @@ export default function PostScreen() {
             </View>
           ))}
           {assets.length < MAX_PHOTOS && (
-            <Pressable style={styles.addPhoto} onPress={pickImages}>
+            <Pressable style={styles.addPhoto} onPress={onAddPhotos}>
               <Camera size={24} color={Colors.primary} />
               <Text style={styles.addPhotoText}>{isWanted ? 'Add photo (optional)' : 'Add photo'}</Text>
             </Pressable>

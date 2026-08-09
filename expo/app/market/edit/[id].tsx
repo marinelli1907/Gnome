@@ -11,7 +11,6 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'lucide-react-native';
@@ -20,7 +19,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMarket, useUpdateMarket } from '@/lib/db';
-import { uploadListingImages } from '@/lib/images';
+import { pickImages, uploadListingImages } from '@/lib/images';
 
 export default function EditMarketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -62,15 +61,11 @@ export default function EditMarketScreen() {
 
   const pickAvatar = async () => {
     if (!userId) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.6,
-      base64: true,
-    });
-    if (result.canceled) return;
+    const picked = await pickImages({ selectionLimit: 1 });
+    if (!picked.length) return;
     setBusy(true);
     try {
-      const urls = await uploadListingImages(userId, result.assets);
+      const urls = await uploadListingImages(userId, picked);
       if (urls[0]) setAvatarUrl(urls[0]);
     } catch (e: any) {
       Alert.alert('Upload failed', e?.message ?? 'Try again.');
