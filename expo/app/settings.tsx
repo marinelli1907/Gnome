@@ -10,12 +10,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import { LogOut } from 'lucide-react-native';
+import { LogOut, Trash2 } from 'lucide-react-native';
 import { Avatar, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyBlocks, useSendFeedback, useUnblockUser } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -24,6 +25,50 @@ export default function SettingsScreen() {
   const unblock = useUnblockUser(userId ?? undefined);
   const feedback = useSendFeedback(userId ?? undefined);
   const [feedbackText, setFeedbackText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  // App Store 5.1.1(v): an account created in-app must be deletable in-app.
+  // Two-step confirm, because this is irreversible.
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your Gnome account, your Market, your listings, and your messages. This cannot be undone.',
+      [
+        { text: 'Keep my account', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert(
+              'This is permanent',
+              'Your listings and conversations will be removed for everyone. Delete anyway?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete forever', style: 'destructive', onPress: () => void runDelete() },
+              ],
+            ),
+        },
+      ],
+    );
+  };
+
+  const runDelete = async () => {
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-account', { body: {} });
+      if (error) {
+        const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+        throw new Error(body?.error ?? 'Could not delete your account.');
+      }
+      if (!data?.deleted) throw new Error(data?.error ?? 'Could not delete your account.');
+      await signOut();
+      router.replace('/');
+    } catch (e: any) {
+      Alert.alert('Could not delete account', e?.message ?? 'Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   if (!userId) {
     return (
@@ -106,6 +151,22 @@ export default function SettingsScreen() {
         </Pressable>
       </View>
 
+      <Pressable
+        style={styles.deleteRow}
+        onPress={confirmDelete}
+        disabled={deleting}
+        accessibilityRole="button"
+        accessibilityLabel="Delete my account permanently"
+      >
+        <Trash2 size={16} color={Colors.error} />
+        <Text style={styles.deleteText}>
+          {deleting ? 'Deleting your account…' : 'Delete my account'}
+        </Text>
+      </Pressable>
+      <Text style={styles.deleteHint}>
+        Permanently removes your account, Market, listings and messages.
+      </Text>
+
       <Text style={styles.about}>
         Gnome v{version} · Fresh from nearby{'\n'}
         Sellers are responsible for following local food laws.
@@ -153,6 +214,25 @@ const styles = StyleSheet.create({
   },
   accountEmail: { fontSize: 15, fontFamily: fonts.medium, color: Colors.text },
   signOut: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  deleteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 48,
+    marginTop: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.error,
+  },
+  deleteText: { color: Colors.error, fontSize: 15, fontFamily: fonts.bold },
+  deleteHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+    fontFamily: fonts.regular,
+  },
   signOutText: { color: Colors.error, fontFamily: fonts.bold, fontSize: 14 },
   about: {
     marginTop: 32,
