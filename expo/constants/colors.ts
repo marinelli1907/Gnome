@@ -25,6 +25,9 @@ const Colors = {
   border: '#DCD5C6',
   borderLight: '#E7E1D3',
   divider: '#E7E1D3',
+  // Inputs need more contrast than a card edge: `border` on `surface` was
+  // nearly invisible against parchment, so fields didn't read as tappable.
+  inputBorder: '#B9AF9B',
 
   success: '#517439',
   warning: '#DFA23A',

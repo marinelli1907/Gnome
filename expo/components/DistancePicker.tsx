@@ -47,13 +47,20 @@ function DetentSlider({
 }) {
   const [trackWidth, setTrackWidth] = useState(0);
   const trackWidthRef = useRef(0);
+  // Absolute screen x of the track's left edge. Drags MUST be computed from
+  // page coordinates: nativeEvent.locationX is relative to whatever view is
+  // under the finger, so as soon as the thumb slides out from under the touch
+  // the numbers jump and the drag looks frozen (tapping still worked because
+  // grant fires once on the track itself). pageX minus this offset is stable
+  // for the whole gesture.
+  const trackPageXRef = useRef(0);
   const idx = nearestDetentIndex(miles);
   const frac = RADIUS_DETENTS.length > 1 ? idx / (RADIUS_DETENTS.length - 1) : 0;
 
-  const indexFromX = (x: number) => {
+  const indexFromPageX = (pageX: number) => {
     const w = trackWidthRef.current;
     if (w <= 0) return 0;
-    const f = Math.min(1, Math.max(0, x / w));
+    const f = Math.min(1, Math.max(0, (pageX - trackPageXRef.current) / w));
     return Math.round(f * (RADIUS_DETENTS.length - 1));
   };
 
@@ -61,8 +68,17 @@ function DetentSlider({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => onChange(RADIUS_DETENTS[indexFromX(e.nativeEvent.locationX)]),
-      onPanResponderMove: (e) => onChange(RADIUS_DETENTS[indexFromX(e.nativeEvent.locationX)]),
+      // Hold the gesture: without this the sheet/scroll container can steal
+      // the drag partway through.
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      // gestureState carries the absolute screen position for the WHOLE
+      // gesture. nativeEvent.pageX is only trustworthy on the initial touch —
+      // using it on move made drags land on the wrong detent (a drag to the
+      // middle of the track reported 5 mi where a tap at the same spot
+      // correctly reported 35).
+      onPanResponderGrant: (_e, g) => onChange(RADIUS_DETENTS[indexFromPageX(g.x0)]),
+      onPanResponderMove: (_e, g) => onChange(RADIUS_DETENTS[indexFromPageX(g.moveX)]),
     }),
   ).current;
 
@@ -92,6 +108,10 @@ function DetentSlider({
         onLayout={(e) => {
           setTrackWidth(e.nativeEvent.layout.width);
           trackWidthRef.current = e.nativeEvent.layout.width;
+          // Measure the track's absolute position for drag math.
+          e.currentTarget.measure?.((_x, _y, _w, _h, pageX) => {
+            if (typeof pageX === 'number') trackPageXRef.current = pageX;
+          });
         }}
       >
         <View style={[styles.trackFill, { width: Math.max(0, frac * trackWidth) }]} />
@@ -277,9 +297,9 @@ const styles = StyleSheet.create({
     minHeight: 40,
     justifyContent: 'center',
     borderRadius: 20,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
   },
   chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   chipText: { fontSize: 13.5, fontFamily: fonts.semibold, color: Colors.textSecondary },
@@ -332,9 +352,9 @@ const styles = StyleSheet.create({
   input: {
     minWidth: 84,
     textAlign: 'center',
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
