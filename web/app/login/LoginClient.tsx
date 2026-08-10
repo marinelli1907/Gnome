@@ -24,14 +24,17 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    supabaseBrowser().from('profiles').select('name,city,state,zip_code,avatar_url').eq('id', uid).maybeSingle()
+    // my_profile() is pinned to auth.uid() server-side and keeps working after
+    // the private zip_code column's direct SELECT is revoked.
+    supabaseBrowser().rpc('my_profile')
       .then(({ data }) => {
-        if (!data) return;
-        setName(data.name ?? '');
-        setCity(data.city ?? '');
-        setState(data.state ?? 'OH');
-        setZip(data.zip_code ?? '');
-        setAvatarUrl(data.avatar_url ?? null);
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) return;
+        setName(row.name ?? '');
+        setCity(row.city ?? '');
+        setState(row.state ?? 'OH');
+        setZip(row.zip_code ?? '');
+        setAvatarUrl(row.avatar_url ?? null);
       });
   }, [uid]);
 

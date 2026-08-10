@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Badge, Button, EmptyState, ErrorState } from '@/components/ui';
+import RecordSaleSheet, { type SalePrefill } from '@/components/RecordSaleSheet';
 import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
-import { useMyListings, useUpdateListingStatus } from '@/lib/db';
+import { useMyListings, useMyMarket, useUpdateListingStatus } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import type { Listing } from '@/types';
 
 type Group = 'Available' | 'Paused' | 'Claimed' | 'Completed' | 'Expired';
@@ -34,6 +36,47 @@ export default function MyListingsView({ uid }: { uid: string }) {
   const router = useRouter();
   const myListings = useMyListings(uid);
   const updateStatus = useUpdateListingStatus(uid);
+  const myMarket = useMyMarket(uid);
+  const [saleSheet, setSaleSheet] = useState<SalePrefill | null>(null);
+
+  // Complete Exchange → Record Payment bridge. After a sale/plot listing is
+  // completed, offer to log the payment against the claim that just closed —
+  // claim-linked records are idempotent server-side, so this can never
+  // double-count no matter how many times it's tapped.
+  const offerRecordSale = async (l: Listing) => {
+    if (!myMarket.data?.id) return;
+    if (l.listing_type !== 'sale' && l.listing_type !== 'plot') return;
+    let claim: { id: string; quantity_requested: number | null; agreed_price_cents: number | null } | null = null;
+    try {
+      const { data } = await supabase
+        .from('claims')
+        .select('id,quantity_requested,agreed_price_cents')
+        .eq('listing_id', l.id)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      claim = data;
+    } catch {
+      // Bridge is best-effort; a manual record from the notebook still works.
+    }
+    Alert.alert('Record the payment?', 'Add this exchange to your sales notebook. Optional.', [
+      { text: 'Skip', style: 'cancel' },
+      {
+        text: 'Record payment',
+        onPress: () =>
+          setSaleSheet({
+            listingId: l.id,
+            listingTitle: l.title,
+            claimId: claim?.id ?? null,
+            quantity: claim?.quantity_requested ?? 1,
+            amountCents:
+              claim?.agreed_price_cents ??
+              (l.price_cents != null ? l.price_cents * (claim?.quantity_requested ?? 1) : null),
+          }),
+      },
+    ]);
+  };
 
   const listings = myListings.data ?? [];
   if (myListings.isLoading) {
@@ -66,7 +109,11 @@ export default function MyListingsView({ uid }: { uid: string }) {
       { text: 'Back', style: 'cancel' },
       {
         text: 'Mark complete',
-        onPress: () => updateStatus.mutate({ listingId: l.id, status: 'completed', kind: l.kind, title: l.title }),
+        onPress: () =>
+          updateStatus.mutate(
+            { listingId: l.id, status: 'completed', kind: l.kind, title: l.title },
+            { onSuccess: () => void offerRecordSale(l) },
+          ),
       },
     ]);
 
@@ -127,6 +174,12 @@ export default function MyListingsView({ uid }: { uid: string }) {
                         <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Remove</Text></Pressable>
                       </>
                     )}
+                    {g === 'Paused' && (
+                      <>
+                        <Pressable onPress={() => router.push('/compliance')}><Text style={styles.link}>Why paused?</Text></Pressable>
+                        <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
+                      </>
+                    )}
                     {g === 'Expired' && (
                       <Pressable onPress={() => repost(l)}><Text style={styles.link}>Repost</Text></Pressable>
                     )}
@@ -137,6 +190,15 @@ export default function MyListingsView({ uid }: { uid: string }) {
           </View>
         ),
       )}
+      {myMarket.data?.id ? (
+        <RecordSaleSheet
+          visible={!!saleSheet}
+          marketId={myMarket.data.id}
+          uid={uid}
+          prefill={saleSheet}
+          onClose={() => setSaleSheet(null)}
+        />
+      ) : null}
     </View>
   );
 }

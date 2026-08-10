@@ -13,7 +13,7 @@ import {
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, Clock } from 'lucide-react-native';
+import { MapPin, Clock, ShieldCheck } from 'lucide-react-native';
 import { Avatar, Button, EmptyState } from '@/components/ui';
 import TypeBadge from '@/components/TypeBadge';
 import { Skeleton } from '@/components/Skeleton';
@@ -24,7 +24,8 @@ import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
-import { useBlockUser, useClaimListing, useListing, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { useBlockUser, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { breadcrumb, useTaxonomy } from '@/lib/taxonomy';
 import { listingShareUrl } from '@/lib/links';
 
 const { width } = Dimensions.get('window');
@@ -40,6 +41,8 @@ export default function ListingDetailScreen() {
   const rep = useMarketReputation(listing?.market_id ?? undefined);
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
+  const verified = useListingVerifiedBadge(listing?.id);
+  const taxonomy = useTaxonomy();
 
   useEffect(() => {
     if (listing) {
@@ -199,9 +202,28 @@ export default function ListingDetailScreen() {
           ) : null}
           <Text style={[styles.value, type === 'sale' && { color: Colors.sell }]}>{value}</Text>
           <Text style={styles.category}>
-            {cat.emoji} {cat.label}
+            {listing.taxonomy_node_id && taxonomy.data?.byId.get(listing.taxonomy_node_id)
+              ? breadcrumb(taxonomy.data, taxonomy.data.byId.get(listing.taxonomy_node_id)!)
+              : `${cat.emoji} ${cat.label}`}
             {listing.quantity ? `  ·  ${listing.quantity}` : ''}
           </Text>
+
+          {verified.data === true ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Credential verified by Gnome. Tap for what this means."
+              onPress={() =>
+                Alert.alert(
+                  'Credential verified by Gnome',
+                  'This seller provided documentation required by Gnome for this category. Gnome is not a government licensing agency.',
+                )
+              }
+              style={styles.verifiedBadge}
+            >
+              <ShieldCheck size={15} color={Colors.primary} />
+              <Text style={styles.verifiedText}>Credential verified by Gnome</Text>
+            </Pressable>
+          ) : null}
 
           <View style={styles.metaRow}>
             {listing.distance_miles != null && (
@@ -293,6 +315,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, fontFamily: fonts.displayBold, color: Colors.text, flex: 1 },
   value: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, marginTop: 6 },
   category: { fontSize: 15, color: Colors.textSecondary, marginTop: 4, fontFamily: fonts.regular },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primary + '12',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    minHeight: 32,
+    marginTop: 8,
+  },
+  verifiedText: { fontSize: 12.5, fontFamily: fonts.bold, color: Colors.primary },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.regular },

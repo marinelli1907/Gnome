@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
+import ComplianceClient from './ComplianceClient';
+import TaxonomyClient from './TaxonomyClient';
 
 interface Report {
   id: string;
@@ -28,7 +30,7 @@ interface Action {
   note: string | null; created_at: string;
 }
 
-type Tab = 'dashboard' | 'reports' | 'listings' | 'users' | 'seeds' | 'drops' | 'audit';
+type Tab = 'dashboard' | 'reports' | 'listings' | 'users' | 'seeds' | 'drops' | 'compliance' | 'taxonomy' | 'audit';
 
 const LOW_STOCK_THRESHOLD = 5; // packets — surfaced on the dashboard
 const STARTER_LINK_SET = !!process.env.NEXT_PUBLIC_SEED_LINK_STARTER;
@@ -461,7 +463,7 @@ export default function AdminClient() {
       </div>
 
       <div className="seg" style={{ maxWidth: 760, marginBottom: 18, flexWrap: 'wrap' }}>
-        {(['dashboard', 'drops', 'seeds', 'reports', 'listings', 'users', 'audit'] as Tab[]).map((t) => (
+        {(['dashboard', 'drops', 'seeds', 'compliance', 'taxonomy', 'reports', 'listings', 'users', 'audit'] as Tab[]).map((t) => (
           <button key={t} type="button" className={`seg-btn${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -993,6 +995,11 @@ export default function AdminClient() {
           })}
         </div>
       )}
+
+      {/* Both sections render only past the isAdmin gate above; RLS + the
+          hardened admin_review_credential RPC remain the real authority. */}
+      {tab === 'compliance' && <ComplianceClient />}
+      {tab === 'taxonomy' && <TaxonomyClient />}
 
       {tab === 'audit' && (
         <div className="mm-list">

@@ -26,20 +26,26 @@ Deno.serve(async (req: Request) => {
     );
 
     if (payload.event === 'offer_created') {
-      return await handleOfferCreated(admin, payload.listingId);
+      return await handleOfferCreated(admin, req, payload.listingId);
     }
     if (payload.event === 'message') {
       return await handleMessage(admin, req, payload.claimId, payload.preview);
     }
-    return await handleClaim(admin, payload.event, payload.claimId);
+    return await handleClaim(admin, req, payload.event, payload.claimId);
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
 });
 
 // --- claim / approved -------------------------------------------------------
-async function handleClaim(admin: any, event: string, claimId: string) {
+async function handleClaim(admin: any, req: Request, event: string, claimId: string) {
   if (!event || !claimId) return json({ error: 'event and claimId required' }, 400);
+
+  // The caller must be the party who actually performed the action — otherwise
+  // any authenticated user could spray "new claim"/"approved" pushes at
+  // arbitrary users by iterating claim ids.
+  const callerId = await callerFrom(admin, req);
+  if (!callerId) return json({ error: 'unauthenticated' }, 401);
 
   const { data: claim, error } = await admin
     .from('claims')
@@ -54,9 +60,13 @@ async function handleClaim(admin: any, event: string, claimId: string) {
   let recipientId: string;
   let message: { title: string; body: string };
   if (event === 'claim') {
+    // Only the claimer announces their own claim to the owner.
+    if (callerId !== claim.claimer_id) return json({ error: 'not your claim' }, 403);
     recipientId = listing.owner_id;
     message = { title: 'New claim 🍅', body: `Someone wants "${title}". Approve or decline in Gnome.` };
   } else {
+    // Only the listing owner announces an approval to the claimer.
+    if (callerId !== listing?.owner_id) return json({ error: 'not your listing' }, 403);
     recipientId = claim.claimer_id;
     message = { title: 'Claim approved ✅', body: `You're approved for "${title}". Arrange pickup with your neighbor.` };
   }
@@ -100,8 +110,11 @@ async function handleMessage(admin: any, req: Request, claimId: string, preview:
 }
 
 // --- offer_created -> match wanted posts -----------------------------------
-async function handleOfferCreated(admin: any, listingId: string) {
+async function handleOfferCreated(admin: any, req: Request, listingId: string) {
   if (!listingId) return json({ error: 'listingId required' }, 400);
+
+  const callerId = await callerFrom(admin, req);
+  if (!callerId) return json({ error: 'unauthenticated' }, 401);
 
   const { data: offer, error } = await admin
     .from('listings')
@@ -111,6 +124,8 @@ async function handleOfferCreated(admin: any, listingId: string) {
   if (error || !offer || offer.kind !== 'offer') {
     return json({ error: 'offer not found' }, 404);
   }
+  // Only the offer's owner may trigger match notifications for it.
+  if (callerId !== offer.owner_id) return json({ error: 'not your listing' }, 403);
 
   const sinceIso = new Date(Date.now() - MATCH_WINDOW_DAYS * 86_400_000).toISOString();
   const { data: wanted } = await admin
@@ -168,6 +183,14 @@ async function handleOfferCreated(admin: any, listingId: string) {
 }
 
 // --- helpers ----------------------------------------------------------------
+/** The authenticated caller's user id from their JWT (never from the payload). */
+async function callerFrom(admin: any, req: Request): Promise<string | null> {
+  const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  const { data } = await admin.auth.getUser(token);
+  return data?.user?.id ?? null;
+}
+
 async function pushToUser(
   admin: any,
   userId: string,

@@ -117,6 +117,18 @@ export default function RootLayout() {
                 name="garden"
                 options={{ title: 'Garden Planner', ...headerStyle }}
               />
+              <Stack.Screen
+                name="compliance/index"
+                options={{ title: 'Seller verification', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="compliance/upload"
+                options={{ title: 'Verification', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="notebook"
+                options={{ title: 'Sales notebook', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>

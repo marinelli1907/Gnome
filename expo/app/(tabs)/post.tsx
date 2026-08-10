@@ -13,14 +13,23 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, Sparkles, X } from 'lucide-react-native';
+import { Camera, ChevronRight, Sparkles, X } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
-import { CATEGORIES } from '@/constants/categories';
+import TaxonomyPicker from '@/components/TaxonomyPicker';
+import ComplianceGate from '@/components/ComplianceGate';
+import {
+  useTaxonomy,
+  usePublishEligibility,
+  breadcrumb,
+  legacyCategoryFor,
+  rootForLegacy,
+  parseComplianceError,
+} from '@/lib/taxonomy';
 import { TYPE_CHOICES } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useCreateListing, useMyMarket, logEvent } from '@/lib/db';
+import { useCreateListing, useMyCredentials, useMyMarket, logEvent } from '@/lib/db';
 import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
@@ -69,7 +78,8 @@ export default function PostScreen() {
   const [title, setTitle] = useState(params.title ?? '');
   const [quantity, setQuantity] = useState(params.quantity ?? '');
   const [description, setDescription] = useState(params.description ?? '');
-  const [category, setCategory] = useState<string>(params.category ?? 'vegetables');
+  const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [assets, setAssets] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [price, setPrice] = useState('');
   const [unit, setUnit] = useState('');
@@ -79,6 +89,18 @@ export default function PostScreen() {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
 
+  const taxonomy = useTaxonomy();
+  const index = taxonomy.data;
+  const selectedNode = index && taxNodeId ? index.byId.get(taxNodeId) ?? null : null;
+  const isPlot = type === 'plot';
+
+  // Server-side verdict for the chosen node (drafts/plots skip the check).
+  const eligibility = usePublishEligibility(isPlot ? null : taxNodeId, userId ?? undefined);
+  const myCredentials = useMyCredentials(userId ?? undefined);
+  const latestDenial = myCredentials.data?.find(
+    (c) => (c.status === 'DENIED' || c.status === 'REVOKED') && c.denial_reason,
+  )?.denial_reason;
+
   const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}|${params.n ?? ''}`;
   useEffect(() => {
     if (params.fulfilledBy || params.title || params.category || params.type) {
@@ -87,13 +109,16 @@ export default function PostScreen() {
       }
       if (params.fulfilledBy) setType('free');
       if (params.title) setTitle(params.title);
-      if (params.category) setCategory(params.category);
+      if (params.category && index) {
+        const root = rootForLegacy(index, params.category);
+        if (root) setTaxNodeId(root.id);
+      }
       if (params.quantity) setQuantity(params.quantity);
       if (params.description) setDescription(params.description);
       setFulfilledBy(params.fulfilledBy ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seed]);
+  }, [seed, !!index]);
 
   if (!userId) {
     return (
@@ -139,7 +164,10 @@ export default function PostScreen() {
       });
       if (!title.trim() && draft.title) setTitle(draft.title);
       if (!description.trim() && draft.description) setDescription(draft.description);
-      if (draft.category) setCategory(draft.category);
+      if (draft.category && !taxNodeId && index) {
+        const root = rootForLegacy(index, draft.category);
+        if (root) setTaxNodeId(root.id);
+      }
       if (type === 'sale') {
         if (!price.trim() && draft.suggested_price_cents != null) {
           setPrice((draft.suggested_price_cents / 100).toFixed(2).replace(/\.00$/, ''));
@@ -158,6 +186,7 @@ export default function PostScreen() {
     setTitle('');
     setQuantity('');
     setDescription('');
+    setTaxNodeId(null);
     setAssets([]);
     setPrice('');
     setUnit('');
@@ -166,9 +195,24 @@ export default function PostScreen() {
     setFulfilledBy(null);
   };
 
+  const blocked = !isPlot && !!selectedNode && eligibility.data ? !eligibility.data.allowed : false;
+  const prohibited = blocked && eligibility.data?.reason === 'PROHIBITED';
+
   const submit = async () => {
     if (!title.trim()) {
       Alert.alert(isWanted ? 'What are you looking for?' : 'Add a title', 'Give your listing a short title.');
+      return;
+    }
+    if (!isPlot && !selectedNode) {
+      Alert.alert(
+        isWanted ? 'What kind of item?' : 'What are you selling?',
+        'Pick a category so neighbors can find it.',
+      );
+      setPickerOpen(true);
+      return;
+    }
+    if (prohibited) {
+      Alert.alert('Not allowed on Gnome', eligibility.data?.message ?? 'This product cannot be listed.');
       return;
     }
     let priceCents: number | null = null;
@@ -199,6 +243,11 @@ export default function PostScreen() {
       return;
     }
 
+    // Blocked by compliance → the primary action becomes "Save draft": the
+    // listing is stored as `paused`, invisible to buyers, and auto-publishes
+    // when approval/renewal makes the seller eligible again.
+    const asDraft = blocked;
+
     setBusy(true);
     try {
       const photos = assets.length ? await uploadListingImages(userId, assets) : [];
@@ -207,7 +256,9 @@ export default function PostScreen() {
         listingType: type,
         title: title.trim(),
         description: description.trim(),
-        category,
+        category: !isPlot && selectedNode && index ? legacyCategoryFor(index, selectedNode) : 'other',
+        taxonomyNodeId: isPlot ? null : selectedNode?.id ?? null,
+        status: asDraft ? 'paused' : 'active',
         quantity: quantity.trim(),
         photos,
         coords,
@@ -218,10 +269,25 @@ export default function PostScreen() {
         fulfilledByListingId: fulfilledBy,
       });
       reset();
+      if (asDraft) {
+        Alert.alert(
+          'Saved as draft',
+          'Your listing is saved and not visible to buyers. Once your plan/verification is in order it can go live from My Gnome.',
+        );
+      }
       router.push(`/listing/${listing.id}`);
     } catch (e: any) {
       const msg = e?.message ?? '';
-      if (/PLAN_LIMIT_REACHED/i.test(msg)) {
+      const compliance = parseComplianceError(msg);
+      if (compliance) {
+        // The server gate is the authority — render its verdict even if the
+        // client somehow thought this was publishable.
+        Alert.alert(
+          compliance.reason === 'PLAN_REQUIRED' ? 'Paid plan required' : 'Verification required',
+          compliance.message ||
+            'This category needs verification before publishing. You can save a draft instead.',
+        );
+      } else if (/PLAN_LIMIT_REACHED/i.test(msg)) {
         void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type } });
         Alert.alert(
           'You’ve reached your Free limit',
@@ -364,17 +430,37 @@ export default function PostScreen() {
           </View>
         )}
 
-        <Text style={styles.fieldLabel}>Category</Text>
-        <View style={styles.catWrap}>
-          {CATEGORIES.map((c) => {
-            const active = category === c.id;
-            return (
-              <Pressable key={c.id} onPress={() => setCategory(c.id)} style={[styles.catChip, active && styles.catChipActive]}>
-                <Text style={[styles.catText, active && styles.catTextActive]}>{c.emoji} {c.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {!isPlot && (
+          <>
+            <Text style={styles.fieldLabel}>{isWanted ? 'What kind of item?' : 'What are you selling?'}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                selectedNode && index
+                  ? `Category: ${breadcrumb(index, selectedNode)}. Tap to change.`
+                  : 'Choose a category'
+              }
+              onPress={() => setPickerOpen(true)}
+              style={[styles.catSelector, !selectedNode && styles.catSelectorEmpty]}
+            >
+              <Text
+                style={[styles.catSelectorText, !selectedNode && styles.catSelectorPlaceholder]}
+                numberOfLines={1}
+              >
+                {selectedNode && index ? breadcrumb(index, selectedNode) : 'Choose a category…'}
+              </Text>
+              <ChevronRight size={18} color={selectedNode ? Colors.primary : Colors.textTertiary} />
+            </Pressable>
+
+            {selectedNode && eligibility.data ? (
+              <ComplianceGate
+                eligibility={eligibility.data}
+                scopeNodeId={selectedNode.id}
+                denialReason={latestDenial}
+              />
+            ) : null}
+          </>
+        )}
 
         <Field
           label={isWanted ? 'Request details (optional)' : 'Details (optional)'}
@@ -388,11 +474,28 @@ export default function PostScreen() {
 
         <Text style={styles.note}>{NOTE[type]}</Text>
         <Button
-          label={isWanted ? 'Post want' : type === 'sale' ? 'List for sale' : type === 'trade' ? 'Post trade' : type === 'plot' ? 'Offer plot' : 'Post listing'}
+          label={
+            prohibited
+              ? 'Not available'
+              : blocked
+                ? 'Save draft'
+                : isWanted ? 'Post want' : type === 'sale' ? 'List for sale' : type === 'trade' ? 'Post trade' : type === 'plot' ? 'Offer plot' : 'Post listing'
+          }
           onPress={submit}
           loading={busy}
+          disabled={prohibited}
         />
       </ScrollView>
+      {index ? (
+        <TaxonomyPicker
+          visible={pickerOpen}
+          index={index}
+          selectedId={taxNodeId}
+          mode="sell"
+          onSelect={(node) => setTaxNodeId(node?.id ?? null)}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -478,11 +581,22 @@ const styles = StyleSheet.create({
   rowFields: { flexDirection: 'row', gap: 12 },
   hint: { fontSize: 12, color: Colors.textTertiary, marginTop: -6, marginBottom: 8, fontFamily: fonts.regular },
   fieldLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontFamily: fonts.semibold },
-  catWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  catChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
-  catChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  catText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.semibold },
-  catTextActive: { color: Colors.textInverse },
+  catSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '0D',
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    gap: 8,
+  },
+  catSelectorEmpty: { borderColor: Colors.border, backgroundColor: Colors.surface, borderStyle: 'dashed' },
+  catSelectorText: { flex: 1, fontSize: 15, fontFamily: fonts.semibold, color: Colors.text },
+  catSelectorPlaceholder: { color: Colors.textTertiary, fontFamily: fonts.regular },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
   note: { fontSize: 13, color: Colors.textTertiary, marginBottom: 16, lineHeight: 18, fontFamily: fonts.regular },
 });

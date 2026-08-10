@@ -72,7 +72,7 @@ export const keys = {
 // revoked from anon/authenticated for privacy; the app reads approx_* only).
 const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
-  'category,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
+  'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
   'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at';
 const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count)`;
 
@@ -105,6 +105,10 @@ export interface BrowseFilters {
   radius: RadiusOption;
   category: string | null;
   listingType: 'all' | ListingType;
+  /** Node ids of the selected taxonomy subtree (from subtreeIds()); null = no
+   *  taxonomy filter. Server-side .in() so a deep drilldown isn't starved by
+   *  the 200-row browse cap. */
+  taxonomyIds?: string[] | null;
 }
 
 export function useListings(filters: BrowseFilters) {
@@ -120,6 +124,7 @@ export function useListings(filters: BrowseFilters) {
         .order('created_at', { ascending: false })
         .limit(200);
       if (filters.category) q = q.eq('category', filters.category);
+      if (filters.taxonomyIds?.length) q = q.in('taxonomy_node_id', filters.taxonomyIds);
       if (filters.listingType !== 'all') q = q.eq('listing_type', filters.listingType);
 
       const [{ data, error }, blocked] = await Promise.all([q, fetchMyBlockedSet()]);
@@ -229,6 +234,12 @@ export interface NewListing {
   quantity: string;
   photos: string[];
   coords: Coords | null;
+  /** Taxonomy node the seller picked. Required by the mobile UI for new
+   *  listings; the column stays nullable server-side for legacy clients. */
+  taxonomyNodeId?: string | null;
+  /** 'paused' = save as a draft the compliance flow can auto-publish later
+   *  (admin approval reactivates paused listings that pass the gate). */
+  status?: 'active' | 'paused';
   // type-specific
   priceCents?: number | null;
   unit?: string | null;
@@ -262,6 +273,8 @@ export function useCreateListing(uid?: string) {
           title: input.title,
           description: input.description || null,
           category: input.category,
+          taxonomy_node_id: input.taxonomyNodeId ?? null,
+          ...(input.status ? { status: input.status } : {}),
           quantity: input.quantity || null,
           photos: input.photos,
           price_cents: input.priceCents ?? null,
@@ -444,6 +457,9 @@ export function useUpdateListing(uid?: string) {
       description: string;
       quantity: string;
       category: string;
+      /** undefined = leave the node untouched (legacy listings keep their
+       *  backfilled node); a value re-points it and re-runs the server gate. */
+      taxonomyNodeId?: string | null;
     }): Promise<void> => {
       if (!uid) throw new Error('You must be signed in to edit a listing.');
       // Return the id so an RLS-rejected update (0 rows, no error) is caught
@@ -455,6 +471,9 @@ export function useUpdateListing(uid?: string) {
           description: input.description || null,
           quantity: input.quantity || null,
           category: input.category,
+          ...(input.taxonomyNodeId !== undefined
+            ? { taxonomy_node_id: input.taxonomyNodeId }
+            : {}),
         })
         .eq('id', input.listingId)
         .select('id');
@@ -1043,6 +1062,360 @@ export function useMyProfile(uid?: string) {
       if (error) throw error;
       const rows = (data ?? []) as Profile[];
       return rows[0] ?? null;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Compliance: seller credentials + verification badge
+// ---------------------------------------------------------------------------
+
+export interface SellerCredential {
+  id: string;
+  seller_id: string;
+  state: string;
+  credential_type: string;
+  issuing_agency: string | null;
+  credential_number: string | null;
+  issue_date: string | null;
+  expiration_date: string | null;
+  document_path: string | null;
+  status: 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED' | 'RENEWAL_REQUIRED' | 'REVOKED';
+  submitted_at: string;
+  reviewed_at: string | null;
+  denial_reason: string | null;
+  seller_notes: string | null;
+  renewal_of_id: string | null;
+  created_at: string;
+  scope?: { taxonomy_node_id: string }[];
+}
+
+/** My credentials with their category scope. RLS: own rows only. */
+export function useMyCredentials(uid?: string) {
+  return useQuery({
+    queryKey: ['myCredentials', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<SellerCredential[]> => {
+      const { data, error } = await supabase
+        .from('seller_credentials')
+        .select('*, scope:credential_taxonomy_scope(taxonomy_node_id)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as SellerCredential[];
+    },
+  });
+}
+
+export interface NewCredential {
+  state: string;
+  credentialType: string;
+  issuingAgency: string | null;
+  credentialNumber: string | null;
+  issueDate: string | null;      // YYYY-MM-DD
+  expirationDate: string | null; // YYYY-MM-DD
+  documentPath: string | null;   // storage path in compliance-docs (already uploaded)
+  sellerNotes: string | null;
+  scopeNodeIds: string[];        // taxonomy nodes this credential covers
+  renewalOfId?: string | null;
+}
+
+/**
+ * Submit a credential for review. Two writes (row + scope); both verified —
+ * a scope insert that fails rolls the credential back so a "successful"
+ * submission can never exist unscoped (a scopeless credential unlocks nothing).
+ */
+export function useSubmitCredential(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: NewCredential): Promise<SellerCredential> => {
+      if (!uid) throw new Error('Sign in to submit verification.');
+      if (!input.scopeNodeIds.length) throw new Error('Pick the category this credential covers.');
+      const { data, error } = await supabase
+        .from('seller_credentials')
+        .insert({
+          seller_id: uid,
+          state: input.state,
+          credential_type: input.credentialType,
+          issuing_agency: input.issuingAgency,
+          credential_number: input.credentialNumber,
+          issue_date: input.issueDate,
+          expiration_date: input.expirationDate,
+          document_path: input.documentPath,
+          seller_notes: input.sellerNotes,
+          renewal_of_id: input.renewalOfId ?? null,
+          status: 'PENDING',
+        })
+        .select('*')
+        .single();
+      if (error) throw error;
+      const cred = data as SellerCredential;
+
+      const { error: scopeError } = await supabase
+        .from('credential_taxonomy_scope')
+        .insert(input.scopeNodeIds.map((n) => ({ credential_id: cred.id, taxonomy_node_id: n })));
+      if (scopeError) {
+        // Roll back the orphan credential; if even that fails, surface the
+        // scope error — PENDING-with-no-scope is inert, never privileged.
+        await supabase.from('seller_credentials').delete().eq('id', cred.id);
+        throw scopeError;
+      }
+      return cred;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myCredentials'] });
+      qc.invalidateQueries({ queryKey: ['eligibility'] });
+    },
+  });
+}
+
+/**
+ * Resubmit after a denial / resubmission request / expiry. RLS requires the
+ * new row state to be PENDING with review fields cleared — sending them
+ * explicitly is what makes the policy's WITH CHECK pass.
+ */
+export function useResubmitCredential(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      credentialId: string;
+      documentPath?: string | null;
+      expirationDate?: string | null;
+      credentialNumber?: string | null;
+      sellerNotes?: string | null;
+    }): Promise<void> => {
+      if (!uid) throw new Error('Sign in first.');
+      const patch: Record<string, unknown> = {
+        status: 'PENDING',
+        reviewed_by: null,
+        reviewed_at: null,
+        denial_reason: null,
+        submitted_at: new Date().toISOString(),
+      };
+      if (input.documentPath !== undefined) patch.document_path = input.documentPath;
+      if (input.expirationDate !== undefined) patch.expiration_date = input.expirationDate;
+      if (input.credentialNumber !== undefined) patch.credential_number = input.credentialNumber;
+      if (input.sellerNotes !== undefined) patch.seller_notes = input.sellerNotes;
+      const { data, error } = await supabase
+        .from('seller_credentials')
+        .update(patch)
+        .eq('id', input.credentialId)
+        .select('id');
+      if (error) throw error;
+      if (!data?.length) throw new Error('This credential can no longer be resubmitted.');
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myCredentials'] });
+      qc.invalidateQueries({ queryKey: ['eligibility'] });
+    },
+  });
+}
+
+/** Short-lived signed URL for the seller's OWN uploaded document. */
+export async function getCredentialDocumentUrl(documentPath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from('compliance-docs')
+    .createSignedUrl(documentPath, 300);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+/** Resume my paused listings that pass the gate again (renewal/resubscribe). */
+export function useReactivateListings(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<number> => {
+      const { data, error } = await supabase.rpc('compliance_reactivate_for_seller');
+      if (error) throw error;
+      return (data as number) ?? 0;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+      qc.invalidateQueries({ queryKey: ['listings'] });
+    },
+  });
+}
+
+/** Public "Credential verified by Gnome" badge — a boolean, nothing more. */
+export function useListingVerifiedBadge(listingId?: string) {
+  return useQuery({
+    queryKey: ['listingBadge', listingId],
+    enabled: isSupabaseConfigured && !!listingId,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<boolean> => {
+      const { data, error } = await supabase.rpc('listing_has_verified_credential', {
+        p_listing: listingId,
+      });
+      if (error) throw error;
+      return data === true;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sales notebook (mobile parity with web My Market) — existing hardened RPCs
+// ---------------------------------------------------------------------------
+
+export interface SellerTxn {
+  id: string;
+  market_id: string;
+  listing_id: string | null;
+  claim_id: string | null;
+  source: 'manual' | 'request';
+  quantity: number | null;
+  gross_cents: number;
+  discount_cents: number;
+  fee_cents: number;
+  net_cents: number;
+  payment_method: string;
+  buyer_label: string | null;
+  notes: string | null;
+  status: 'completed' | 'void';
+  void_reason: string | null;
+  sold_at: string;
+}
+
+export interface SellerExpense {
+  id: string;
+  market_id: string;
+  category: string;
+  amount_cents: number;
+  vendor: string | null;
+  notes: string | null;
+  status: string;
+  spent_at: string;
+}
+
+export function useSellerTransactions(marketId?: string) {
+  return useQuery({
+    queryKey: ['sellerTxns', marketId],
+    enabled: isSupabaseConfigured && !!marketId,
+    queryFn: async (): Promise<SellerTxn[]> => {
+      const { data, error } = await supabase
+        .from('seller_transactions')
+        .select('*')
+        .eq('market_id', marketId as string)
+        .order('sold_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as SellerTxn[];
+    },
+  });
+}
+
+export function useSellerExpenses(marketId?: string) {
+  return useQuery({
+    queryKey: ['sellerExpenses', marketId],
+    enabled: isSupabaseConfigured && !!marketId,
+    queryFn: async (): Promise<SellerExpense[]> => {
+      const { data, error } = await supabase
+        .from('seller_expenses')
+        .select('*')
+        .eq('market_id', marketId as string)
+        .order('spent_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as SellerExpense[];
+    },
+  });
+}
+
+export interface RecordSaleInput {
+  marketId: string;
+  listingId?: string | null;
+  claimId?: string | null;
+  quantity?: number | null;
+  grossCents: number;
+  paymentMethod: 'cash' | 'venmo' | 'zelle' | 'cashapp' | 'check' | 'external_card' | 'other';
+  buyerLabel?: string | null;
+  notes?: string | null;
+  source?: 'manual' | 'request';
+}
+
+/**
+ * Record a sale through the atomic server RPC (ownership re-check + guarded
+ * inventory decrement + ledger insert). A claim-linked sale is idempotent at
+ * the DB level: one completed row per claim, ever — a double-tap comes back
+ * as 23505 and is reported as "already recorded", not a second ledger entry.
+ */
+export function useRecordSale(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RecordSaleInput): Promise<{ txnId: string | null; duplicate: boolean }> => {
+      if (!uid) throw new Error('Sign in first.');
+      const { data, error } = await supabase.rpc('record_sale', {
+        p_market: input.marketId,
+        p_listing: input.listingId ?? null,
+        p_claim: input.claimId ?? null,
+        p_quantity: input.quantity ?? null,
+        p_gross_cents: input.grossCents,
+        p_discount_cents: 0,
+        p_fee_cents: 0,
+        p_payment_method: input.paymentMethod,
+        p_buyer_label: input.buyerLabel ?? null,
+        p_notes: input.notes ?? null,
+        p_source: input.source ?? 'manual',
+      });
+      if (error) {
+        if (error.code === '23505') return { txnId: null, duplicate: true };
+        throw error;
+      }
+      return { txnId: (data as string) ?? null, duplicate: false };
+    },
+    onSuccess: (_d, input) => {
+      void logEvent('sale_recorded_mobile', {
+        userId: uid,
+        listingId: input.listingId ?? null,
+        metadata: { method: input.paymentMethod, source: input.source ?? 'manual' },
+      });
+      qc.invalidateQueries({ queryKey: ['sellerTxns', input.marketId] });
+      qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+    },
+  });
+}
+
+export function useVoidSale(uid?: string, marketId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { txnId: string; reason: string }): Promise<void> => {
+      const { error } = await supabase.rpc('void_sale', {
+        p_txn: input.txnId,
+        p_reason: input.reason,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sellerTxns', marketId] });
+      qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+    },
+  });
+}
+
+export function useAddExpense(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      marketId: string;
+      category: string;
+      amountCents: number;
+      vendor?: string | null;
+      notes?: string | null;
+    }): Promise<void> => {
+      if (!uid) throw new Error('Sign in first.');
+      const { data, error } = await supabase
+        .from('seller_expenses')
+        .insert({
+          market_id: input.marketId,
+          category: input.category,
+          amount_cents: input.amountCents,
+          vendor: input.vendor ?? null,
+          notes: input.notes ?? null,
+        })
+        .select('id');
+      if (error) throw error;
+      if (!data?.length) throw new Error('Expense was not saved.');
+    },
+    onSuccess: (_d, input) => {
+      qc.invalidateQueries({ queryKey: ['sellerExpenses', input.marketId] });
     },
   });
 }
