@@ -71,3 +71,65 @@ export async function currentPlaceLabel(): Promise<string | null> {
 export function radiusToMiles(r: RadiusOption): number {
   return r === 'near' ? 2 : r;
 }
+
+// Reverse geocoders return the state as either a full name ("Ohio") or an
+// abbreviation depending on platform/locale; profiles store the 2-letter code.
+const STATE_CODES: Record<string, string> = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA',
+  colorado: 'CO', connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA',
+  hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA',
+  kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD',
+  massachusetts: 'MA', michigan: 'MI', minnesota: 'MN', mississippi: 'MS',
+  missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV',
+  'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM',
+  'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH',
+  oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI',
+  'south carolina': 'SC', 'south dakota': 'SD', tennessee: 'TN', texas: 'TX',
+  utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA',
+  'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
+  'district of columbia': 'DC',
+};
+
+function toStateCode(region: string | null | undefined): string {
+  const r = (region ?? '').trim();
+  if (/^[A-Za-z]{2}$/.test(r)) return r.toUpperCase();
+  return STATE_CODES[r.toLowerCase()] ?? '';
+}
+
+export type LocationFieldsResult =
+  | { ok: true; city: string; state: string; zip: string }
+  | { ok: false; reason: 'denied' | 'unavailable' };
+
+/**
+ * One-tap profile fill: ask for foreground permission (only when called),
+ * take a single reading, reverse-geocode it, and return City/State/ZIP as
+ * plain strings. The raw coordinates never leave this function — nothing here
+ * is stored, so the profile carries only what the user chooses to save.
+ */
+export async function currentLocationFields(): Promise<LocationFieldsResult> {
+  let status: string;
+  try {
+    ({ status } = await Location.requestForegroundPermissionsAsync());
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+  if (status !== 'granted') return { ok: false, reason: 'denied' };
+  try {
+    const pos = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    const [place] = await Location.reverseGeocodeAsync({
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
+    });
+    const city = (place?.city ?? place?.subregion ?? '').trim();
+    const state = toStateCode(place?.region);
+    const zip = /^\d{5}/.test(place?.postalCode ?? '')
+      ? (place!.postalCode as string).slice(0, 5)
+      : '';
+    if (!city && !state && !zip) return { ok: false, reason: 'unavailable' };
+    return { ok: true, city, state, zip };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+}

@@ -31,6 +31,12 @@ Deno.serve(async (req: Request) => {
     if (payload.event === 'message') {
       return await handleMessage(admin, req, payload.claimId, payload.preview);
     }
+    if (ORDER_EVENTS[payload.event]) {
+      return await handleOrderEvent(admin, req, payload.event, payload.orderId);
+    }
+    if (payload.event === 'grow_log_update' || payload.event === 'plot_owner_note') {
+      return await handleGrowLogEvent(admin, req, payload.event, payload.claimId);
+    }
     return await handleClaim(admin, req, payload.event, payload.claimId);
   } catch (e) {
     return json({ error: String(e) }, 500);
@@ -180,6 +186,95 @@ async function handleOfferCreated(admin: any, req: Request, listingId: string) {
     );
   }
   return json({ matched: matches.length, pushed: sent });
+}
+
+// --- market pickup orders ---------------------------------------------------
+// sender: which party may fire the event; recipient gets the push.
+const ORDER_EVENTS: Record<string, { sender: 'buyer' | 'seller' | 'either'; title: string; body: (o: any, name: string) => string }> = {
+  pickup_request:       { sender: 'buyer',  title: 'New pickup request 🧺', body: (o, n) => `${n} wants to pick up ${fmtWindow(o)} — ${o.item_count} item${o.item_count === 1 ? '' : 's'}, $${(o.subtotal_cents / 100).toFixed(2)}.` },
+  pickup_confirmed:     { sender: 'either', title: 'Pickup confirmed ✅', body: (o) => `Your pickup is set for ${fmtWindow(o)}.` },
+  pickup_time_proposed: { sender: 'seller', title: 'Different time proposed 🕐', body: (o) => `The seller suggested ${fmtWindow(o, true)} instead. Accept or pick another time.` },
+  pickup_cancelled:     { sender: 'either', title: 'Pickup cancelled', body: () => `A pickup order was cancelled. Details in Gnome.` },
+  pickup_ready:         { sender: 'seller', title: 'Order ready 🧺', body: (o) => `Your order is packed and ready for ${fmtWindow(o)}.` },
+  buyer_on_the_way:     { sender: 'buyer',  title: 'On the way 🚗', body: (o, n) => `${n} is on the way for the ${fmtWindow(o)} pickup.` },
+  buyer_arrived:        { sender: 'buyer',  title: 'Arrived 👋', body: (o, n) => `${n} has arrived for pickup.` },
+};
+
+function fmtWindow(o: any, proposed = false): string {
+  const iso = proposed ? o.proposed_start : (o.confirmed_start ?? o.requested_start);
+  if (!iso) return 'the scheduled time';
+  const d = new Date(iso);
+  return d.toLocaleString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZone: o.timezone || 'America/New_York',
+  });
+}
+
+async function handleOrderEvent(admin: any, req: Request, event: string, orderId: string) {
+  if (!orderId) return json({ error: 'orderId required' }, 400);
+  const callerId = await callerFrom(admin, req);
+  if (!callerId) return json({ error: 'unauthenticated' }, 401);
+
+  const { data: order, error } = await admin
+    .from('market_orders')
+    .select('id, buyer_id, market_id, status, requested_start, confirmed_start, proposed_start, timezone, subtotal_cents, market:markets(owner_id, name)')
+    .eq('id', orderId)
+    .single();
+  if (error || !order) return json({ error: 'order not found' }, 404);
+
+  const sellerId = order.market?.owner_id;
+  const spec = ORDER_EVENTS[event];
+  const callerIsBuyer = callerId === order.buyer_id;
+  const callerIsSeller = callerId === sellerId;
+  if (!callerIsBuyer && !callerIsSeller) return json({ error: 'not a party to this order' }, 403);
+  if (spec.sender === 'buyer' && !callerIsBuyer) return json({ error: 'buyer-only event' }, 403);
+  if (spec.sender === 'seller' && !callerIsSeller) return json({ error: 'seller-only event' }, 403);
+
+  const recipientId = callerIsBuyer ? sellerId : order.buyer_id;
+  const { count } = await admin
+    .from('market_order_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', orderId);
+  const { data: callerProfile } = await admin
+    .from('profiles').select('name').eq('id', callerId).single();
+
+  const o = { ...order, item_count: count ?? 0 };
+  const sent = await pushToUser(
+    admin, recipientId,
+    { title: spec.title, body: spec.body(o, callerProfile?.name ?? 'A neighbor') },
+    { orderId, event },
+  );
+  return json({ sent });
+}
+
+// --- grow log ----------------------------------------------------------------
+async function handleGrowLogEvent(admin: any, req: Request, event: string, claimId: string) {
+  if (!claimId) return json({ error: 'claimId required' }, 400);
+  const callerId = await callerFrom(admin, req);
+  if (!callerId) return json({ error: 'unauthenticated' }, 401);
+
+  const { data: claim, error } = await admin
+    .from('claims')
+    .select('id, claimer_id, listing:listings(owner_id, title)')
+    .eq('id', claimId)
+    .single();
+  if (error || !claim) return json({ error: 'claim not found' }, 404);
+  const ownerId = claim.listing?.owner_id;
+
+  let recipientId: string; let msg: { title: string; body: string };
+  if (event === 'grow_log_update') {
+    // Grower posted → tell the plot owner.
+    if (callerId !== claim.claimer_id) return json({ error: 'grower-only event' }, 403);
+    recipientId = ownerId;
+    msg = { title: 'Grow Log update 🌱', body: `New progress on "${claim.listing?.title ?? 'your plot'}".` };
+  } else {
+    // Owner note → tell the grower.
+    if (callerId !== ownerId) return json({ error: 'owner-only event' }, 403);
+    recipientId = claim.claimer_id;
+    msg = { title: 'Note from your plot owner 📝', body: `New note on "${claim.listing?.title ?? 'your plot'}".` };
+  }
+  const sent = await pushToUser(admin, recipientId, msg, { claimId, event });
+  return json({ sent });
 }
 
 // --- helpers ----------------------------------------------------------------

@@ -12,13 +12,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera } from 'lucide-react-native';
+import { Camera, LocateFixed } from 'lucide-react-native';
 import { Avatar, Button, Field, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyProfile, useUpdateProfile } from '@/lib/db';
 import { pickImages, uploadListingImages } from '@/lib/images';
+import { currentLocationFields } from '@/lib/location';
 import { hardinessZoneForZip } from '@/lib/zone';
 
 /**
@@ -40,6 +41,7 @@ export default function EditProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [seeded, setSeeded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     if (profile.data && !seeded) {
@@ -82,6 +84,31 @@ export default function EditProfileScreen() {
       Alert.alert('Upload failed', e?.message ?? 'Try again.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  // One-tap fill from the device's location. Permission is requested only on
+  // tap; the result just populates the fields — the user still reviews, can
+  // edit anything, and must tap Save. Raw coordinates are never stored on the
+  // profile; failure leaves whatever was already typed untouched.
+  const fillFromCurrentLocation = async () => {
+    setLocating(true);
+    try {
+      const res = await currentLocationFields();
+      if (!res.ok) {
+        Alert.alert(
+          res.reason === 'denied' ? 'Location permission needed' : 'Couldn’t find your location',
+          res.reason === 'denied'
+            ? 'Allow location for Gnome in iOS Settings, or type your town below. Nothing was changed.'
+            : 'Check your connection and try again, or type your town below. Nothing was changed.',
+        );
+        return;
+      }
+      if (res.city) setCity(res.city);
+      if (res.state) setState(res.state);
+      if (res.zip) setZip(res.zip);
+    } finally {
+      setLocating(false);
     }
   };
 
@@ -130,13 +157,31 @@ export default function EditProfileScreen() {
         </Pressable>
 
         <Field label="Display name" value={name} onChangeText={setName} placeholder="Your name" autoCapitalize="words" />
-        <Field label="Town or city (optional)" value={city} onChangeText={setCity} placeholder="Richmond Heights" autoCapitalize="words" />
-        <Field label="State (optional)" value={state} onChangeText={setState} placeholder="OH" autoCapitalize="characters" autoCorrect={false} maxLength={2} />
+
+        <Pressable
+          onPress={() => void fillFromCurrentLocation()}
+          disabled={locating}
+          accessibilityRole="button"
+          accessibilityLabel="Use current location to fill in city, state, and ZIP code"
+          style={[styles.locateBtn, locating && { opacity: 0.6 }]}
+        >
+          {locating ? (
+            <ActivityIndicator color={Colors.primary} size="small" />
+          ) : (
+            <LocateFixed size={16} color={Colors.primary} />
+          )}
+          <Text style={styles.locateBtnText}>
+            {locating ? 'Finding your town…' : 'Use current location'}
+          </Text>
+        </Pressable>
+
+        <Field label="Town or city (optional)" value={city} onChangeText={setCity} placeholder="City" autoCapitalize="words" />
+        <Field label="State (optional)" value={state} onChangeText={setState} placeholder="State" autoCapitalize="characters" autoCorrect={false} maxLength={2} />
         <Field
           label="ZIP code (private)"
           value={zip}
           onChangeText={setZip}
-          placeholder="44143"
+          placeholder="ZIP Code"
           keyboardType="number-pad"
           maxLength={5}
         />
@@ -164,6 +209,19 @@ const styles = StyleSheet.create({
   avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20, minHeight: 44 },
   avatarBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
   avatarBtnText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.bold },
+  locateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '0D',
+    marginBottom: 16,
+  },
+  locateBtnText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.bold },
   privacyNote: {
     backgroundColor: Colors.backgroundSecondary,
     borderRadius: 12,

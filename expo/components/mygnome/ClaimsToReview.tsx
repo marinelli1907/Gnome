@@ -117,9 +117,21 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
             <Text style={styles.name}>{c.claimer?.name ?? 'A neighbor'}</Text>
             <Text style={styles.sub} numberOfLines={1}>{c.listing?.title}</Text>
           </View>
-          <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
-            <Text style={styles.link}>Message</Text>
-          </Pressable>
+          <View style={styles.rightCol}>
+            <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
+              <Text style={styles.link}>Message</Text>
+            </Pressable>
+            {c.claim_type === 'plot_reservation' && (
+              <Pressable
+                onPress={() => router.push(`/growlog/${c.id}`)}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Open Grow Log"
+              >
+                <Text style={styles.link}>🌱 Grow Log</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       ))}
     </View>
@@ -161,5 +173,6 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   context: { fontSize: 14, color: Colors.text, fontStyle: 'italic', marginTop: 4, fontFamily: fonts.regular },
   note: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, fontFamily: fonts.regular },
+  rightCol: { alignItems: 'flex-end', gap: 6 },
   link: { color: Colors.primary, fontSize: 13, fontFamily: fonts.bold },
 });

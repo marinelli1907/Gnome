@@ -63,6 +63,7 @@ export default function PostScreen() {
   const params = useLocalSearchParams<{
     type?: string;
     category?: string;
+    taxNode?: string;
     title?: string;
     quantity?: string;
     description?: string;
@@ -103,7 +104,7 @@ export default function PostScreen() {
 
   const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}|${params.n ?? ''}`;
   useEffect(() => {
-    if (params.fulfilledBy || params.title || params.category || params.type) {
+    if (params.fulfilledBy || params.title || params.category || params.taxNode || params.type) {
       if (params.type && (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)) {
         setType(params.type as ListingType);
       }
@@ -113,6 +114,9 @@ export default function PostScreen() {
         const root = rootForLegacy(index, params.category);
         if (root) setTaxNodeId(root.id);
       }
+      // Direct taxonomy prefill (e.g. Grow Log "List harvest") — an exact node
+      // id, so it doesn't need the legacy-category mapping and wins over it.
+      if (typeof params.taxNode === 'string' && params.taxNode) setTaxNodeId(params.taxNode);
       if (params.quantity) setQuantity(params.quantity);
       if (params.description) setDescription(params.description);
       setFulfilledBy(params.fulfilledBy ?? null);

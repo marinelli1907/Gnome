@@ -47,6 +47,7 @@ export default function MyPickups({ uid }: { uid: string }) {
     <View style={{ gap: 10 }}>
       {claims.map((c) => {
         const canMessage = c.status === 'approved' || c.status === 'completed';
+        const hasGrowLog = c.claim_type === 'plot_reservation' && canMessage;
         return (
           <View key={c.id} style={styles.row}>
             <Avatar uri={c.listing?.owner?.avatar_url} name={c.listing?.owner?.name} size={34} />
@@ -59,6 +60,16 @@ export default function MyPickups({ uid }: { uid: string }) {
               {canMessage && (
                 <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
                   <Text style={styles.link}>Message</Text>
+                </Pressable>
+              )}
+              {hasGrowLog && (
+                <Pressable
+                  onPress={() => router.push(`/growlog/${c.id}`)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Grow Log"
+                >
+                  <Text style={styles.link}>🌱 Grow Log</Text>
                 </Pressable>
               )}
             </View>

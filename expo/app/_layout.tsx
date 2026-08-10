@@ -129,6 +129,34 @@ export default function RootLayout() {
                 name="notebook"
                 options={{ title: 'Sales notebook', ...headerStyle }}
               />
+              <Stack.Screen
+                name="order/[id]"
+                options={{ title: 'Pickup order', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="orders"
+                options={{ title: 'My pickups & orders', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="market/order/[marketId]"
+                options={{ presentation: 'modal', title: 'Order for pickup', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="market/pickups"
+                options={{ title: 'Pickups', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="market/pickup-settings"
+                options={{ title: 'Pickup availability', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="market/payment-settings"
+                options={{ title: 'Payment methods', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="growlog/[claimId]"
+                options={{ title: 'Grow Log', ...headerStyle }}
+              />
             </Stack>
           </AuthProvider>
         </SafeAreaProvider>

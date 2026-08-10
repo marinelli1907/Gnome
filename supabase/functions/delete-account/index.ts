@@ -54,6 +54,24 @@ Deno.serve(async (req) => {
   if (userErr || !user) return json({ error: 'Not signed in.' }, 401);
 
   try {
+    // Grow Log photos live in a bucket keyed by CLAIM id, so they'd orphan
+    // when the claims cascade. Collect every claim this account's departure
+    // dissolves (as grower, and on their own plot listings) and purge those
+    // folders BEFORE the rows go.
+    const { data: grownClaims } = await admin
+      .from('claims').select('id').eq('claimer_id', user.id);
+    const { data: ownedListingClaims } = await admin
+      .from('claims')
+      .select('id, listing:listings!inner(owner_id)')
+      .eq('listing.owner_id', user.id);
+    const growClaimIds = new Set<string>([
+      ...(grownClaims ?? []).map((c: { id: string }) => c.id),
+      ...(ownedListingClaims ?? []).map((c: { id: string }) => c.id),
+    ]);
+    for (const claimId of growClaimIds) {
+      await purgeBucketFolder(admin, 'grow-log', claimId);
+    }
+
     // Wind the account down in dependency order. Listings/claims/messages are
     // kept out of other people's histories by removing this user's rows first;
     // anything still referencing the user cascades with the auth row.
