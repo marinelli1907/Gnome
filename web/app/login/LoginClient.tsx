@@ -98,10 +98,10 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
       </div>
 
       <div className="field"><label>Display name</label>
-        <input maxLength={40} value={name} placeholder="Daniel M." onChange={(e) => setName(e.target.value)} /></div>
+        <input maxLength={40} value={name} placeholder="Your name" onChange={(e) => setName(e.target.value)} /></div>
       <div className="field-row" style={{ marginTop: 8 }}>
         <div className="field"><label>City</label>
-          <input value={city} placeholder="Richmond Heights" onChange={(e) => setCity(e.target.value)} /></div>
+          <input value={city} placeholder="City" onChange={(e) => setCity(e.target.value)} /></div>
         <div className="field" style={{ maxWidth: 80 }}><label>State</label>
           <input maxLength={2} value={state} onChange={(e) => setState(e.target.value)} /></div>
         <div className="field" style={{ maxWidth: 110 }}><label>ZIP</label>

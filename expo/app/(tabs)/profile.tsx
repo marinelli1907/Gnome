@@ -14,7 +14,7 @@ import { Avatar, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useMyProfile, useProfileStats } from '@/lib/db';
+import { useMyListings, useMyProfile, useProfileStats } from '@/lib/db';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -22,6 +22,9 @@ export default function ProfileScreen() {
   const { userId, signOut } = useAuth();
   const profile = useMyProfile(userId ?? undefined);
   const stats = useProfileStats(userId ?? undefined);
+  // Seller tools stay out of the way until someone actually sells something.
+  const myListings = useMyListings(userId ?? undefined);
+  const isSeller = (myListings.data?.length ?? 0) > 0;
 
   if (!userId) {
     return (
@@ -90,25 +93,29 @@ export default function ProfileScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>
 
-      <Pressable
-        style={[styles.link, { marginTop: 10 }]}
-        onPress={() => router.push('/notebook')}
-        accessibilityRole="button"
-        accessibilityLabel="Sales notebook"
-      >
-        <Text style={styles.linkText}>Sales notebook</Text>
-        <ChevronRight size={18} color={Colors.textSecondary} />
-      </Pressable>
+      {isSeller ? (
+        <>
+          <Pressable
+            style={[styles.link, { marginTop: 10 }]}
+            onPress={() => router.push('/notebook')}
+            accessibilityRole="button"
+            accessibilityLabel="Sales notebook"
+          >
+            <Text style={styles.linkText}>Sales notebook</Text>
+            <ChevronRight size={18} color={Colors.textSecondary} />
+          </Pressable>
 
-      <Pressable
-        style={[styles.link, { marginTop: 10 }]}
-        onPress={() => router.push('/compliance')}
-        accessibilityRole="button"
-        accessibilityLabel="Seller verification"
-      >
-        <Text style={styles.linkText}>Seller verification</Text>
-        <ChevronRight size={18} color={Colors.textSecondary} />
-      </Pressable>
+          <Pressable
+            style={[styles.link, { marginTop: 10 }]}
+            onPress={() => router.push('/compliance')}
+            accessibilityRole="button"
+            accessibilityLabel="Seller verification"
+          >
+            <Text style={styles.linkText}>Seller verification</Text>
+            <ChevronRight size={18} color={Colors.textSecondary} />
+          </Pressable>
+        </>
+      ) : null}
 
       <Pressable style={[styles.link, { marginTop: 10 }]} onPress={() => router.push('/settings')}>
         <Text style={styles.linkText}>Settings, feedback & blocked neighbors</Text>

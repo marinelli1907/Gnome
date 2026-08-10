@@ -54,7 +54,7 @@ export default function EditMarketScreen() {
   if (!market.data || market.data.owner_id !== userId) {
     return (
       <View style={[styles.screen, styles.center]}>
-        <EmptyState emoji="🔒" title="Can't edit this garden" subtitle="You can only edit your own Market." />
+        <EmptyState emoji="🔒" title="Can't edit this Market" subtitle="You can only edit your own Market." />
       </View>
     );
   }
@@ -76,7 +76,7 @@ export default function EditMarketScreen() {
 
   const save = () => {
     if (!name.trim()) {
-      Alert.alert('Name your garden', 'Give your Market a name.');
+      Alert.alert('Name your Market', 'Give your Market a name.');
       return;
     }
     update.mutate(

@@ -52,7 +52,7 @@ export default function MapScreen() {
 
   const Header = (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-      <Text style={styles.title}>Gardens Near You</Text>
+      <Text style={styles.title}>Markets Near You</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         {TYPE_FILTERS.map((o) => {
           const active = typeFilter === o.value;
@@ -75,7 +75,7 @@ export default function MapScreen() {
       </ScrollView>
       {locState === 'denied' && (
         <View style={styles.locBanner}>
-          <Text style={styles.locText}>Showing the Richmond Heights area — turn on location for gardens near you.</Text>
+          <Text style={styles.locText}>Showing the Richmond Heights area — turn on location for Markets near you.</Text>
           <Pressable onPress={requestLocation} style={styles.locBtn}>
             <Navigation size={14} color={Colors.primary} />
             <Text style={styles.locBtnText}>Enable</Text>

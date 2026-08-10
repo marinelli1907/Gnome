@@ -6,7 +6,7 @@ import { Avatar } from '@/components/ui';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
-import { useBoostCreditsRemaining, useMarketListings, useMyMarket, usePlanLimits } from '@/lib/db';
+import { useBoostCreditsRemaining, useMarketListings, useMyListings, useMyMarket, usePlanLimits } from '@/lib/db';
 import type { MarketPlan } from '@/types';
 
 const PLAN_LABEL: Record<string, string> = {
@@ -22,8 +22,16 @@ export default function MyMarketCard({ uid }: { uid: string }) {
   const listings = useMarketListings(market.data?.id);
   const limits = usePlanLimits();
   const credits = useBoostCreditsRemaining(market.data?.id);
+  // Every account gets a market row at signup, because listings, orders,
+  // pickup hours and the sales notebook all hang off market_id. But someone
+  // who has only ever bought does not have a storefront in any meaningful
+  // sense, and showing them "0 active listings · Name your Market" is noise.
+  // The storefront appears the moment they list something — any status, so a
+  // seller whose listings expired or sold keeps theirs.
+  const everListed = useMyListings(uid);
+  const hasEverListed = (everListed.data?.length ?? 0) > 0;
 
-  if (!market.data) return null;
+  if (!market.data || !hasEverListed) return null;
 
   const m = market.data;
   const plan: MarketPlan = (m.plan as MarketPlan) ?? 'free';
@@ -62,7 +70,7 @@ export default function MyMarketCard({ uid }: { uid: string }) {
         )}
 
         <Pressable style={styles.editBtn} onPress={() => router.push(`/market/edit/${m.id}`)}>
-          <Text style={styles.editText}>Name your garden</Text>
+          <Text style={styles.editText}>Name your Market</Text>
         </Pressable>
       </View>
 

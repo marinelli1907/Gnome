@@ -15,7 +15,7 @@ export default function LoginPage() {
       <section className="hero" style={{ paddingTop: 0, paddingBottom: 16 }}>
         <span className="kicker">Welcome to the neighborhood</span>
         <h1>Sign in to Gnome</h1>
-        <p>Every account gets a free Market — your garden’s storefront.</p>
+        <p>Buy from neighbors, or start selling any time — your Market opens with your first listing.</p>
       </section>
       <section className="section" style={{ maxWidth: 460, paddingTop: 0 }}>
         <LoginClient />

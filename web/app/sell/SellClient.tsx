@@ -222,7 +222,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     return (
       <SignInCard
         title="Sign in to sell on Gnome"
-        blurb="One code by email and your garden has a storefront. Your listing shows here and in the Gnome app."
+        blurb="One code by email and your Market is open. Your listing shows here and in the Gnome app."
       />
     );
   }
