@@ -14,13 +14,13 @@ import { Avatar, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useProfile, useProfileStats } from '@/lib/db';
+import { useMyProfile, useProfileStats } from '@/lib/db';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userId, signOut } = useAuth();
-  const profile = useProfile(userId ?? undefined);
+  const profile = useMyProfile(userId ?? undefined);
   const stats = useProfileStats(userId ?? undefined);
 
   if (!userId) {
@@ -52,7 +52,11 @@ export default function ProfileScreen() {
       <View style={styles.headerCard}>
         <Avatar uri={profile.data?.avatar_url} name={profile.data?.name} size={64} />
         <Text style={styles.name}>{profile.data?.name ?? 'Neighbor'}</Text>
-        {profile.data?.zip_code ? <Text style={styles.zip}>📍 {profile.data.zip_code}</Text> : null}
+        {profile.data?.city ? (
+          <Text style={styles.zip}>
+            📍 {profile.data.city}{profile.data.state ? `, ${profile.data.state}` : ''}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.trustRow}>
@@ -61,7 +65,17 @@ export default function ProfileScreen() {
         <Trust icon={<HandHeart size={18} color={Colors.primary} />} value={String(stats.data?.claimsCompleted ?? 0)} label="Received" />
       </View>
 
-      <Pressable style={styles.link} onPress={() => router.push('/activity')}>
+      <Pressable
+        style={styles.link}
+        onPress={() => router.push('/profile/edit')}
+        accessibilityRole="button"
+        accessibilityLabel="Edit your profile"
+      >
+        <Text style={styles.linkText}>Edit profile & location</Text>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
+      <Pressable style={[styles.link, { marginTop: 10 }]} onPress={() => router.push('/activity')}>
         <Text style={styles.linkText}>Manage your listings & claims in My Gnome</Text>
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>

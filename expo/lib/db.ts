@@ -65,6 +65,7 @@ export const keys = {
   boostCredits: (marketId?: string) => ['boostCredits', marketId] as const,
   marketReputation: (marketId?: string) => ['marketReputation', marketId] as const,
   myBlocks: (uid?: string) => ['myBlocks', uid] as const,
+  myProfile: (uid?: string) => ['myProfile', uid] as const,
 };
 
 // Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
@@ -476,9 +477,11 @@ export function useProfile(id?: string) {
     queryKey: keys.profile(id ?? ''),
     enabled: isSupabaseConfigured && !!id,
     queryFn: async (): Promise<Profile | null> => {
+      // Explicit public columns only — never select('*') here, so a private
+      // column (zip_code) can be revoked without breaking cross-user reads.
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id,name,avatar_url,city,county,state,user_type,business_account,business_category,created_at')
         .eq('id', id as string)
         .maybeSingle();
       if (error) throw error;
@@ -1025,16 +1028,49 @@ export function useMyChats(uid?: string) {
   });
 }
 
+/**
+ * The signed-in user's OWN profile, including fields other neighbours must not
+ * see (zip_code). Goes through the my_profile() RPC, which is pinned to
+ * auth.uid() server-side, so it keeps working after the private columns are
+ * revoked from the authenticated role.
+ */
+export function useMyProfile(uid?: string) {
+  return useQuery({
+    queryKey: keys.myProfile(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<Profile | null> => {
+      const { data, error } = await supabase.rpc('my_profile');
+      if (error) throw error;
+      const rows = (data ?? []) as Profile[];
+      return rows[0] ?? null;
+    },
+  });
+}
+
 export function useUpdateProfile(uid?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { name?: string; zip_code?: string }): Promise<void> => {
+    mutationFn: async (input: {
+      name?: string;
+      zip_code?: string | null;
+      city?: string | null;
+      state?: string | null;
+      avatar_url?: string | null;
+    }): Promise<void> => {
       if (!uid) throw new Error('Not signed in.');
-      const { error } = await supabase.from('profiles').update(input).eq('id', uid);
+      // Return the id so an RLS-rejected update (0 rows, no error) surfaces as
+      // a failure instead of a silent no-op that looks like a save.
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(input)
+        .eq('id', uid)
+        .select('id');
       if (error) throw error;
+      if (!data?.length) throw new Error('You can only edit your own profile.');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile'] });
+      qc.invalidateQueries({ queryKey: ['myProfile'] });
     },
   });
 }

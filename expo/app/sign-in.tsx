@@ -9,6 +9,7 @@ import {
   Pressable,
   Alert,
 } from 'react-native';
+import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '@/providers/AuthProvider';
@@ -16,10 +17,16 @@ import { Button, Field } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 
+const LEGAL_BASE = 'https://gnomefarmersmarket.com';
+
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn, signUp, requestEmailCode, verifyEmailCode, signInWithGoogle, signInWithApple, configured } = useAuth();
-  const [mode, setMode] = useState<'in' | 'up' | 'code'>('up');
+  const {
+    signIn, signUp, requestEmailCode, verifyEmailCode,
+    requestPasswordReset, setNewPassword, recoveryMode, clearRecoveryMode,
+    signInWithGoogle, signInWithApple, configured,
+  } = useAuth();
+  const [mode, setMode] = useState<'in' | 'up' | 'code' | 'forgot' | 'reset'>('up');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,6 +39,11 @@ export default function SignInScreen() {
   // Google + Apple providers were enabled in Supabase on 2026-08-08
   // (Google Cloud project "Gnome Farmers Market"; Apple native via bundle id).
   const OAUTH_READY = true;
+
+  // Arriving from a password-reset email puts us in a recovery session.
+  useEffect(() => {
+    if (recoveryMode) setMode('reset');
+  }, [recoveryMode]);
 
   useEffect(() => {
     if (OAUTH_READY && Platform.OS === 'ios') {
@@ -108,6 +120,57 @@ export default function SignInScreen() {
     }
   };
 
+  const sendReset = async () => {
+    if (!configured) {
+      Alert.alert('Supabase not connected', 'Add your Supabase keys to .env to enable accounts.');
+      return;
+    }
+    if (!email.trim()) {
+      Alert.alert('Missing info', 'Enter your email address.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await requestPasswordReset(email.trim());
+    } catch {
+      // Deliberately swallowed: revealing that a send failed (or succeeded)
+      // for a specific address is an account-enumeration oracle.
+    } finally {
+      setBusy(false);
+      // Same copy either way — we never confirm whether an account exists.
+      Alert.alert(
+        'Check your email',
+        'If an account exists for that address, we just sent a link to reset the password. Open it on this device.',
+        [{ text: 'OK', onPress: () => setMode('in') }],
+      );
+    }
+  };
+
+  const submitNewPassword = async () => {
+    if (password.length < 8) {
+      Alert.alert('Password too short', 'Use at least 8 characters.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await setNewPassword(password);
+      clearRecoveryMode();
+      Alert.alert('Password updated', 'You’re signed in.', [
+        { text: 'OK', onPress: () => { if (router.canGoBack()) router.back(); } },
+      ]);
+    } catch (e: any) {
+      const raw = e?.message ?? '';
+      Alert.alert(
+        'Could not update password',
+        /expired|invalid|session/i.test(raw)
+          ? 'That reset link has expired or was already used. Request a new one.'
+          : raw || 'Please try again.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async () => {
     if (!configured) {
       Alert.alert('Supabase not connected', 'Add your Supabase keys to .env to enable accounts.');
@@ -143,7 +206,10 @@ export default function SignInScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.emoji}>🍅</Text>
         <Text style={styles.title}>
-          {mode === 'code' ? 'Sign in with a code' : mode === 'up' ? 'Join your neighborhood' : 'Welcome back'}
+          {mode === 'reset' ? 'Set a new password'
+            : mode === 'forgot' ? 'Reset your password'
+            : mode === 'code' ? 'Sign in with a code'
+            : mode === 'up' ? 'Join your neighborhood' : 'Welcome back'}
         </Text>
         <Text style={styles.subtitle}>
           Share your garden surplus and grab what neighbors have to spare.
@@ -167,16 +233,27 @@ export default function SignInScreen() {
             autoCapitalize="words"
           />
         )}
-        <Field
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="you@example.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {mode !== 'code' && (
+        {mode !== 'reset' && (
+          <Field
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        )}
+        {mode === 'reset' && (
+          <Field
+            label="New password (8+ characters)"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="••••••••"
+            secureTextEntry
+          />
+        )}
+        {mode !== 'code' && mode !== 'forgot' && mode !== 'reset' && (
           <Field
             label="Password"
             value={password}
@@ -196,7 +273,16 @@ export default function SignInScreen() {
           />
         )}
 
-        {mode === 'code' ? (
+        {mode === 'reset' ? (
+          <Button label="Save new password" onPress={submitNewPassword} loading={busy} />
+        ) : mode === 'forgot' ? (
+          <>
+            <Button label="Email me a reset link" onPress={sendReset} loading={busy} />
+            <Pressable onPress={() => setMode('in')} style={styles.toggle}>
+              <Text style={styles.toggleText}>← Back to sign in</Text>
+            </Pressable>
+          </>
+        ) : mode === 'code' ? (
           codeSent ? (
             <>
               <Button label="Verify code" onPress={submitCode} loading={busy} />
@@ -215,7 +301,13 @@ export default function SignInScreen() {
           />
         )}
 
-        {mode !== 'code' && (
+        {mode === 'in' && (
+          <Pressable onPress={() => setMode('forgot')} style={styles.toggle}>
+            <Text style={styles.toggleText}>Forgot your password?</Text>
+          </Pressable>
+        )}
+
+        {(mode === 'in' || mode === 'up') && (
           <Pressable onPress={() => { setMode('code'); setCodeSent(false); setCode(''); }} style={styles.toggle}>
             <Text style={styles.toggleText}>Email me a code instead — no password needed</Text>
           </Pressable>
@@ -255,6 +347,18 @@ export default function SignInScreen() {
             onPress={onApple}
           />
         )}
+
+        <View style={styles.legalRow}>
+          <Text style={styles.legalText}>By continuing you agree to our </Text>
+          <Pressable onPress={() => Linking.openURL(`${LEGAL_BASE}/terms`)} accessibilityRole="link">
+            <Text style={styles.legalLink}>Terms</Text>
+          </Pressable>
+          <Text style={styles.legalText}> and </Text>
+          <Pressable onPress={() => Linking.openURL(`${LEGAL_BASE}/privacy`)} accessibilityRole="link">
+            <Text style={styles.legalLink}>Privacy Policy</Text>
+          </Pressable>
+          <Text style={styles.legalText}>.</Text>
+        </View>
 
         <Pressable
           onPress={() => setMode(mode === 'code' ? 'in' : mode === 'up' ? 'in' : 'up')}
@@ -310,5 +414,15 @@ const styles = StyleSheet.create({
   googleText: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
   appleBtn: { height: 50, marginTop: 10 },
   toggle: { marginTop: 18, alignItems: 'center' },
+  legalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    paddingHorizontal: 12,
+  },
+  legalText: { color: Colors.textSecondary, fontSize: 12, fontFamily: fonts.regular },
+  legalLink: { color: Colors.primary, fontSize: 12, fontFamily: fonts.bold, minHeight: 22 },
   toggleText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.semibold },
 });

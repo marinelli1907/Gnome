@@ -13,6 +13,7 @@ import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { unregisterPushToken } from '@/lib/notifications';
 
 // Dismiss the auth browser tab if it's left dangling (web/dev safety).
 void WebBrowser.maybeCompleteAuthSession();
@@ -28,6 +29,13 @@ interface AuthContextValue {
   /** Email a 6-digit sign-in code (creates the account if new — same as web). */
   requestEmailCode: (email: string) => Promise<void>;
   verifyEmailCode: (email: string, code: string) => Promise<void>;
+  /** Email a password-reset link that deep-links back into the app. */
+  requestPasswordReset: (email: string) => Promise<void>;
+  /** Set a new password for the recovery session opened by that link. */
+  setNewPassword: (password: string) => Promise<void>;
+  /** True once a password-recovery deep link has put us in a recovery session. */
+  recoveryMode: boolean;
+  clearRecoveryMode: () => void;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -39,6 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const clearRecoveryMode = useCallback(() => setRecoveryMode(false), []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -53,6 +63,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setLoading(false);
+      // A reset link deep-links in as a recovery session; the UI must collect a
+      // new password rather than dropping the user into the app signed in.
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       // Queries fetched before the session hydrated ran as anon and came back
       // empty (RLS), with nothing to retrigger them — refetch on any auth change.
       if (event === 'SIGNED_OUT') queryClient.clear();
@@ -74,6 +87,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }, []);
+
+  /**
+   * Send a reset link. redirectTo deep-links back into the app (gnome://
+   * auth-callback), which Supabase turns into a PASSWORD_RECOVERY session.
+   * We deliberately do NOT surface whether the address exists — callers show
+   * the same "check your email" copy either way, to avoid account enumeration.
+   */
+  const requestPasswordReset = useCallback(async (email: string) => {
+    const redirectTo = Linking.createURL('auth-callback');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) throw error;
+  }, []);
+
+  const setNewPassword = useCallback(async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
   }, []);
 
@@ -151,7 +181,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    // Unbind this device FIRST — the delete policy is scoped to auth.uid(), so
+    // it only works while the session is still valid. Otherwise the departing
+    // user's pushes (including chat previews) keep arriving on this phone.
+    await unregisterPushToken();
+    // scope 'local' signs out THIS device only. The default ('global') revokes
+    // every refresh token for the account, which would silently sign the user
+    // out of their other devices and the website.
+    await supabase.auth.signOut({ scope: 'local' });
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -164,11 +201,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn,
       requestEmailCode,
       verifyEmailCode,
+      requestPasswordReset,
+      setNewPassword,
+      recoveryMode,
+      clearRecoveryMode,
       signInWithGoogle,
       signInWithApple,
       signOut,
     }),
-    [session, loading, signUp, signIn, requestEmailCode, verifyEmailCode, signInWithGoogle, signInWithApple, signOut],
+    [session, loading, signUp, signIn, requestEmailCode, verifyEmailCode, requestPasswordReset, setNewPassword, recoveryMode, clearRecoveryMode, signInWithGoogle, signInWithApple, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

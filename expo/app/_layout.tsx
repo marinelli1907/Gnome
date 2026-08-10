@@ -110,6 +110,10 @@ export default function RootLayout() {
                 options={{ title: 'Settings', ...headerStyle }}
               />
               <Stack.Screen
+                name="profile/edit"
+                options={{ title: 'Edit profile', ...headerStyle }}
+              />
+              <Stack.Screen
                 name="garden"
                 options={{ title: 'Garden Planner', ...headerStyle }}
               />

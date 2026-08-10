@@ -24,6 +24,18 @@ const json = (body: unknown, status = 200) =>
     headers: { ...cors, 'Content-Type': 'application/json' },
   });
 
+/** Remove every object the user owns in a bucket namespaced by their uuid. */
+async function purgeBucketFolder(admin: any, bucket: string, userId: string) {
+  try {
+    const { data: files } = await admin.storage.from(bucket).list(userId, { limit: 1000 });
+    if (files?.length) {
+      await admin.storage.from(bucket).remove(files.map((f: { name: string }) => `${userId}/${f.name}`));
+    }
+  } catch {
+    // Never block account deletion on storage cleanup.
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -65,6 +77,21 @@ Deno.serve(async (req) => {
       await admin.from('claims').delete().in('listing_id', listingIds);
       await admin.from('listings').delete().in('id', listingIds);
     }
+    // Compliance paperwork: scope links, credential rows, and the uploaded
+    // documents themselves. Permits are sensitive and must not outlive the
+    // account that submitted them.
+    const { data: creds } = await admin
+      .from('seller_credentials')
+      .select('id')
+      .eq('seller_id', user.id);
+    const credIds = (creds ?? []).map((c: { id: string }) => c.id);
+    if (credIds.length) {
+      await admin.from('credential_taxonomy_scope').delete().in('credential_id', credIds);
+      await admin.from('seller_credentials').delete().in('id', credIds);
+    }
+    await purgeBucketFolder(admin, 'compliance-docs', user.id);
+    await purgeBucketFolder(admin, 'listing-images', user.id);
+
     await admin.from('markets').delete().eq('owner_id', user.id);
     await admin.from('user_blocks').delete().eq('blocker_id', user.id);
     await admin.from('user_blocks').delete().eq('blocked_id', user.id);

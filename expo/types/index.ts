@@ -6,7 +6,11 @@ export type ListingStatus =
   | 'claimed'
   | 'completed'
   | 'expired'
-  | 'removed';
+  | 'removed'
+  // Compliance automation parks a regulated listing here when the seller's
+  // credential expires or their paid plan lapses. Nothing is deleted: the
+  // listing resumes automatically once the credential/plan is valid again.
+  | 'paused';
 
 export type UserType =
   | 'neighbor'
