@@ -25,7 +25,13 @@ export async function logEvent(
     /* analytics is best-effort */
   }
 }
-import { distanceMiles, radiusToMiles, type Coords, type RadiusOption } from './location';
+import {
+  boundingBox,
+  browseRadiusMiles,
+  distanceMiles,
+  type BrowseRadius,
+  type Coords,
+} from './location';
 import type {
   BlockedNeighbor,
   Claim,
@@ -102,7 +108,8 @@ async function fetchMyBlockedSet(): Promise<Set<string>> {
 // ---------------------------------------------------------------------------
 export interface BrowseFilters {
   coords: Coords | null;
-  radius: RadiusOption;
+  /** Miles (1–500) or 'anywhere' (no geographic filter). */
+  radius: BrowseRadius;
   category: string | null;
   listingType: 'all' | ListingType;
   /** Node ids of the selected taxonomy subtree (from subtreeIds()); null = no
@@ -116,6 +123,7 @@ export function useListings(filters: BrowseFilters) {
     queryKey: keys.listings(filters),
     enabled: isSupabaseConfigured,
     queryFn: async (): Promise<Listing[]> => {
+      const maxMi = browseRadiusMiles(filters.radius);
       let q = supabase
         .from('listings')
         .select(LISTING_SELECT)
@@ -126,6 +134,19 @@ export function useListings(filters: BrowseFilters) {
       if (filters.category) q = q.eq('category', filters.category);
       if (filters.taxonomyIds?.length) q = q.in('taxonomy_node_id', filters.taxonomyIds);
       if (filters.listingType !== 'all') q = q.eq('listing_type', filters.listingType);
+      // SERVER-side prefilter: bounding box on the privacy-safe approx
+      // coordinates. The 200-row cap then applies inside the box rather than
+      // nationally, so a 250-mile search isn't silently starved by unrelated
+      // far-away rows. 'anywhere' skips geography entirely (newest 200 —
+      // documented cap, still paginated/limited, never unbounded).
+      if (filters.coords && maxMi != null) {
+        const box = boundingBox(filters.coords, maxMi);
+        q = q
+          .gte('approx_lat', box.minLat)
+          .lte('approx_lat', box.maxLat)
+          .gte('approx_lng', box.minLng)
+          .lte('approx_lng', box.maxLng);
+      }
 
       const [{ data, error }, blocked] = await Promise.all([q, fetchMyBlockedSet()]);
       if (error) throw error;
@@ -133,17 +154,22 @@ export function useListings(filters: BrowseFilters) {
       let listings = (data ?? []).map(shapeListing).filter((l) => !blocked.has(l.owner_id));
 
       if (filters.coords) {
-        const max = radiusToMiles(filters.radius);
-        listings = listings
-          .map((l) => ({
-            ...l,
-            distance_miles:
-              l.approx_lat != null && l.approx_lng != null
-                ? distanceMiles(filters.coords as Coords, { lat: l.approx_lat, lng: l.approx_lng })
-                : null,
-          }))
-          .filter((l) => l.distance_miles == null || l.distance_miles <= max)
-          .sort((a, b) => (a.distance_miles ?? 9999) - (b.distance_miles ?? 9999));
+        // ONE distance source everywhere: buyer's current coords vs the
+        // listing's approx coords. The same number drives the label and the
+        // radius cut, so "6.2 mi away" and a 5-mile filter can never disagree.
+        listings = listings.map((l) => ({
+          ...l,
+          distance_miles:
+            l.approx_lat != null && l.approx_lng != null
+              ? distanceMiles(filters.coords as Coords, { lat: l.approx_lat, lng: l.approx_lng })
+              : null,
+        }));
+        if (maxMi != null) {
+          listings = listings.filter((l) => l.distance_miles == null || l.distance_miles <= maxMi);
+        }
+        listings = listings.sort(
+          (a, b) => (a.distance_miles ?? 9999) - (b.distance_miles ?? 9999),
+        );
       }
       return listings;
     },
@@ -786,7 +812,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
         listings = listings.filter((l) => l.listing_type === filters.listingType);
       }
       if (filters.coords) {
-        const max = radiusToMiles(filters.radius);
+        const max = browseRadiusMiles(filters.radius);
         listings = listings
           .map((l) => ({
             ...l,
@@ -795,7 +821,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
                 ? distanceMiles(filters.coords as Coords, { lat: l.approx_lat, lng: l.approx_lng })
                 : null,
           }))
-          .filter((l) => l.distance_miles == null || l.distance_miles <= max);
+          .filter((l) => max == null || l.distance_miles == null || l.distance_miles <= max);
       }
       return listings.slice(0, 5);
     },

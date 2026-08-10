@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   FlatList,
   Linking,
   Pressable,
@@ -15,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, SlidersHorizontal, X } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
+import DistancePicker from '@/components/DistancePicker';
 import FeaturedRail from '@/components/FeaturedRail';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
 import { EmptyState, ErrorState, Button } from '@/components/ui';
@@ -32,10 +34,14 @@ import {
   breadcrumb,
 } from '@/lib/taxonomy';
 import {
+  DEFAULT_BROWSE_RADIUS,
+  getCoordsIfGranted,
   getCurrentCoords,
-  RADIUS_OPTIONS,
+  loadBrowseRadius,
+  radiusLabel,
+  saveBrowseRadius,
+  type BrowseRadius,
   type Coords,
-  type RadiusOption,
 } from '@/lib/location';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
@@ -43,14 +49,37 @@ export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [coords, setCoords] = useState<Coords | null>(null);
-  const [radius, setRadius] = useState<RadiusOption>(10);
+  const [radius, setRadiusState] = useState<BrowseRadius>(DEFAULT_BROWSE_RADIUS);
+  const [distanceOpen, setDistanceOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | ListingType>('all');
   const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState('');
 
+  const setRadius = (r: BrowseRadius) => {
+    setRadiusState(r);
+    void saveBrowseRadius(r); // persists across restarts
+  };
+
   useEffect(() => {
+    void loadBrowseRadius().then(setRadiusState);
+    // First mount may prompt (existing behavior — iOS shows the sheet once).
     void getCurrentCoords().then(setCoords);
+  }, []);
+
+  // Refresh the reading when the app returns to the foreground — no prompt,
+  // no background tracking; a single fix each time the user comes back.
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        void getCoordsIfGranted().then((c) => {
+          if (c) setCoords(c);
+        });
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, []);
 
   const taxonomy = useTaxonomy();
@@ -155,30 +184,35 @@ export default function BrowseScreen() {
         })}
       </ScrollView>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipRow}
-        contentContainerStyle={styles.chipRowContent}
-      >
-        {RADIUS_OPTIONS.map((opt) => {
-          const active = radius === opt.value;
-          return (
-            <Pressable
-              key={String(opt.value)}
-              onPress={() => setRadius(opt.value)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              hitSlop={6}
-              style={[styles.chip, active && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      {/* Distance: one editable chip backed by the slider/manual-input sheet */}
+      <View style={styles.distanceRow}>
+        <Pressable
+          onPress={() => setDistanceOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Distance filter: ${radiusLabel(radius)}. Tap to change.`}
+          hitSlop={6}
+          style={[styles.chip, styles.chipActive]}
+        >
+          <Text style={[styles.chipText, styles.chipTextActive]}>
+            📍 {radiusLabel(radius)}
+          </Text>
+        </Pressable>
+        {radius !== 'anywhere' && !coords ? (
+          <Pressable
+            onPress={() => {
+              void getCurrentCoords().then((c) => {
+                setCoords(c);
+                if (!c) void Linking.openSettings();
+              });
+            }}
+            accessibilityRole="button"
+            hitSlop={6}
+            style={styles.locateHint}
+          >
+            <Text style={styles.locateHintText}>Location is needed to filter by distance — use current location</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {/* Taxonomy: top-level chips from the backend tree + full drilldown */}
       <ScrollView
@@ -344,8 +378,24 @@ export default function BrowseScreen() {
         )}
         ListEmptyComponent={emptyComponent}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={() => {
+              // A browse refresh also refreshes the location fix (no prompt).
+              void getCoordsIfGranted().then((c) => {
+                if (c) setCoords(c);
+              });
+              void refetch();
+            }}
+            tintColor={Colors.primary}
+          />
         }
+      />
+      <DistancePicker
+        visible={distanceOpen}
+        value={radius}
+        onApply={setRadius}
+        onClose={() => setDistanceOpen(false)}
       />
       {index ? (
         <TaxonomyPicker
@@ -406,6 +456,9 @@ const styles = StyleSheet.create({
   plannerArrow: { fontFamily: fonts.bold, fontSize: 18, color: Colors.primary },
   chipRow: { marginHorizontal: -16 },
   chipRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
+  distanceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 10, flexWrap: 'wrap' },
+  locateHint: { flexShrink: 1, minHeight: 34, justifyContent: 'center' },
+  locateHintText: { fontSize: 12.5, fontFamily: fonts.semibold, color: Colors.primary },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 7,

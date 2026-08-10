@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,8 +10,28 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { usePickupSettings } from '@/lib/marketops';
 import { marketShareUrl } from '@/lib/links';
+
+/**
+ * A Market's distance: buyer's transient foreground fix vs the median of the
+ * Market's own listings' APPROX coordinates — the same privacy basis as
+ * everywhere else. Demo listings are excluded; no listings → no label.
+ */
+function marketDistance(
+  coords: Coords | null,
+  ls: { approx_lat?: number | null; approx_lng?: number | null; is_demo?: boolean | null }[],
+): number | null {
+  if (!coords) return null;
+  const pts = ls.filter((l) => !l.is_demo && l.approx_lat != null && l.approx_lng != null);
+  if (!pts.length) return null;
+  const mid = (arr: number[]) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)];
+  return distanceMiles(coords, {
+    lat: mid(pts.map((l) => l.approx_lat as number)),
+    lng: mid(pts.map((l) => l.approx_lng as number)),
+  });
+}
 
 export default function MarketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -20,6 +40,10 @@ export default function MarketScreen() {
   const { userId } = useAuth();
   const market = useMarket(id);
   const listings = useMarketListings(id);
+  const [myCoords, setMyCoords] = useState<Coords | null>(null);
+  useEffect(() => {
+    void getCoordsIfGranted().then(setMyCoords);
+  }, []);
   const rep = useMarketReputation(id);
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
@@ -122,10 +146,17 @@ export default function MarketScreen() {
     ]);
   };
 
+  const mktMiles = marketDistance(myCoords, listings.data ?? []);
+
   const Header = (
     <View style={styles.header}>
       <Avatar uri={m.avatar_url} name={m.name} size={72} />
       <Text style={styles.name}>{m.name}</Text>
+      {mktMiles != null ? (
+        <Text style={styles.distanceLabel}>
+          📍 {fmtDistance(mktMiles) === 'Nearby' ? 'Nearby' : `${fmtDistance(mktMiles)} away`}
+        </Text>
+      ) : null}
       {m.tagline ? <Text style={styles.tagline}>“{m.tagline}”</Text> : null}
       {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
       {isOwner && (
@@ -205,6 +236,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 25, fontFamily: fonts.displayBold, color: Colors.text, textAlign: 'center' },
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
   tagline: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.primaryLight, textAlign: 'center', fontStyle: 'italic', marginTop: 2 },
+  distanceLabel: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary, textAlign: 'center', marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
   repWrap: { alignSelf: 'stretch', marginTop: 16 },
   actionsRow: { flexDirection: 'row', gap: 14, alignItems: 'center' },
