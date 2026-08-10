@@ -1,0 +1,18 @@
+-- 0053: slot generation, cart compatibility and orders become location-aware.
+-- Applied to production as 'pickup_locations_scheduling'. Highlights:
+--   location_available_slots(location, days)  - per-location slots; a
+--     restricted/inactive location generates NOTHING, so a downgrade stops
+--     new business without touching stored hours or history.
+--   market_available_slots(market, days)      - kept, now delegates to the
+--     Market's default location (existing clients unchanged).
+--   cart_pickup_locations(market, listing[])  - locations that can fulfil
+--     EVERY item; a listing with no explicit rows means "the default", so
+--     untouched listings keep working.
+--   create_market_order(..., p_location)      - validates the slot against the
+--     chosen location, refuses carts with no shared location
+--     (NO_COMMON_PICKUP_LOCATION), snapshots name/type onto the order.
+--   order_pickup_details(order)               - exact address released only to
+--     the buyer of a CONFIRMED/READY/COMPLETED order (or the owner).
+--   public_pickup_locations(market)           - pre-confirmation view; an
+--     address appears ONLY when the seller opted in on a PUBLIC_* location.
+-- Full statements are recorded in the database migration history.

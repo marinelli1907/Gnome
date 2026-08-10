@@ -184,36 +184,6 @@ export default function BrowseScreen() {
         })}
       </ScrollView>
 
-      {/* Distance: one editable chip backed by the slider/manual-input sheet */}
-      <View style={styles.distanceRow}>
-        <Pressable
-          onPress={() => setDistanceOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`Distance filter: ${radiusLabel(radius)}. Tap to change.`}
-          hitSlop={6}
-          style={[styles.chip, styles.chipActive]}
-        >
-          <Text style={[styles.chipText, styles.chipTextActive]}>
-            📍 {radiusLabel(radius)}
-          </Text>
-        </Pressable>
-        {radius !== 'anywhere' && !coords ? (
-          <Pressable
-            onPress={() => {
-              void getCurrentCoords().then((c) => {
-                setCoords(c);
-                if (!c) void Linking.openSettings();
-              });
-            }}
-            accessibilityRole="button"
-            hitSlop={6}
-            style={styles.locateHint}
-          >
-            <Text style={styles.locateHintText}>Location is needed to filter by distance — use current location</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
       {/* Taxonomy: top-level chips from the backend tree + full drilldown */}
       <ScrollView
         horizontal
@@ -287,6 +257,37 @@ export default function BrowseScreen() {
           <Text style={styles.browseAllText}>Browse all categories ›</Text>
         </Pressable>
       ) : null}
+
+      {/* Distance sits last: it's the filter people reach for after they've
+          decided what they're looking for. */}
+      <View style={styles.distanceRow}>
+        <Pressable
+          onPress={() => setDistanceOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Distance filter: ${radiusLabel(radius)}. Tap to change.`}
+          hitSlop={6}
+          style={[styles.chip, styles.chipActive]}
+        >
+          <Text style={[styles.chipText, styles.chipTextActive]}>
+            📍 {radiusLabel(radius)}
+          </Text>
+        </Pressable>
+        {radius !== 'anywhere' && !coords ? (
+          <Pressable
+            onPress={() => {
+              void getCurrentCoords().then((c) => {
+                setCoords(c);
+                if (!c) void Linking.openSettings();
+              });
+            }}
+            accessibilityRole="button"
+            hitSlop={6}
+            style={styles.locateHint}
+          >
+            <Text style={styles.locateHintText}>Location is needed to filter by distance — use current location</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {!filtering && <FeaturedRail filters={filters} />}
 
