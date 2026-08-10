@@ -9,10 +9,13 @@ import { categoryFor } from '@/constants/categories';
 import { useMyListings, useUpdateListingStatus } from '@/lib/db';
 import type { Listing } from '@/types';
 
-type Group = 'Available' | 'Claimed' | 'Completed' | 'Expired';
-const GROUP_ORDER: Group[] = ['Available', 'Claimed', 'Completed', 'Expired'];
+type Group = 'Available' | 'Paused' | 'Claimed' | 'Completed' | 'Expired';
+const GROUP_ORDER: Group[] = ['Available', 'Paused', 'Claimed', 'Completed', 'Expired'];
 const GROUP_COLOR: Record<Group, string> = {
   Available: Colors.success,
+  // Paused = parked by compliance (expired credential or lapsed plan), not by
+  // the seller. Amber, not grey: it's actionable and nothing was lost.
+  Paused: Colors.warning,
   Claimed: Colors.warning,
   Completed: Colors.textTertiary,
   Expired: Colors.textTertiary,
@@ -20,6 +23,7 @@ const GROUP_COLOR: Record<Group, string> = {
 
 function groupOf(l: Listing): Group {
   const expired = l.status === 'expired' || (l.status === 'active' && new Date(l.expires_at).getTime() < Date.now());
+  if (l.status === 'paused') return 'Paused';
   if (l.status === 'completed') return 'Completed';
   if (l.status === 'removed' || expired) return 'Expired';
   if (l.status === 'claimed') return 'Claimed';
@@ -54,7 +58,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
     );
   }
 
-  const groups: Record<Group, Listing[]> = { Available: [], Claimed: [], Completed: [], Expired: [] };
+  const groups: Record<Group, Listing[]> = { Available: [], Paused: [], Claimed: [], Completed: [], Expired: [] };
   for (const l of listings) groups[groupOf(l)].push(l);
 
   const markComplete = (l: Listing) =>
