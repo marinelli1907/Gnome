@@ -91,7 +91,7 @@ export default function RootLayout() {
               />
               <Stack.Screen
                 name="market/edit/[id]"
-                options={{ title: 'Name your garden', ...headerStyle }}
+                options={{ title: 'Name your Market', ...headerStyle }}
               />
               <Stack.Screen
                 name="request/[listingId]"

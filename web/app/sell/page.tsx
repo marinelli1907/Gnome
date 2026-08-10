@@ -19,7 +19,7 @@ export default async function SellPage({
   return (
     <main className="container" style={{ maxWidth: 720 }}>
       <section className="hero" style={{ paddingBottom: 8 }}>
-        <span className="kicker">Your garden’s storefront</span>
+        <span className="kicker">Your own Market</span>
         <h1>Post it in under a minute</h1>
         <p>
           Share it free, trade it, sell it — or offer a plot of your garden for a

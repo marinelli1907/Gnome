@@ -66,7 +66,7 @@ export default function MarketScreen() {
     return (
       <View style={[styles.screen, styles.center]}>
         <ErrorState
-          title="Couldn’t load this garden"
+          title="Couldn’t load this Market"
           message="Check your connection and try again."
           onRetry={() => market.refetch()}
         />
@@ -76,7 +76,7 @@ export default function MarketScreen() {
   if (!market.data) {
     return (
       <View style={[styles.screen, styles.center]}>
-        <EmptyState emoji="🏡" title="Garden not found" subtitle="This Market may no longer be active." />
+        <EmptyState emoji="🏡" title="Market not found" subtitle="This Market may no longer be active." />
       </View>
     );
   }
@@ -161,7 +161,7 @@ export default function MarketScreen() {
       {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
       {isOwner && (
         <Button
-          label="Name your garden"
+          label="Name your Market"
           variant="secondary"
           onPress={() => router.push(`/market/edit/${m.id}`)}
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
@@ -219,7 +219,7 @@ export default function MarketScreen() {
             <EmptyState
               emoji="🌱"
               title="Nothing growing here yet"
-              subtitle={isOwner ? 'Share something from the Post tab to fill your garden.' : 'Check back soon.'}
+              subtitle={isOwner ? 'Share something from the Post tab to fill your Market.' : 'Check back soon.'}
             />
           )
         }

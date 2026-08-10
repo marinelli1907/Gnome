@@ -402,6 +402,35 @@ export default function MyMarketClient() {
     (l) => l.is_featured && l.featured_until && new Date(l.featured_until) > new Date(),
   );
 
+  // A market row exists for every account (listings, orders, pickup hours and
+  // the ledger all key off market_id), but someone who has never listed
+  // anything is a buyer, not a storefront. Show them a way in instead of an
+  // empty seller cockpit with "0 live" and a Record-sale button.
+  if (listings.length === 0) {
+    return (
+      <div>
+        <div className="mm-head">
+          <div>
+            <h1>Start selling on Gnome</h1>
+            <p className="mm-stats">
+              Your Market opens with your first listing — free, and you can name it then.
+            </p>
+          </div>
+          <div className="mm-actions">
+            <a className="btn btn-primary btn-sm" href="/sell">+ New listing</a>
+          </div>
+        </div>
+        {error && <p className="autherror">{error}</p>}
+        <div className="empty">
+          <div className="emoji">🌱</div>
+          <h2>Nothing posted yet</h2>
+          <p>Your first listing takes under a minute — the AI even writes it for you.</p>
+          <p><a className="btn btn-primary" href="/sell">Post your first listing</a></p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mm-head">
