@@ -11,7 +11,7 @@ import { TYPE_FILTERS } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useListings } from '@/lib/db';
-import { getCurrentCoords, RADIUS_OPTIONS, type Coords, type RadiusOption } from '@/lib/location';
+import { getCurrentCoords, RADIUS_OPTIONS, radiusToMiles, type Coords, type RadiusOption } from '@/lib/location';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import type { Listing, ListingType } from '@/types';
 
@@ -42,7 +42,9 @@ export default function MapScreen() {
 
   const center = coords ?? DEFAULT_CENTER;
   const filters = useMemo(
-    () => ({ coords: center, radius, category: null, listingType: typeFilter }),
+    // The map keeps its fixed chips; convert to plain miles for the shared
+    // BrowseRadius filter type ('near' → 2-mile bubble).
+    () => ({ coords: center, radius: radiusToMiles(radius), category: null, listingType: typeFilter }),
     [center, radius, typeFilter],
   );
   const { data, isLoading, error, refetch } = useListings(filters);

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -25,6 +25,7 @@ import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { breadcrumb, useTaxonomy } from '@/lib/taxonomy';
 import { listingShareUrl } from '@/lib/links';
 
@@ -36,6 +37,13 @@ export default function ListingDetailScreen() {
   const router = useRouter();
   const { userId } = useAuth();
   const { data: listing, isLoading } = useListing(id);
+  // Buyer's transient foreground fix vs the listing's APPROX coords — the same
+  // basis Browse uses, so detail and card always tell the same story. Never
+  // prompts here; never persisted.
+  const [myCoords, setMyCoords] = useState<Coords | null>(null);
+  useEffect(() => {
+    void getCoordsIfGranted().then(setMyCoords);
+  }, []);
   const myClaims = useMyClaims(userId ?? undefined);
   const claim = useClaimListing(userId ?? undefined);
   const rep = useMarketReputation(listing?.market_id ?? undefined);
@@ -226,12 +234,22 @@ export default function ListingDetailScreen() {
           ) : null}
 
           <View style={styles.metaRow}>
-            {listing.distance_miles != null && (
-              <View style={styles.meta}>
-                <MapPin size={14} color={Colors.textSecondary} />
-                <Text style={styles.metaText}>{listing.distance_miles.toFixed(1)} mi away</Text>
-              </View>
-            )}
+            {(() => {
+              const mi =
+                !listing.is_demo && myCoords && listing.approx_lat != null && listing.approx_lng != null
+                  ? distanceMiles(myCoords, { lat: listing.approx_lat, lng: listing.approx_lng })
+                  : null;
+              if (mi == null) return null;
+              const label = fmtDistance(mi);
+              return (
+                <View style={styles.meta}>
+                  <MapPin size={14} color={Colors.textSecondary} />
+                  <Text style={styles.metaText}>
+                    {label === 'Nearby' ? 'Nearby' : `About ${label} away`}
+                  </Text>
+                </View>
+              );
+            })()}
             <View style={styles.meta}>
               <Clock size={14} color={Colors.textSecondary} />
               <Text style={styles.metaText}>Expires {new Date(listing.expires_at).toLocaleDateString()}</Text>

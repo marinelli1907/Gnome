@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 
 export interface Coords {
@@ -5,6 +6,7 @@ export interface Coords {
   lng: number;
 }
 
+/** Legacy fixed choices — still used by the Map tab only. */
 export type RadiusOption = 'near' | 5 | 10 | 25 | 50;
 
 export const RADIUS_OPTIONS: { value: RadiusOption; label: string }[] = [
@@ -14,6 +16,98 @@ export const RADIUS_OPTIONS: { value: RadiusOption; label: string }[] = [
   { value: 25, label: '25 mi' },
   { value: 50, label: '50 mi' },
 ];
+
+// ---------------------------------------------------------------------------
+// Browse distance model: a real number of miles (1–500) or 'anywhere' — a
+// distinct state, never a magic number.
+export type BrowseRadius = number | 'anywhere';
+
+/** Default for new users: 10 miles — Gnome is a neighborhood marketplace, and
+ *  10 was the previous fixed default, so existing behavior carries over. */
+export const DEFAULT_BROWSE_RADIUS: BrowseRadius = 10;
+export const MAX_BROWSE_RADIUS = 500;
+
+/** Nonlinear slider detents: fine near home, broad strokes far away. Typed
+ *  values are preserved exactly; the slider just snaps to the nearest detent
+ *  visually. */
+export const RADIUS_DETENTS = [1, 2, 3, 5, 10, 15, 20, 25, 35, 50, 75, 100, 150, 200, 250];
+
+export const RADIUS_SHORTCUTS: BrowseRadius[] = [5, 10, 25, 50, 100, 250, 'anywhere'];
+
+export function browseRadiusMiles(r: BrowseRadius): number | null {
+  return r === 'anywhere' ? null : r;
+}
+
+export function radiusLabel(r: BrowseRadius): string {
+  return r === 'anywhere' ? 'Anywhere' : `Within ${r} mi`;
+}
+
+const RADIUS_KEY = 'gnome.browseRadius';
+
+export async function loadBrowseRadius(): Promise<BrowseRadius> {
+  try {
+    const raw = await AsyncStorage.getItem(RADIUS_KEY);
+    if (raw === 'anywhere') return 'anywhere';
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1 && n <= MAX_BROWSE_RADIUS) return n;
+  } catch {
+    /* fall through to default */
+  }
+  return DEFAULT_BROWSE_RADIUS;
+}
+
+export async function saveBrowseRadius(r: BrowseRadius): Promise<void> {
+  try {
+    await AsyncStorage.setItem(RADIUS_KEY, String(r));
+  } catch {
+    /* persistence is best-effort */
+  }
+}
+
+/**
+ * Distance label rounding: under 10 miles one decimal, 10+ whole miles —
+ * approximate coordinates don't support more precision and we won't imply it.
+ */
+export function fmtDistance(mi: number): string {
+  if (mi < 0.1) return 'Nearby';
+  if (mi < 10) return `${mi.toFixed(1)} mi`;
+  return `${Math.round(mi)} mi`;
+}
+
+/**
+ * Bounding box around a point, for the SERVER-side prefilter: PostgREST range
+ * conditions on approx_lat/approx_lng shrink the fetched set to a superset of
+ * the circle, so the row cap applies within the box instead of nationally.
+ * The exact great-circle cut still happens client-side inside that box.
+ */
+export function boundingBox(c: Coords, miles: number) {
+  const latDelta = miles / 69; // ~69 mi per degree latitude
+  const lngDelta = miles / (69 * Math.max(0.2, Math.cos((c.lat * Math.PI) / 180)));
+  return {
+    minLat: c.lat - latDelta,
+    maxLat: c.lat + latDelta,
+    minLng: c.lng - lngDelta,
+    maxLng: c.lng + lngDelta,
+  };
+}
+
+/**
+ * Current coords WITHOUT prompting — for passive surfaces (detail screens,
+ * foreground refresh). Only Browse's explicit "Use current location" action
+ * (and first-mount getCurrentCoords) may prompt.
+ */
+export async function getCoordsIfGranted(): Promise<Coords | null> {
+  try {
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') return null;
+    const pos = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  } catch {
+    return null;
+  }
+}
 
 /** Great-circle distance in miles between two coordinates. */
 export function distanceMiles(a: Coords, b: Coords): number {

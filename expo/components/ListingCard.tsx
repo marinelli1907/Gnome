@@ -7,6 +7,7 @@ import type { Listing, ListingType } from '@/types';
 import { categoryFor } from '@/constants/categories';
 import TypeBadge from '@/components/TypeBadge';
 import { ctaLabel, formatPrice } from '@/lib/listingType';
+import { fmtDistance } from '@/lib/location';
 import { logEvent } from '@/lib/db';
 import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
@@ -40,12 +41,14 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
   const photo = listing.photos?.[0];
   const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
   const isWanted = type === 'wanted';
-  const distance =
-    listing.distance_miles != null
-      ? listing.distance_miles < 0.1
-        ? 'Nearby'
-        : `${listing.distance_miles.toFixed(1)} mi`
+  // <10 mi: one decimal; 10+: whole miles — approximate coords don't support
+  // more precision. Preview/demo inventory never shows a distance: its
+  // placement is illustrative, and a real-looking "2.1 mi away" would mislead.
+  const distanceBase =
+    listing.distance_miles != null && !listing.is_demo
+      ? fmtDistance(listing.distance_miles)
       : null;
+  const distance = distanceBase == null ? null : distanceBase === 'Nearby' ? 'Nearby' : `${distanceBase} away`;
 
   const open = () => {
     void logEvent('listing_card_opened', {
