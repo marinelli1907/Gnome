@@ -150,6 +150,14 @@ export default function RootLayout() {
                 options={{ title: 'Pickup availability', ...headerStyle }}
               />
               <Stack.Screen
+                name="market/pickup-locations"
+                options={{ title: 'Pickup locations', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="market/pickup-location/[id]"
+                options={{ title: 'Pickup location', ...headerStyle }}
+              />
+              <Stack.Screen
                 name="market/payment-settings"
                 options={{ title: 'Payment methods', ...headerStyle }}
               />

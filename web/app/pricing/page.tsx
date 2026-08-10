@@ -20,6 +20,7 @@ const TIERS = [
     features: [
       '10 active listings',
       'Your own Market page',
+      '1 pickup location',
       'AI listing drafts — 5/day',
       'Garden planner — 10 questions/day',
       'Local pickup, no fees ever',
@@ -34,6 +35,7 @@ const TIERS = [
     highlight: true,
     features: [
       '100 active listings',
+      'Up to 3 pickup locations — home, farm stand, market booth',
       'Offer plots — neighbors reserve, you grow',
       '1 free listing boost every month',
       'Full AI access — 25 drafts, 40 planner questions/day',
@@ -49,6 +51,7 @@ const TIERS = [
     blurb: 'For high-volume sellers, farm stands, and established producers.',
     features: [
       '500 active listings',
+      'Up to 10 pickup locations',
       'Offer plots — pre-sell your whole season',
       '5 free listing boosts every month',
       'Full AI access — 25 drafts, 40 planner questions/day',

@@ -43,6 +43,12 @@ export default function UpgradeScreen() {
                 {l ? `${l.max_active_listings} active listings` : '—'}
                 {l && l.price_cents > 0 ? ` · ${formatPrice(l.price_cents)}/mo` : ' · free'}
               </Text>
+              {l ? (
+                <Text style={styles.tierMeta}>
+                  {l.max_pickup_locations ?? 1} pickup location
+                  {(l.max_pickup_locations ?? 1) === 1 ? '' : 's'}
+                </Text>
+              ) : null}
             </View>
             {current && <Check size={20} color={Colors.primary} />}
           </View>

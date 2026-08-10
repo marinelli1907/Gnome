@@ -17,6 +17,8 @@ import { Camera, ChevronRight, Sparkles, X } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
 import ComplianceGate from '@/components/ComplianceGate';
+import ListingPickupSelector from '@/components/pickup-buyer/ListingPickupSelector';
+import { saveListingPickupLocations } from '@/components/pickup-buyer/listingPickup';
 import {
   useTaxonomy,
   usePublishEligibility,
@@ -30,6 +32,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyCredentials, useMyMarket, logEvent } from '@/lib/db';
+import { usePublicPickupLocationsForMarket } from '@/lib/marketops';
 import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
@@ -89,6 +92,10 @@ export default function PostScreen() {
   const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  // Empty = "wherever my Market says" (no listing_pickup_locations rows written).
+  const [pickupLocIds, setPickupLocIds] = useState<string[]>([]);
+
+  const pickupLocations = usePublicPickupLocationsForMarket(myMarket.data?.id);
 
   const taxonomy = useTaxonomy();
   const index = taxonomy.data;
@@ -197,6 +204,7 @@ export default function PostScreen() {
     setInventory('');
     setTradeFor('');
     setFulfilledBy(null);
+    setPickupLocIds([]);
   };
 
   const blocked = !isPlot && !!selectedNode && eligibility.data ? !eligibility.data.allowed : false;
@@ -272,6 +280,18 @@ export default function PostScreen() {
         tradeFor: tradeFor.trim() || null,
         fulfilledByListingId: fulfilledBy,
       });
+      // Only an explicit narrowing is persisted — no rows means "use the
+      // Market's locations", which is what almost every listing wants.
+      if (pickupLocIds.length) {
+        try {
+          await saveListingPickupLocations(listing.id, pickupLocIds);
+        } catch {
+          Alert.alert(
+            'Posted, but pickup spots didn’t save',
+            'Your listing is live and available at every pickup spot. You can narrow it later from the listing.',
+          );
+        }
+      }
       reset();
       if (asDraft) {
         Alert.alert(
@@ -465,6 +485,15 @@ export default function PostScreen() {
             ) : null}
           </>
         )}
+
+        {/* Where buyers can collect it — only worth asking with 2+ spots. */}
+        {!isWanted && !isPlot ? (
+          <ListingPickupSelector
+            locations={pickupLocations.data ?? []}
+            selected={pickupLocIds}
+            onChange={setPickupLocIds}
+          />
+        ) : null}
 
         <Field
           label={isWanted ? 'Request details (optional)' : 'Details (optional)'}

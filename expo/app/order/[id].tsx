@@ -3,7 +3,7 @@
 // payment options. The seller sees confirm / suggest-time / decline / ready /
 // complete, with the record-payment sheet on completion. Every mutation
 // surfaces errors via Alert and never fakes success.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,8 +23,14 @@ import PayMethodsList from '@/components/orders/PayMethods';
 import SlotPicker from '@/components/orders/SlotPicker';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
+import {
+  ADDRESS_AFTER_CONFIRMATION,
+  locationTypeEmoji,
+  locationTypeLabel,
+} from '@/components/pickup-buyer/labels';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyMarket } from '@/lib/db';
+import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import {
   fmtWindow,
   METHOD_LABEL,
@@ -36,6 +42,7 @@ import {
   useOrderAction,
   useOrderPickupDetails,
   usePickupSlots,
+  usePublicPickupLocationsForMarket,
   type PaymentMethodKind,
   type PickupSlot,
 } from '@/lib/marketops';
@@ -76,6 +83,14 @@ export default function OrderDetailScreen() {
   const [payReceived, setPayReceived] = useState<boolean | null>(null);
   const [payMethod, setPayMethod] = useState<string>('cash');
   const [payAmount, setPayAmount] = useState('');
+
+  // Approximate point for the order's pickup spot, so the buyer gets a distance
+  // before any address is released. Passive fix only — never prompts.
+  const [myCoords, setMyCoords] = useState<Coords | null>(null);
+  useEffect(() => {
+    void getCoordsIfGranted().then(setMyCoords);
+  }, []);
+  const marketLocs = usePublicPickupLocationsForMarket(o?.market_id);
 
   if (order.isLoading || myMarket.isLoading) {
     return (
@@ -208,6 +223,26 @@ export default function OrderDetailScreen() {
 
   const showBuyerPickupCard = isBuyer && (o.status === 'CONFIRMED' || o.status === 'READY');
 
+  // Snapshot first: a renamed or deactivated location must still read correctly
+  // in history. The live row is only consulted for the approximate point.
+  const snapName = o.pickup_location_name ?? null;
+  const snapType = o.pickup_location_type ?? null;
+  const liveLoc =
+    (marketLocs.data ?? []).find((l) => l.location_id === o.pickup_location_id) ?? null;
+  const pickupName = snapName ?? liveLoc?.nickname ?? null;
+  const pickupType = snapType ?? liveLoc?.location_type ?? null;
+  const pickupMiles =
+    isBuyer && myCoords && liveLoc?.approx_lat != null && liveLoc?.approx_lng != null
+      ? distanceMiles(myCoords, { lat: liveLoc.approx_lat, lng: liveLoc.approx_lng })
+      : null;
+  const pickupDistText =
+    pickupMiles == null
+      ? null
+      : fmtDistance(pickupMiles) === 'Nearby'
+        ? 'Nearby'
+        : `${fmtDistance(pickupMiles)} away`;
+  const detailsUnlocked = o.status === 'CONFIRMED' || o.status === 'READY' || o.status === 'COMPLETED';
+
   return (
     <View style={styles.screen}>
       <ScrollView
@@ -234,6 +269,28 @@ export default function OrderDetailScreen() {
             </Text>
           ) : null}
         </View>
+
+        {/* Where — the location snapshot taken when the order was placed */}
+        {pickupName ? (
+          <View
+            style={styles.locationCard}
+            accessibilityLabel={`Pickup at ${pickupName}${
+              pickupDistText ? `, ${pickupDistText}` : ''
+            }, ${locationTypeLabel(pickupType)}`}
+          >
+            <Text style={styles.locationEmoji}>{locationTypeEmoji(pickupType)}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationValue} numberOfLines={2}>
+                Pickup at {pickupName}
+                {pickupDistText ? ` · ${pickupDistText}` : ''}
+              </Text>
+              <Text style={styles.locationMeta}>
+                {locationTypeLabel(pickupType)}
+                {isBuyer && !detailsUnlocked ? ` · ${ADDRESS_AFTER_CONFIRMATION}` : ''}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Buyer: proposal banner */}
         {isBuyer && o.status === 'TIME_PROPOSED' && o.proposed_start && o.proposed_end ? (
@@ -302,6 +359,12 @@ export default function OrderDetailScreen() {
               <ActivityIndicator color={Colors.primary} style={{ marginTop: 8 }} />
             ) : pickup.data ? (
               <View style={styles.pickupCard}>
+                {(pickup.data.nickname ?? pickupName) ? (
+                  <Text style={styles.pickupNickname}>
+                    {locationTypeEmoji(pickup.data.location_type || pickupType)}{' '}
+                    {pickup.data.nickname ?? pickupName}
+                  </Text>
+                ) : null}
                 {pickup.data.address ? <Text style={styles.pickupAddress}>{pickup.data.address}</Text> : null}
                 {pickup.data.instructions ? (
                   <Text style={styles.pickupInstructions}>{pickup.data.instructions}</Text>
@@ -586,7 +649,22 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 4,
   },
+  pickupNickname: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary, marginBottom: 4 },
   pickupAddress: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
+  locationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  locationEmoji: { fontSize: 18, fontFamily: fonts.regular },
+  locationValue: { fontSize: 14.5, fontFamily: fonts.bold, color: Colors.text, lineHeight: 20 },
+  locationMeta: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2 },
   pickupInstructions: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 4, lineHeight: 19 },
   mutedText: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 19 },
   waitingText: {

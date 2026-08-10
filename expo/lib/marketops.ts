@@ -63,6 +63,34 @@ export interface PickupSlot {
   remaining: number | null;
 }
 
+/**
+ * A named pickup spot on a Market. `location_type` is kept as a plain string on
+ * purpose — the enum lives in the backend and grows there; the UI maps known
+ * values to friendly labels and title-cases anything new instead of breaking.
+ */
+export interface CartPickupLocation {
+  location_id: string;
+  nickname: string;
+  location_type: string;
+  approx_lat: number | null;
+  approx_lng: number | null;
+  is_default: boolean;
+}
+
+/** Public view of a location. `public_address` is non-null ONLY when the seller
+ *  opted in on a PUBLIC_* type — a private residence is always null. Never
+ *  render an address the RPC didn't hand you. */
+export interface PublicPickupLocation extends CartPickupLocation {
+  public_address: string | null;
+}
+
+export interface OrderPickupDetails {
+  address: string | null;
+  instructions: string | null;
+  location_type: string;
+  nickname: string | null;
+}
+
 export type MarketOrderStatus =
   | 'REQUESTED' | 'CONFIRMED' | 'TIME_PROPOSED' | 'DECLINED'
   | 'READY' | 'COMPLETED' | 'CANCELLED';
@@ -94,6 +122,11 @@ export interface MarketOrder {
   buyer_note: string | null;
   decline_reason: string | null;
   created_at: string;
+  // Pickup-location snapshots taken at order time — display these so renamed or
+  // deactivated locations still render correctly in order history.
+  pickup_location_id?: string | null;
+  pickup_location_name?: string | null;
+  pickup_location_type?: string | null;
   items?: MarketOrderItem[];
   market?: { name: string } | null;
   buyer?: { name: string } | null;
@@ -369,6 +402,68 @@ export function usePickupSlots(marketId?: string, days = 10) {
   });
 }
 
+/**
+ * Locations that can fulfil EVERY listing in the cart. An empty array is a real
+ * answer, not an error: the basket has no shared pickup spot and can't be
+ * ordered as one order. Disabled until there's at least one listing.
+ */
+export function useCartPickupLocations(marketId?: string, listingIds?: string[]) {
+  const ids = [...(listingIds ?? [])].sort();
+  return useQuery({
+    queryKey: ['cartPickupLocations', marketId, ids.join(',')],
+    enabled: isSupabaseConfigured && !!marketId && ids.length > 0,
+    staleTime: 30 * 1000,
+    queryFn: async (): Promise<CartPickupLocation[]> => {
+      const { data, error } = await supabase.rpc('cart_pickup_locations', {
+        p_market: marketId,
+        p_listings: ids,
+      });
+      if (error) throw error;
+      return (data ?? []) as CartPickupLocation[];
+    },
+  });
+}
+
+/** Every active pickup location on a Market, as buyers may see it.
+ *
+ *  NOTE: lib/pickuplocations.ts has a seller-side twin of this hook (and of
+ *  useLocationSlots). They deliberately share query keys —
+ *  ['publicPickupLocations', marketId] and ['locationSlots', locationId, days]
+ *  — so a seller editing a schedule invalidates the buyer's cached slots.
+ *  Merging the two implementations is safe cleanup; changing either key in
+ *  isolation silently breaks that invalidation. */
+export function usePublicPickupLocationsForMarket(marketId?: string) {
+  return useQuery({
+    queryKey: ['publicPickupLocations', marketId],
+    enabled: isSupabaseConfigured && !!marketId,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<PublicPickupLocation[]> => {
+      const { data, error } = await supabase.rpc('public_pickup_locations', {
+        p_market: marketId,
+      });
+      if (error) throw error;
+      return (data ?? []) as PublicPickupLocation[];
+    },
+  });
+}
+
+/** Server-generated slots for ONE location — the bookable truth once the buyer
+ *  has settled on where they're picking up. */
+export function useLocationSlots(locationId?: string | null, days = 10) {
+  return useQuery({
+    queryKey: ['locationSlots', locationId, days],
+    enabled: isSupabaseConfigured && !!locationId,
+    staleTime: 60 * 1000,
+    queryFn: async (): Promise<PickupSlot[]> => {
+      const { data, error } = await supabase.rpc('location_available_slots', {
+        p_location: locationId, p_days: days,
+      });
+      if (error) throw error;
+      return (data ?? []) as PickupSlot[];
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Orders
 const ORDER_SELECT = '*, items:market_order_items(*), market:markets(name)';
@@ -429,6 +524,7 @@ function invalidateOrders(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['marketOrders'] });
   qc.invalidateQueries({ queryKey: ['order'] });
   qc.invalidateQueries({ queryKey: ['pickupSlots'] });
+  qc.invalidateQueries({ queryKey: ['locationSlots'] });
 }
 
 export function useCreateOrder(uid?: string) {
@@ -439,6 +535,9 @@ export function useCreateOrder(uid?: string) {
       lines: CartLine[];
       slot: PickupSlot;
       note?: string | null;
+      /** Chosen pickup location. Required in practice — the backend rejects a
+       *  cart with no shared location (NO_COMMON_PICKUP_LOCATION). */
+      locationId?: string | null;
     }): Promise<string> => {
       if (!uid) throw new Error('Sign in to order.');
       const { data, error } = await supabase.rpc('create_market_order', {
@@ -447,6 +546,7 @@ export function useCreateOrder(uid?: string) {
         p_start: input.slot.slot_start,
         p_end: input.slot.slot_end,
         p_note: input.note ?? null,
+        p_location: input.locationId ?? null,
       });
       if (error) throw error;
       return data as string;
@@ -513,7 +613,7 @@ export function useOrderPickupDetails(orderId?: string, status?: MarketOrderStat
   return useQuery({
     queryKey: ['orderPickup', orderId, unlocked],
     enabled: isSupabaseConfigured && !!orderId && unlocked,
-    queryFn: async (): Promise<{ address: string | null; instructions: string | null; location_type: string } | null> => {
+    queryFn: async (): Promise<OrderPickupDetails | null> => {
       const { data, error } = await supabase.rpc('order_pickup_details', { p_order: orderId });
       if (error) throw error;
       const rows = (data ?? []) as any[];

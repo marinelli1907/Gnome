@@ -62,6 +62,8 @@ export type MarketPlan = 'free' | 'grower' | 'farm' | 'sponsor';
 export interface PlanLimit {
   plan: MarketPlan;
   max_active_listings: number;
+  /** Pickup locations included: free 1, grower 3, farm/sponsor 10 (0052). */
+  max_pickup_locations?: number;
   max_photos: number;
   analytics: boolean;
   featured: boolean;

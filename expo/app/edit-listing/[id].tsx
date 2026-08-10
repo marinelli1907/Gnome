@@ -14,10 +14,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
+import ListingPickupSelector from '@/components/pickup-buyer/ListingPickupSelector';
+import {
+  sameIdSet,
+  saveListingPickupLocations,
+  useListingPickupLocations,
+} from '@/components/pickup-buyer/listingPickup';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useListing, useUpdateListing } from '@/lib/db';
+import { usePublicPickupLocationsForMarket } from '@/lib/marketops';
 import {
   breadcrumb,
   legacyCategoryFor,
@@ -44,6 +51,21 @@ export default function EditListingScreen() {
   const [nodeTouched, setNodeTouched] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [seeded, setSeeded] = useState(false);
+
+  // Pickup availability. Existing rows seed the chips; no rows = "all spots".
+  // Nothing is written unless the seller actually changes the selection.
+  const existingPickup = useListingPickupLocations(id);
+  const pickupLocations = usePublicPickupLocationsForMarket(listing?.market_id ?? undefined);
+  const [pickupLocIds, setPickupLocIds] = useState<string[]>([]);
+  const [pickupSeeded, setPickupSeeded] = useState(false);
+  const [pickupTouched, setPickupTouched] = useState(false);
+
+  useEffect(() => {
+    if (!pickupSeeded && existingPickup.data) {
+      setPickupLocIds(existingPickup.data);
+      setPickupSeeded(true);
+    }
+  }, [existingPickup.data, pickupSeeded]);
 
   useEffect(() => {
     if (listing && !seeded) {
@@ -88,7 +110,23 @@ export default function EditListingScreen() {
         ...(nodeTouched ? { taxonomyNodeId: selectedNode?.id ?? null } : {}),
       },
       {
-        onSuccess: () => router.back(),
+        onSuccess: () => {
+          const changed =
+            pickupTouched && !sameIdSet(pickupLocIds, existingPickup.data ?? []);
+          if (!changed) {
+            router.back();
+            return;
+          }
+          // Delete-then-insert; an empty selection just clears back to default.
+          void saveListingPickupLocations(listing.id, pickupLocIds)
+            .then(() => router.back())
+            .catch((e: any) =>
+              Alert.alert(
+                'Saved, but pickup spots didn’t update',
+                e?.message ?? 'Your other changes were saved. Try the pickup spots again.',
+              ),
+            );
+        },
         onError: (e: any) => {
           const compliance = parseComplianceError(e?.message);
           if (compliance) {
@@ -133,6 +171,16 @@ export default function EditListingScreen() {
             </Pressable>
           </>
         )}
+        {!isPlot && listing.listing_type !== 'wanted' ? (
+          <ListingPickupSelector
+            locations={pickupLocations.data ?? []}
+            selected={pickupLocIds}
+            onChange={(next) => {
+              setPickupLocIds(next);
+              setPickupTouched(true);
+            }}
+          />
+        ) : null}
         <Field label="Details" value={description} onChangeText={setDescription} placeholder="Picked this morning, porch pickup…" multiline numberOfLines={3} style={styles.multiline} />
         <Button label="Save changes" onPress={save} loading={update.isPending} />
       </ScrollView>

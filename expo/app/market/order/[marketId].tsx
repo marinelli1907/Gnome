@@ -1,9 +1,11 @@
 // Order for pickup — buyer cart flow. Pick items from a market's active sale
-// listings, choose a server-generated pickup slot, add a note, and request.
+// listings, pick WHERE you're collecting them (only the spots that can fulfil
+// the whole basket), then a slot at that spot, add a note, and request.
 // Deliberately simple: no checkout, no payment — payment happens outside Gnome
 // and is confirmed by the seller.
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -17,15 +19,22 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, EmptyState, ErrorState, Field } from '@/components/ui';
 import SlotPicker from '@/components/orders/SlotPicker';
+import PickupLocationPicker, {
+  locationDistanceLabel,
+} from '@/components/pickup-buyer/PickupLocationPicker';
+import PickupConflictNotice from '@/components/pickup-buyer/PickupConflictNotice';
+import { locationTypeEmoji, locationTypeLabel } from '@/components/pickup-buyer/labels';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMarket, useMarketListings } from '@/lib/db';
+import { getCoordsIfGranted, type Coords } from '@/lib/location';
 import {
   fmtWindow,
   money,
+  useCartPickupLocations,
   useCreateOrder,
-  usePickupSlots,
+  useLocationSlots,
   type CartLine,
   type PickupSlot,
 } from '@/lib/marketops';
@@ -37,12 +46,18 @@ export default function MarketOrderScreen() {
   const { userId } = useAuth();
   const market = useMarket(marketId);
   const listings = useMarketListings(marketId);
-  const slots = usePickupSlots(marketId);
   const createOrder = useCreateOrder(userId ?? undefined);
 
   const [qty, setQty] = useState<Record<string, number>>({});
   const [slot, setSlot] = useState<PickupSlot | null>(null);
   const [note, setNote] = useState('');
+  const [locationId, setLocationId] = useState<string | null>(null);
+  const [myCoords, setMyCoords] = useState<Coords | null>(null);
+
+  // Passive fix only — the cart never prompts for location just to show "2 mi".
+  useEffect(() => {
+    void getCoordsIfGranted().then(setMyCoords);
+  }, []);
 
   const saleItems = useMemo(
     () =>
@@ -68,6 +83,39 @@ export default function MarketOrderScreen() {
   );
 
   const totalCents = lines.reduce((s, l) => s + l.priceCents * l.quantity, 0);
+
+  // Where this exact basket can be collected. Recomputed by the server whenever
+  // the basket changes — a location only qualifies if it fulfils EVERY line.
+  const listingIds = useMemo(() => lines.map((l) => l.listingId), [lines]);
+  const cartLocs = useCartPickupLocations(marketId, listingIds);
+  const locs = useMemo(() => cartLocs.data ?? [], [cartLocs.data]);
+  const locKey = locs.map((l) => l.location_id).join(',');
+  const hasItems = listingIds.length > 0;
+  // An empty array is a real answer from the RPC, not a loading state.
+  const noSharedLocation = hasItems && cartLocs.isSuccess && locs.length === 0;
+
+  // Keep the selection valid as the basket narrows: one option selects itself,
+  // several default to the seller's usual spot, and a spot that dropped out of
+  // the list is cleared rather than silently submitted.
+  useEffect(() => {
+    if (!locs.length) {
+      setLocationId(null);
+      return;
+    }
+    setLocationId((current) => {
+      if (current && locs.some((l) => l.location_id === current)) return current;
+      if (locs.length === 1) return locs[0].location_id;
+      return locs.find((l) => l.is_default)?.location_id ?? null;
+    });
+  }, [locKey, locs]);
+
+  // Slots belong to a location — changing where you collect invalidates when.
+  useEffect(() => {
+    setSlot(null);
+  }, [locationId]);
+
+  const slots = useLocationSlots(locationId, 10);
+  const chosenLoc = locs.find((l) => l.location_id === locationId) ?? null;
 
   if (!userId) {
     return (
@@ -101,6 +149,10 @@ export default function MarketOrderScreen() {
       Alert.alert('Nothing in your basket', 'Add at least one item first.');
       return;
     }
+    if (!locationId) {
+      Alert.alert('Pick a pickup spot', 'Choose where you’ll collect this order.');
+      return;
+    }
     if (!slot) {
       Alert.alert('Pick a time', 'Choose a pickup window for your order.');
       return;
@@ -111,11 +163,24 @@ export default function MarketOrderScreen() {
         lines,
         slot,
         note: note.trim() || null,
+        locationId,
       });
       router.replace(`/order/${orderId}`);
     } catch (e: any) {
       const msg: string = e?.message ?? '';
-      if (/SLOT_UNAVAILABLE/i.test(msg)) {
+      if (/NO_COMMON_PICKUP_LOCATION/i.test(msg)) {
+        void cartLocs.refetch();
+        Alert.alert(
+          'No shared pickup spot',
+          'These items can’t all be picked up in the same place anymore. Adjust your basket and try again.',
+        );
+      } else if (/PICKUP_NOT_CONFIGURED/i.test(msg)) {
+        void cartLocs.refetch();
+        Alert.alert(
+          'Pickup isn’t set up',
+          'This seller hasn’t finished setting up pickup. Message them instead.',
+        );
+      } else if (/SLOT_UNAVAILABLE/i.test(msg)) {
         setSlot(null);
         void slots.refetch();
         Alert.alert('That time was just taken', 'Pick another pickup window.');
@@ -199,17 +264,79 @@ export default function MarketOrderScreen() {
           </View>
         ) : null}
 
-        {/* Pickup time */}
+        {/* Pickup location — which spots can fulfil this exact basket */}
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Pickup location</Text>
+        {!hasItems ? (
+          <Text style={styles.noneText}>Add an item to see where you can collect it.</Text>
+        ) : cartLocs.isLoading ? (
+          <ActivityIndicator color={Colors.primary} style={{ marginTop: 10, alignSelf: 'flex-start' }} />
+        ) : cartLocs.isError ? (
+          <ErrorState
+            message="Couldn’t check pickup locations."
+            onRetry={() => cartLocs.refetch()}
+          />
+        ) : noSharedLocation ? (
+          <PickupConflictNotice
+            marketId={marketId}
+            lines={lines.map((l) => ({ listingId: l.listingId, title: l.title }))}
+          />
+        ) : locs.length === 1 ? (
+          <View
+            style={styles.singleLocCard}
+            accessibilityLabel={`Pickup at ${locs[0].nickname}, ${locationTypeLabel(
+              locs[0].location_type,
+            )}`}
+          >
+            <Text style={styles.singleLocEmoji}>{locationTypeEmoji(locs[0].location_type)}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.singleLocName} numberOfLines={1}>
+                Pickup at {locs[0].nickname}
+              </Text>
+              <Text style={styles.singleLocMeta}>
+                {locationTypeLabel(locs[0].location_type)}
+                {locationDistanceLabel(myCoords, locs[0])
+                  ? ` · ${locationDistanceLabel(myCoords, locs[0])}`
+                  : ''}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <PickupLocationPicker
+            locations={locs}
+            selectedId={locationId}
+            onSelect={setLocationId}
+            coords={myCoords}
+          />
+        )}
+
+        {/* Pickup time — always for the CHOSEN location */}
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Pickup time</Text>
-        <SlotPicker
-          slots={slots.data ?? []}
-          loading={slots.isLoading}
-          isError={slots.isError}
-          onRetry={() => slots.refetch()}
-          selected={slot}
-          onSelect={setSlot}
-        />
-        {slot ? <Text style={styles.slotSummary}>Pickup {fmtWindow(slot.slot_start, slot.slot_end)}</Text> : null}
+        {!locationId ? (
+          <Text style={styles.noneText}>
+            {noSharedLocation
+              ? 'Pick a basket that shares one pickup spot to see times.'
+              : hasItems
+                ? 'Choose a pickup location to see available times.'
+                : 'Add an item to see available times.'}
+          </Text>
+        ) : (
+          <>
+            <SlotPicker
+              slots={slots.data ?? []}
+              loading={slots.isLoading}
+              isError={slots.isError}
+              onRetry={() => slots.refetch()}
+              selected={slot}
+              onSelect={setSlot}
+            />
+            {slot ? (
+              <Text style={styles.slotSummary}>
+                Pickup {fmtWindow(slot.slot_start, slot.slot_end)}
+                {chosenLoc ? ` at ${chosenLoc.nickname}` : ''}
+              </Text>
+            ) : null}
+          </>
+        )}
 
         {/* Note */}
         <View style={{ marginTop: 20 }}>
@@ -229,7 +356,7 @@ export default function MarketOrderScreen() {
           label="Request Pickup"
           onPress={() => void submit()}
           loading={createOrder.isPending}
-          disabled={lines.length === 0 || !slot}
+          disabled={lines.length === 0 || !slot || !locationId || noSharedLocation}
         />
         <Text style={styles.footNote}>
           No payment is taken here — you pay the seller directly at (or before) pickup.
@@ -289,6 +416,20 @@ const styles = StyleSheet.create({
   totalLabel: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.textSecondary },
   totalValue: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text },
   slotSummary: { fontSize: 13.5, fontFamily: fonts.semibold, color: Colors.primary, marginTop: 10 },
+  singleLocCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+  },
+  singleLocEmoji: { fontSize: 18, fontFamily: fonts.regular },
+  singleLocName: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
+  singleLocMeta: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2 },
   multiline: { minHeight: 60, textAlignVertical: 'top' },
   footNote: {
     fontSize: 11.5,

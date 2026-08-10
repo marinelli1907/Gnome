@@ -10,28 +10,17 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
-import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
-import { usePickupSettings } from '@/lib/marketops';
+import { fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
+import { usePublicPickupLocationsForMarket } from '@/lib/marketops';
+import PickupOptions, { nearestPickupMiles } from '@/components/pickup-buyer/PickupOptions';
 import { marketShareUrl } from '@/lib/links';
 
 /**
- * A Market's distance: buyer's transient foreground fix vs the median of the
- * Market's own listings' APPROX coordinates — the same privacy basis as
- * everywhere else. Demo listings are excluded; no listings → no label.
+ * A Market's distance is now anchored to where you'd actually GO — its
+ * approximate pickup points — rather than the median of its listings. With
+ * several spots the nearest one is the honest headline; with one it's just the
+ * approximate distance. No pickup locations → no distance claim.
  */
-function marketDistance(
-  coords: Coords | null,
-  ls: { approx_lat?: number | null; approx_lng?: number | null; is_demo?: boolean | null }[],
-): number | null {
-  if (!coords) return null;
-  const pts = ls.filter((l) => !l.is_demo && l.approx_lat != null && l.approx_lng != null);
-  if (!pts.length) return null;
-  const mid = (arr: number[]) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)];
-  return distanceMiles(coords, {
-    lat: mid(pts.map((l) => l.approx_lat as number)),
-    lng: mid(pts.map((l) => l.approx_lng as number)),
-  });
-}
 
 export default function MarketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,7 +36,7 @@ export default function MarketScreen() {
   const rep = useMarketReputation(id);
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
-  const pickupSettings = usePickupSettings(id);
+  const pickupLocs = usePublicPickupLocationsForMarket(id);
 
   useEffect(() => {
     if (market.data) {
@@ -85,7 +74,10 @@ export default function MarketScreen() {
   const isOwner = userId === m.owner_id;
   const items = listings.data ?? [];
   const hasSaleItems = items.some((l) => l.listing_type === 'sale' && l.price_cents != null);
-  const canOrderPickup = !!userId && !isOwner && !!pickupSettings.data && hasSaleItems;
+  // An order now has to land on a specific pickup location, so at least one
+  // active location — not a legacy settings row — is what makes ordering real.
+  const canOrderPickup =
+    !!userId && !isOwner && (pickupLocs.data ?? []).length > 0 && hasSaleItems;
 
   const shareUrl = marketShareUrl(m);
   const onShare = () => {
@@ -146,17 +138,24 @@ export default function MarketScreen() {
     ]);
   };
 
-  const mktMiles = marketDistance(myCoords, listings.data ?? []);
+  const locations = pickupLocs.data ?? [];
+  const nearestMiles = nearestPickupMiles(myCoords, locations);
+  const distanceLine =
+    nearestMiles == null
+      ? null
+      : fmtDistance(nearestMiles) === 'Nearby'
+        ? locations.length > 1
+          ? 'Nearest pickup · Nearby'
+          : 'Nearby'
+        : locations.length > 1
+          ? `Nearest pickup · ${fmtDistance(nearestMiles)} away`
+          : `${fmtDistance(nearestMiles)} away`;
 
   const Header = (
     <View style={styles.header}>
       <Avatar uri={m.avatar_url} name={m.name} size={72} />
       <Text style={styles.name}>{m.name}</Text>
-      {mktMiles != null ? (
-        <Text style={styles.distanceLabel}>
-          📍 {fmtDistance(mktMiles) === 'Nearby' ? 'Nearby' : `${fmtDistance(mktMiles)} away`}
-        </Text>
-      ) : null}
+      {distanceLine ? <Text style={styles.distanceLabel}>📍 {distanceLine}</Text> : null}
       {m.tagline ? <Text style={styles.tagline}>“{m.tagline}”</Text> : null}
       {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
       {isOwner && (
@@ -177,6 +176,7 @@ export default function MarketScreen() {
       <Text style={styles.countLine}>
         {items.length} active listing{items.length === 1 ? '' : 's'}
       </Text>
+      <PickupOptions locations={locations} coords={myCoords} />
       {rep.data ? (
         <View style={styles.repWrap}>
           <Reputation rep={rep.data} />

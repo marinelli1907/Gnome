@@ -126,7 +126,7 @@ export default function EditMarketScreen() {
         </Pressable>
         <Pressable
           style={[styles.toolLink, { marginTop: 10 }]}
-          onPress={() => router.push('/market/pickup-settings')}
+          onPress={() => router.push('/market/pickup-locations')}
           accessibilityRole="button"
           accessibilityLabel="Pickup availability"
         >
