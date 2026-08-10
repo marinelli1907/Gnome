@@ -74,6 +74,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, [queryClient]);
 
+  // Native deep-link handler for auth callbacks (gnome://auth-callback?code=…).
+  // detectSessionInUrl is off on native, so nothing else consumes these: the
+  // password-reset email link (PKCE) lands here on cold and warm starts and is
+  // exchanged for a recovery session (which fires PASSWORD_RECOVERY above).
+  // The Google flow exchanges its own code first; re-exchanging a used code
+  // just errors, which we swallow.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const handleUrl = async (url: string | null) => {
+      if (!url || !url.includes('auth-callback')) return;
+      const code = Linking.parse(url).queryParams?.code;
+      if (typeof code !== 'string' || !code) return;
+      try {
+        await supabase.auth.exchangeCodeForSession(code);
+      } catch {
+        // Used/expired code — the sign-in screen's normal flows still work.
+      }
+    };
+    void Linking.getInitialURL().then(handleUrl);
+    const sub = Linking.addEventListener('url', ({ url }) => void handleUrl(url));
+    return () => sub.remove();
+  }, []);
+
   const signUp = useCallback(async (email: string, password: string, name: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,

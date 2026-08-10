@@ -7,21 +7,30 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Search, SlidersHorizontal, X } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
 import FeaturedRail from '@/components/FeaturedRail';
+import TaxonomyPicker from '@/components/TaxonomyPicker';
 import { EmptyState, ErrorState, Button } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
 import { fonts } from '@/constants/theme';
 import { TYPE_FILTERS } from '@/lib/listingType';
 import type { ListingType } from '@/types';
-import { CATEGORIES } from '@/constants/categories';
 import Colors from '@/constants/colors';
 import { useListings, logEvent } from '@/lib/db';
+import {
+  useTaxonomy,
+  subtreeIds,
+  matchNodes,
+  nodeInAnySubtree,
+  breadcrumb,
+} from '@/lib/taxonomy';
 import {
   getCurrentCoords,
   RADIUS_OPTIONS,
@@ -35,18 +44,46 @@ export default function BrowseScreen() {
   const router = useRouter();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [radius, setRadius] = useState<RadiusOption>(10);
-  const [category, setCategory] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<'all' | ListingType>('all');
+  const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     void getCurrentCoords().then(setCoords);
   }, []);
 
+  const taxonomy = useTaxonomy();
+  const index = taxonomy.data;
+  const selectedNode = index && taxNodeId ? index.byId.get(taxNodeId) ?? null : null;
+
+  const taxonomyIds = useMemo(
+    () => (index && selectedNode ? subtreeIds(index, selectedNode) : null),
+    [index, selectedNode],
+  );
+
   const filters = useMemo(
-    () => ({ coords, radius, category, listingType: typeFilter }),
-    [coords, radius, category, typeFilter],
+    () => ({ coords, radius, category: null, listingType: typeFilter, taxonomyIds }),
+    [coords, radius, typeFilter, taxonomyIds],
   );
   const { data, isLoading, refetch, isRefetching, error } = useListings(filters);
+
+  // Alias-aware search over the fetched page: a listing matches when its
+  // title/description contains the query OR its taxonomy node sits inside any
+  // node the query matched by name/synonym (backend data, nothing hardcoded).
+  const visible = useMemo(() => {
+    const base = data ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q || !index) return base;
+    const matched = matchNodes(index, q);
+    return base.filter((l) => {
+      if (l.title.toLowerCase().includes(q)) return true;
+      if (l.description?.toLowerCase().includes(q)) return true;
+      return nodeInAnySubtree(index, l.taxonomy_node_id, matched);
+    });
+  }, [data, search, index]);
+
+  const filtering = !!selectedNode || !!search.trim();
 
   const Header = (
     <View style={styles.header}>
@@ -56,14 +93,42 @@ export default function BrowseScreen() {
       </View>
       <Text style={styles.tagline}>Fresh from the garden next door.</Text>
 
-      <Pressable style={styles.plannerBanner} onPress={() => router.push('/garden')}>
-        <Text style={styles.plannerEmoji}>✨</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.plannerTitle}>Garden Planner</Text>
-          <Text style={styles.plannerSub}>What should you plant this week? Ask the AI.</Text>
-        </View>
-        <Text style={styles.plannerArrow}>→</Text>
-      </Pressable>
+      {/* Search — matches titles, descriptions, and category names/aliases */}
+      <View style={styles.searchRow}>
+        <Search size={17} color={Colors.textTertiary} />
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search — try “hamburger” or “worms”"
+          placeholderTextColor={Colors.textTertiary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          accessibilityLabel="Search listings"
+        />
+        {search ? (
+          <Pressable
+            onPress={() => setSearch('')}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+          >
+            <X size={17} color={Colors.textTertiary} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {!filtering && (
+        <Pressable style={styles.plannerBanner} onPress={() => router.push('/garden')}>
+          <Text style={styles.plannerEmoji}>✨</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.plannerTitle}>Garden Planner</Text>
+            <Text style={styles.plannerSub}>What should you plant this week? Ask the AI.</Text>
+          </View>
+          <Text style={styles.plannerArrow}>→</Text>
+        </Pressable>
+      )}
 
       <ScrollView
         horizontal
@@ -77,6 +142,9 @@ export default function BrowseScreen() {
             <Pressable
               key={opt.value}
               onPress={() => setTypeFilter(opt.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              hitSlop={6}
               style={[styles.chip, active && styles.chipActive]}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>
@@ -99,6 +167,9 @@ export default function BrowseScreen() {
             <Pressable
               key={String(opt.value)}
               onPress={() => setRadius(opt.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              hitSlop={6}
               style={[styles.chip, active && styles.chipActive]}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>
@@ -109,6 +180,7 @@ export default function BrowseScreen() {
         })}
       </ScrollView>
 
+      {/* Taxonomy: top-level chips from the backend tree + full drilldown */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -116,47 +188,94 @@ export default function BrowseScreen() {
         contentContainerStyle={styles.chipRowContent}
       >
         <Pressable
-          onPress={() => setCategory(null)}
-          style={[styles.chip, !category && styles.chipActive]}
+          onPress={() => setTaxNodeId(null)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !selectedNode }}
+          hitSlop={6}
+          style={[styles.chip, !selectedNode && styles.chipActive]}
         >
-          <Text style={[styles.chipText, !category && styles.chipTextActive]}>All</Text>
+          <Text style={[styles.chipText, !selectedNode && styles.chipTextActive]}>All</Text>
         </Pressable>
-        {CATEGORIES.map((c) => {
-          const active = category === c.id;
+        {(index?.roots ?? []).map((root) => {
+          const active =
+            !!selectedNode &&
+            (selectedNode.id === root.id || selectedNode.path.startsWith(root.path + '/'));
           return (
             <Pressable
-              key={c.id}
-              onPress={() => setCategory(active ? null : c.id)}
+              key={root.id}
+              onPress={() => {
+                if (active && selectedNode?.id === root.id) setPickerOpen(true);
+                else setTaxNodeId(root.id);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              hitSlop={6}
               style={[styles.chip, active && styles.chipActive]}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {c.emoji} {c.label}
+                {root.icon ? `${root.icon} ` : ''}{root.name}
               </Text>
             </Pressable>
           );
         })}
       </ScrollView>
 
-      <FeaturedRail filters={filters} />
+      {/* Active filter chips: what's applied, one tap to refine or remove */}
+      {selectedNode && index ? (
+        <View style={styles.activeRow}>
+          <Pressable
+            onPress={() => setPickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Refine category, currently ${breadcrumb(index, selectedNode)}`}
+            style={styles.activeChip}
+          >
+            <SlidersHorizontal size={13} color={Colors.textInverse} />
+            <Text style={styles.activeChipText} numberOfLines={1}>
+              {breadcrumb(index, selectedNode)}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setTaxNodeId(null)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Remove category filter"
+            style={styles.activeClear}
+          >
+            <X size={15} color={Colors.primary} />
+          </Pressable>
+        </View>
+      ) : index ? (
+        <Pressable
+          onPress={() => setPickerOpen(true)}
+          accessibilityRole="button"
+          style={styles.browseAll}
+        >
+          <Text style={styles.browseAllText}>Browse all categories ›</Text>
+        </Pressable>
+      ) : null}
+
+      {!filtering && <FeaturedRail filters={filters} />}
 
       {/* Seed Drop — first-party seed shop. Web-only by design (keeps the app
           payment-free); physical goods, so linking out is App Store-safe. */}
-      <Pressable
-        style={styles.seedDrop}
-        onPress={() => {
-          void logEvent('seed_drop_tapped', {});
-          void Linking.openURL('https://gnomefarmersmarket.com/seeds');
-        }}
-      >
-        <Text style={styles.seedDropEmoji}>🌱</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.seedDropTitle}>The Gnome Seed Drop</Text>
-          <Text style={styles.seedDropSub}>
-            Seeds picked for your zone & season, shipped to your door
-          </Text>
-        </View>
-        <Text style={styles.seedDropGo}>›</Text>
-      </Pressable>
+      {!filtering && (
+        <Pressable
+          style={styles.seedDrop}
+          onPress={() => {
+            void logEvent('seed_drop_tapped', {});
+            void Linking.openURL('https://gnomefarmersmarket.com/seeds');
+          }}
+        >
+          <Text style={styles.seedDropEmoji}>🌱</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.seedDropTitle}>The Gnome Seed Drop</Text>
+            <Text style={styles.seedDropSub}>
+              Seeds picked for your zone & season, shipped to your door
+            </Text>
+          </View>
+          <Text style={styles.seedDropGo}>›</Text>
+        </Pressable>
+      )}
     </View>
   );
 
@@ -180,6 +299,25 @@ export default function BrowseScreen() {
         />
       );
     }
+    if (filtering) {
+      return (
+        <EmptyState
+          emoji="🔍"
+          title="No matches nearby"
+          subtitle="Try a wider radius, a broader category, or a different search."
+        >
+          <Button
+            label="Clear filters"
+            variant="secondary"
+            onPress={() => {
+              setTaxNodeId(null);
+              setSearch('');
+            }}
+            style={{ marginTop: 12, paddingHorizontal: 28 }}
+          />
+        </EmptyState>
+      );
+    }
     return (
       <EmptyState
         emoji="🌱"
@@ -194,10 +332,11 @@ export default function BrowseScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <FlatList
-        data={data ?? []}
+        data={visible}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={Header}
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <View style={styles.cardWrap}>
             <ListingCard listing={item} />
@@ -208,6 +347,16 @@ export default function BrowseScreen() {
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={Colors.primary} />
         }
       />
+      {index ? (
+        <TaxonomyPicker
+          visible={pickerOpen}
+          index={index}
+          selectedId={taxNodeId}
+          mode="filter"
+          onSelect={(node) => setTaxNodeId(node?.id ?? null)}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -217,37 +366,28 @@ const styles = StyleSheet.create({
   list: { paddingBottom: 32 },
   header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
-  modeBtn: {
+  brandBadge: { width: 34, height: 34, borderRadius: 17, marginRight: 10 },
+  brand: { fontSize: 30, fontFamily: fonts.displayBlack, color: Colors.primaryDark },
+  tagline: { fontSize: 14, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    gap: 8,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-  },
-  modeBtnText: { color: Colors.primary, fontFamily: fonts.bold, fontSize: 13 },
-  kindFilterRow: {
-    flexDirection: 'row',
-    backgroundColor: Colors.backgroundSecondary,
     borderRadius: 12,
-    padding: 3,
-    marginTop: 12,
-    marginBottom: 4,
+    paddingHorizontal: 12,
+    minHeight: 44,
+    marginBottom: 12,
   },
-  segment: {
+  searchInput: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 9,
-    alignItems: 'center',
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: Colors.text,
+    paddingVertical: 10,
   },
-  segmentActive: { backgroundColor: Colors.surface },
-  segmentText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.semibold },
-  segmentTextActive: { color: Colors.primary, fontFamily: fonts.bold },
-  brandBadge: { width: 34, height: 34, borderRadius: 17, marginRight: 10 },
-  brand: { fontSize: 30, fontFamily: fonts.displayBlack, color: Colors.primaryDark },
   plannerBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -264,9 +404,49 @@ const styles = StyleSheet.create({
   plannerTitle: { fontFamily: fonts.bold, fontSize: 15, color: Colors.primary },
   plannerSub: { fontFamily: fonts.regular, fontSize: 12.5, color: Colors.textSecondary },
   plannerArrow: { fontFamily: fonts.bold, fontSize: 18, color: Colors.primary },
-  tagline: { fontSize: 14, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2, marginBottom: 12 },
   chipRow: { marginHorizontal: -16 },
   chipRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    minHeight: 34,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    justifyContent: 'center',
+  },
+  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
+  chipTextActive: { color: Colors.textInverse },
+  activeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  activeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    minHeight: 36,
+    maxWidth: '82%',
+  },
+  activeChipText: { color: Colors.textInverse, fontFamily: fonts.semibold, fontSize: 13 },
+  activeClear: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  browseAll: { minHeight: 40, justifyContent: 'center', marginBottom: 6 },
+  browseAllText: { color: Colors.primary, fontFamily: fonts.bold, fontSize: 14 },
   seedDrop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -284,16 +464,5 @@ const styles = StyleSheet.create({
   seedDropTitle: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
   seedDropSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
   seedDropGo: { fontSize: 22, color: Colors.primary, fontFamily: fonts.bold },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
-  chipTextActive: { color: Colors.textInverse },
   cardWrap: { paddingHorizontal: 16 },
 });

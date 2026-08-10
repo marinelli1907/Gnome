@@ -36,9 +36,13 @@ export default function SignInScreen() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
-  // Google + Apple providers were enabled in Supabase on 2026-08-08
-  // (Google Cloud project "Gnome Farmers Market"; Apple native via bundle id).
-  const OAUTH_READY = true;
+  // Ask the auth server which providers are actually enabled instead of
+  // hardcoding it — a disabled provider must never render a button that fails
+  // in front of a user (or an App Review reviewer).
+  const [providers, setProviders] = useState<{ google: boolean; apple: boolean }>({
+    google: false,
+    apple: false,
+  });
 
   // Arriving from a password-reset email puts us in a recovery session.
   useEffect(() => {
@@ -46,11 +50,23 @@ export default function SignInScreen() {
   }, [recoveryMode]);
 
   useEffect(() => {
-    if (OAUTH_READY && Platform.OS === 'ios') {
-      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!configured) return;
+    const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
+      .then((r) => r.json())
+      .then((s) => {
+        const external = s?.external ?? {};
+        setProviders({ google: external.google === true, apple: external.apple === true });
+        if (external.apple === true && Platform.OS === 'ios') {
+          AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
+        }
+      })
+      .catch(() => {
+        // Unknown → keep the buttons hidden; email/password always works.
+      });
+  }, [configured]);
 
   const onApple = async () => {
     if (!configured) {
@@ -313,14 +329,16 @@ export default function SignInScreen() {
           </Pressable>
         )}
 
-        {OAUTH_READY && (
-          <>
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
+        {(providers.google || appleAvailable) && (
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+        )}
 
+        {providers.google && (
+          <>
             <Pressable
               onPress={onGoogle}
               disabled={googleBusy || busy}

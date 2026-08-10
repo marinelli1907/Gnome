@@ -136,6 +136,8 @@ export interface Listing {
   title: string;
   description: string | null;
   category: string;
+  /** Pointer into marketplace_taxonomy_nodes (nullable for legacy rows). */
+  taxonomy_node_id?: string | null;
   quantity: string | null;
   photos: string[];
   status: ListingStatus;

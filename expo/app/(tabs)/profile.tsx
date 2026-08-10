@@ -80,6 +80,26 @@ export default function ProfileScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>
 
+      <Pressable
+        style={[styles.link, { marginTop: 10 }]}
+        onPress={() => router.push('/notebook')}
+        accessibilityRole="button"
+        accessibilityLabel="Sales notebook"
+      >
+        <Text style={styles.linkText}>Sales notebook</Text>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
+      <Pressable
+        style={[styles.link, { marginTop: 10 }]}
+        onPress={() => router.push('/compliance')}
+        accessibilityRole="button"
+        accessibilityLabel="Seller verification"
+      >
+        <Text style={styles.linkText}>Seller verification</Text>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
       <Pressable style={[styles.link, { marginTop: 10 }]} onPress={() => router.push('/settings')}>
         <Text style={styles.linkText}>Settings, feedback & blocked neighbors</Text>
         <ChevronRight size={18} color={Colors.textSecondary} />
