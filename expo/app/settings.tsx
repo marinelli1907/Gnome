@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -167,6 +168,33 @@ export default function SettingsScreen() {
         Permanently removes your account, Market, listings and messages.
       </Text>
 
+      <View style={styles.legalLinks}>
+        <Pressable
+          onPress={() => Linking.openURL('https://gnomefarmersmarket.com/terms')}
+          style={styles.legalLink}
+          accessibilityRole="link"
+          accessibilityLabel="Open Terms of Service"
+        >
+          <Text style={styles.legalLinkText}>Terms of Service</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => Linking.openURL('https://gnomefarmersmarket.com/privacy')}
+          style={styles.legalLink}
+          accessibilityRole="link"
+          accessibilityLabel="Open Privacy Policy"
+        >
+          <Text style={styles.legalLinkText}>Privacy Policy</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => Linking.openURL('https://gnomefarmersmarket.com/trust')}
+          style={styles.legalLink}
+          accessibilityRole="link"
+          accessibilityLabel="Open Trust and Safety"
+        >
+          <Text style={styles.legalLinkText}>Trust &amp; Safety</Text>
+        </Pressable>
+      </View>
+
       <Text style={styles.about}>
         Gnome v{version} · Fresh from nearby{'\n'}
         Sellers are responsible for following local food laws.
@@ -214,6 +242,9 @@ const styles = StyleSheet.create({
   },
   accountEmail: { fontSize: 15, fontFamily: fonts.medium, color: Colors.text },
   signOut: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legalLinks: { marginTop: 26, gap: 2 },
+  legalLink: { minHeight: 44, justifyContent: 'center' },
+  legalLinkText: { color: Colors.primary, fontSize: 15, fontFamily: fonts.semibold },
   deleteRow: {
     flexDirection: 'row',
     alignItems: 'center',

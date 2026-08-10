@@ -37,14 +37,44 @@ export async function registerForPushNotifications(userId: string): Promise<void
       )
     ).data;
 
-    await supabase
+    // onConflict:'token' rebinds this device to whoever is signed in now, so a
+    // second account on the same phone takes ownership of the token.
+    const { error } = await supabase
       .from('device_tokens')
       .upsert(
         { user_id: userId, token, platform: Platform.OS },
         { onConflict: 'token' },
       );
+    if (error) console.warn('[push] could not save device token:', error.message);
   } catch {
     // Push is best-effort; never block the app on it.
+  }
+}
+
+/**
+ * Unbind this device before signing out.
+ *
+ * Rebinding happens on the next sign-in, but without this the row keeps
+ * pointing at the departing user, so pushes meant for them (new request,
+ * approval, chat message — including message previews) keep landing on a phone
+ * they no longer control. Must run while the session is still valid: the
+ * device_tokens delete policy is scoped to auth.uid().
+ */
+export async function unregisterPushToken(): Promise<void> {
+  try {
+    if (!isSupabaseConfigured || Platform.OS === 'web' || !Device.isDevice) return;
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    const token = (
+      await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)
+    ).data;
+
+    await supabase.from('device_tokens').delete().eq('token', token);
+  } catch {
+    // Never block sign-out on push cleanup.
   }
 }
 
