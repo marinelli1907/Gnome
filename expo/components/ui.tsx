@@ -61,16 +61,34 @@ export function Button({
 }
 
 // --- Field ---------------------------------------------------------------
+/**
+ * A text field has to LOOK like one. The old styling used the card colour on
+ * the parchment background with a hairline border — near-invisible, so people
+ * couldn't tell where to tap. Inputs now sit on white with a defined border
+ * and a green focus ring.
+ */
 export function Field({
   label,
+  style,
+  onFocus,
+  onBlur,
   ...props
 }: { label: string } & TextInputProps) {
+  const [focused, setFocused] = React.useState(false);
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, focused && styles.inputFocused, style]}
         placeholderTextColor={Colors.textTertiary}
+        onFocus={(e) => {
+          setFocused(true);
+          onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          setFocused(false);
+          onBlur?.(e);
+        }}
         {...props}
       />
     </View>
@@ -182,15 +200,25 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    minHeight: 48,
     fontSize: 16,
     color: Colors.text,
     fontFamily: fonts.regular,
+  },
+  inputFocused: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.surfaceElevated,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 2,
   },
   avatarFallback: {
     backgroundColor: Colors.primaryLight,

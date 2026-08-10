@@ -380,9 +380,9 @@ export default function NotebookScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   summaryCard: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
     borderRadius: 16,
     padding: 16,
   },
@@ -395,9 +395,9 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text },
   expenseCard: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
     borderRadius: 14,
     padding: 14,
     marginTop: 10,
@@ -458,9 +458,9 @@ const styles = StyleSheet.create({
   voidCard: { backgroundColor: Colors.background, borderRadius: 16, padding: 18, gap: 10 },
   voidBody: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 19 },
   voidInput: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,

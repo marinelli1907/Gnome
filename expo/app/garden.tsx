@@ -287,9 +287,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   starter: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 16,
