@@ -17,6 +17,7 @@ type PushData = {
   event?: string;
   claimId?: string;
   offerId?: string;
+  orderId?: string;
 };
 
 function routeFor(data: PushData): void {
@@ -33,6 +34,22 @@ function routeFor(data: PushData): void {
         break;
       case 'wanted_matched':
         if (data.offerId) router.push(`/listing/${data.offerId}`);
+        break;
+      // Market pickup orders: both parties land on the order detail.
+      case 'pickup_request':
+      case 'pickup_confirmed':
+      case 'pickup_time_proposed':
+      case 'pickup_cancelled':
+      case 'pickup_ready':
+      case 'pickup_reminder':
+      case 'buyer_on_the_way':
+      case 'buyer_arrived':
+        if (data.orderId) router.push(`/order/${data.orderId}`);
+        break;
+      // Grow Log: open the plot journal.
+      case 'grow_log_update':
+      case 'plot_owner_note':
+        if (data.claimId) router.push(`/growlog/${data.claimId}`);
         break;
       default:
         break;

@@ -13,7 +13,7 @@ import {
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera } from 'lucide-react-native';
+import { Camera, ChevronRight } from 'lucide-react-native';
 import { Avatar, Button, Field, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
@@ -113,6 +113,35 @@ export default function EditMarketScreen() {
         />
 
         <Button label="Save garden" onPress={save} loading={update.isPending} />
+
+        <Text style={styles.toolsTitle}>Market tools</Text>
+        <Pressable
+          style={styles.toolLink}
+          onPress={() => router.push('/market/payment-settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Payment methods"
+        >
+          <Text style={styles.toolLinkText}>Payment methods</Text>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </Pressable>
+        <Pressable
+          style={[styles.toolLink, { marginTop: 10 }]}
+          onPress={() => router.push('/market/pickup-settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Pickup availability"
+        >
+          <Text style={styles.toolLinkText}>Pickup availability</Text>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </Pressable>
+        <Pressable
+          style={[styles.toolLink, { marginTop: 10 }]}
+          onPress={() => router.push('/market/pickups')}
+          accessibilityRole="button"
+          accessibilityLabel="Pickups"
+        >
+          <Text style={styles.toolLinkText}>Pickups</Text>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -127,4 +156,16 @@ const styles = StyleSheet.create({
   avatarBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   avatarBtnText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.bold },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
+  toolsTitle: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text, marginTop: 26, marginBottom: 10 },
+  toolLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  toolLinkText: { fontSize: 15, color: Colors.text, fontFamily: fonts.semibold },
 });

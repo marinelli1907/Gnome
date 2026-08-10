@@ -10,6 +10,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { usePickupSettings } from '@/lib/marketops';
 import { marketShareUrl } from '@/lib/links';
 
 export default function MarketScreen() {
@@ -22,6 +23,7 @@ export default function MarketScreen() {
   const rep = useMarketReputation(id);
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
+  const pickupSettings = usePickupSettings(id);
 
   useEffect(() => {
     if (market.data) {
@@ -58,6 +60,8 @@ export default function MarketScreen() {
   const m = market.data;
   const isOwner = userId === m.owner_id;
   const items = listings.data ?? [];
+  const hasSaleItems = items.some((l) => l.listing_type === 'sale' && l.price_cents != null);
+  const canOrderPickup = !!userId && !isOwner && !!pickupSettings.data && hasSaleItems;
 
   const shareUrl = marketShareUrl(m);
   const onShare = () => {
@@ -129,6 +133,13 @@ export default function MarketScreen() {
           label="Name your garden"
           variant="secondary"
           onPress={() => router.push(`/market/edit/${m.id}`)}
+          style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
+        />
+      )}
+      {canOrderPickup && (
+        <Button
+          label="🧺 Order for pickup"
+          onPress={() => router.push(`/market/order/${m.id}`)}
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
         />
       )}

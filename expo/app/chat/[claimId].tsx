@@ -26,6 +26,7 @@ import {
   useSendMessage,
 } from '@/lib/db';
 import { markChatRead } from '@/lib/chatReads';
+import PayMethodsList from '@/components/orders/PayMethods';
 import type { ClaimMessage } from '@/types';
 
 const RATE_LIMIT_MS = 2000; // client-side: 1 message / 2 seconds
@@ -42,6 +43,7 @@ export default function PickupChatScreen() {
   const report = useReport(userId ?? undefined);
 
   const [text, setText] = useState('');
+  const [payOpen, setPayOpen] = useState(false);
   const lastSentAt = useRef(0);
 
   // Mark this chat read locally when opened and as new messages arrive.
@@ -168,6 +170,33 @@ export default function PickupChatScreen() {
         }
       />
 
+      {/* Outside-Gnome payment shortcut for the buyer on a priced exchange. */}
+      {status === 'approved' &&
+      userId === claim.claimer_id &&
+      (claim.listing?.listing_type === 'sale' || claim.listing?.listing_type === 'plot') &&
+      claim.listing?.market_id ? (
+        <View style={styles.payWrap}>
+          <Pressable
+            onPress={() => setPayOpen((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={payOpen ? 'Hide payment options' : 'Show payment options'}
+            accessibilityState={{ expanded: payOpen }}
+            style={styles.payToggle}
+          >
+            <Text style={styles.payToggleText}>💸 Pay seller</Text>
+            <Text style={styles.payChevron}>{payOpen ? '▾' : '▸'}</Text>
+          </Pressable>
+          {payOpen ? (
+            <View style={styles.payBody}>
+              <PayMethodsList
+                marketId={claim.listing.market_id}
+                amountCents={claim.agreed_price_cents ?? claim.listing.price_cents}
+              />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
         <View style={styles.guidanceRow}>
           <Text style={styles.guidance}>
@@ -267,4 +296,19 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 14,
     paddingVertical: 12, fontFamily: fonts.regular },
+  payWrap: {
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    paddingHorizontal: 12,
+  },
+  payToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  payToggleText: { fontSize: 13.5, fontFamily: fonts.bold, color: Colors.primary },
+  payChevron: { fontSize: 13, color: Colors.primary, fontFamily: fonts.bold },
+  payBody: { paddingBottom: 10 },
 });

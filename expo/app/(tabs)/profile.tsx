@@ -82,6 +82,16 @@ export default function ProfileScreen() {
 
       <Pressable
         style={[styles.link, { marginTop: 10 }]}
+        onPress={() => router.push('/orders')}
+        accessibilityRole="button"
+        accessibilityLabel="Pickups and orders"
+      >
+        <Text style={styles.linkText}>Pickups & orders</Text>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
+      <Pressable
+        style={[styles.link, { marginTop: 10 }]}
         onPress={() => router.push('/notebook')}
         accessibilityRole="button"
         accessibilityLabel="Sales notebook"
