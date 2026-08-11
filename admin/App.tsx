@@ -262,8 +262,9 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
         </View>
         {usageToday && (
           <Text style={[s.cardSub, { marginTop: 8 }]}>
-            Provider: Anthropic (needs credits — OpenAI key optional fallback) · today {money(usageToday.cents)}
-            {usageToday.fails > 0 ? ` · ${usageToday.fails} failed call${usageToday.fails === 1 ? '' : 's'}` : ' · no failures'}
+            Provider: Anthropic{usageToday.fails > 0
+              ? ` · ⚠️ ${usageToday.fails} failed call${usageToday.fails === 1 ? '' : 's'} today (check API credits)`
+              : ' · healthy today'} · spend {money(usageToday.cents)}
           </Text>
         )}
       </Card>
