@@ -78,6 +78,10 @@ export default function PostScreen() {
   const [type, setType] = useState<ListingType>(initialType);
   const [title, setTitle] = useState(params.title ?? '');
   const [quantity, setQuantity] = useState(params.quantity ?? '');
+  // AI Listing Assistant prefill (params come from the AI sheet on Sell)
+  const aiPrefill = params as unknown as {
+    aiTitle?: string; aiDescription?: string; aiPrice?: string; aiUnit?: string; aiNode?: string;
+  };
   const [description, setDescription] = useState(params.description ?? '');
   const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -118,6 +122,11 @@ export default function PostScreen() {
       // id, so it doesn't need the legacy-category mapping and wins over it.
       if (typeof params.taxNode === 'string' && params.taxNode) setTaxNodeId(params.taxNode);
       if (params.quantity) setQuantity(params.quantity);
+      if (aiPrefill.aiTitle) setTitle(aiPrefill.aiTitle);
+      if (aiPrefill.aiDescription) setDescription(aiPrefill.aiDescription);
+      if (aiPrefill.aiPrice) setPrice(aiPrefill.aiPrice);
+      if (aiPrefill.aiUnit) setUnit(aiPrefill.aiUnit);
+      if (aiPrefill.aiNode) setTaxNodeId(aiPrefill.aiNode);
       if (params.description) setDescription(params.description);
       setFulfilledBy(params.fulfilledBy ?? null);
     }
@@ -382,6 +391,21 @@ export default function PostScreen() {
         )}
 
         {/* Common */}
+        {!isWanted && (
+          <Pressable
+            onPress={() => router.push('/ai-listing' as never)}
+            accessibilityRole="button"
+            style={styles.aiBanner}
+          >
+            <Text style={styles.aiBannerEmoji}>✨</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.aiBannerTitle}>Take a photo — Gnome drafts it</Text>
+              <Text style={styles.aiBannerSub}>AI Listing Assistant · Grower & Farm plans</Text>
+            </View>
+            <Text style={styles.aiBannerArrow}>→</Text>
+          </Pressable>
+        )}
+
         <Field
           label={isWanted ? 'What are you looking for?' : 'Title'}
           value={title}
@@ -513,6 +537,15 @@ export default function PostScreen() {
 }
 
 const styles = StyleSheet.create({
+  aiBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 14,
+    borderWidth: 1.5, borderColor: Colors.primary + '55',
+  },
+  aiBannerEmoji: { fontSize: 20 },
+  aiBannerTitle: { fontSize: 14.5, fontFamily: fonts.bold, color: Colors.text },
+  aiBannerSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
+  aiBannerArrow: { fontSize: 16, color: Colors.primary, fontFamily: fonts.bold },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   container: { padding: 20, paddingBottom: 40 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },

@@ -1,0 +1,11 @@
+-- Applied to prod as complimentary_grants_and_effective_plan (2026-08-10).
+-- Content mirrors the applied migration; see migration history. Summary:
+--   admin_plan_grants (independent comp entitlement source; RLS read = admin
+--   subscriptions.view or the grantee; writes via audited RPCs only)
+--   plan_rank(), market_effective_plan() (sponsor wins; else highest of base
+--   plan vs active unexpired grant; expiry computed at read time)
+--   Rewired: market_pickup_location_allowance, enforce_plan_limit,
+--   enforce_delivery_plan, my_plan_entitlements (+ entitlement_source,
+--   grant_expires_at, grant_reason, ai_listing_assistant = plan != free)
+--   RPCs: admin_grant_plan / admin_modify_grant / admin_revoke_grant
+--   (permission-checked, audited, reconcile pickup locations)

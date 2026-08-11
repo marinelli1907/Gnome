@@ -158,6 +158,10 @@ export default function RootLayout() {
                 options={{ title: 'Delivery', ...headerStyle }}
               />
               <Stack.Screen
+                name="ai-listing"
+                options={{ title: 'Gnome AI', ...headerStyle }}
+              />
+              <Stack.Screen
                 name="growlog/[claimId]"
                 options={{ title: 'Grow Log', ...headerStyle }}
               />

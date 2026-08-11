@@ -20,6 +20,9 @@ const PLAN_LABEL: Record<string, string> = { free: 'Neighbor', grower: 'Grower',
 interface Entitlements {
   market_id: string;
   plan: MarketPlan;
+  entitlement_source: 'free' | 'stripe' | 'complimentary' | 'sponsor';
+  grant_expires_at: string | null;
+  grant_reason: string | null;
   plan_price_cents: number;
   subscription_status: string | null;
   max_active_listings: number | null; // null = unlimited
@@ -68,9 +71,16 @@ export default function UpgradeScreen() {
         <View style={styles.entCard}>
           <Text style={styles.entTitle}>
             Your plan: {PLAN_LABEL[ent.data.plan] ?? ent.data.plan}
-            {ent.data.subscription_status && ent.data.subscription_status !== 'active'
-              ? ` · ${ent.data.subscription_status}` : ''}
           </Text>
+          {ent.data.entitlement_source === 'complimentary' ? (
+            <Text style={styles.entLine}>
+              Complimentary access
+              {ent.data.grant_expires_at
+                ? ` · valid through ${new Date(ent.data.grant_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                : ' · no expiration'}
+              {ent.data.grant_reason ? ` · ${ent.data.grant_reason}` : ''}
+            </Text>
+          ) : null}
           <Text style={styles.entLine}>
             {ent.data.active_listings}
             {ent.data.max_active_listings == null ? ' listings · Unlimited' : ` / ${ent.data.max_active_listings} listings`}
