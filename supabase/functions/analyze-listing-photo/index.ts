@@ -6,9 +6,11 @@
 // Provider-neutral: Anthropic first, OpenAI fallback (keys are function
 // secrets; clients never see them). The model returns STRUCTURED JSON only;
 // taxonomy candidates are matched against the real tree — the AI cannot
-// invent nodes. Every call is logged to ai_usage_log; a per-user daily cap
-// comes from ai_settings.listing_daily_limit. Images are analyzed in memory
-// and never stored. The description prompt aims for a warm, neighborly voice.
+// invent nodes. Every call is logged to ai_usage_log; the per-user daily cap
+// (ai_settings.listing_daily_limit) is reserved ATOMICALLY via ai_reserve_slot
+// before any provider spend, and ai_settings.reads_enabled=false halts it.
+// Images are analyzed in memory and never stored. The description prompt aims
+// for a warm, neighborly voice.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const SCHEMA_PROMPT = `You help a neighbor sell what they grew or made at a local farmers market app.
@@ -34,6 +36,9 @@ If you cannot identify anything sellable, use confidence 0 and empty fields.`;
 
 Deno.serve(async (req: Request) => {
   const t0 = Date.now();
+  // Hoisted so the failure-path usage row keeps full attribution.
+  let uid: string | undefined; let marketId: string | undefined;
+  let effPlan: string | undefined; let provider = ''; let model = '';
   try {
     const { image_base64, media_type } = await req.json();
     if (!image_base64 || String(image_base64).length > 8_000_000) {
@@ -45,36 +50,44 @@ Deno.serve(async (req: Request) => {
     // Caller identity from JWT — never from the payload.
     const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
     const { data: u } = await admin.auth.getUser(token);
-    const uid = u?.user?.id;
+    uid = u?.user?.id;
     if (!uid) return json({ error: 'UNAUTHENTICATED' }, 401);
 
     // Server-side entitlement: effective plan (paid OR complimentary) ≠ free.
     const { data: mkt } = await admin.from('markets').select('id').eq('owner_id', uid).limit(1).maybeSingle();
     if (!mkt) return json({ error: 'NO_MARKET', message: 'Post once to create your Market first.' }, 403);
+    marketId = mkt.id;
     const { data: ep } = await admin.rpc('market_effective_plan', { p_market: mkt.id });
     const eff = Array.isArray(ep) ? ep[0] : ep;
     if (!eff || eff.plan === 'free') {
       return json({ error: 'PLAN_REQUIRED', message: 'The AI Listing Assistant is a Grower & Farm feature.' }, 403);
     }
+    effPlan = eff.plan;
 
-    // Daily cap.
-    const { data: settings } = await admin.from('ai_settings').select('listing_daily_limit').limit(1).maybeSingle();
+    // Emergency stop for read-side provider spend (ai_settings.reads_enabled).
+    // writes_paused stays the AI-action gate; this one halts paid API calls.
+    const { data: settings } = await admin.from('ai_settings')
+      .select('listing_daily_limit, reads_enabled').limit(1).maybeSingle();
+    if (settings?.reads_enabled === false) {
+      return json({ error: 'AI_PAUSED', message: 'AI features are temporarily paused by the Gnome team.' }, 503);
+    }
+
+    // Daily cap — atomic reservation BEFORE the provider call (no
+    // check-then-act race; failed calls also consume their slot).
     const cap = settings?.listing_daily_limit ?? 20;
-    const since = new Date(); since.setHours(0, 0, 0, 0);
-    const { count } = await admin.from('ai_usage_log')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', uid).eq('feature', 'listing_assistant')
-      .gte('created_at', since.toISOString());
-    if ((count ?? 0) >= cap) return json({ error: 'DAILY_LIMIT', message: 'Daily AI listing limit reached — try again tomorrow.' }, 429);
+    const { data: reserved } = await admin.rpc('ai_reserve_slot', {
+      p_uid: uid, p_feature: 'listing_assistant', p_cap: cap,
+    });
+    if (!reserved) return json({ error: 'DAILY_LIMIT', message: 'Daily AI listing limit reached — try again tomorrow.' }, 429);
 
     // Provider call (Anthropic primary, OpenAI fallback).
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')?.trim();
     const openaiKey = Deno.env.get('OPENAI_API_KEY')?.trim();
-    let raw = ''; let provider = ''; let model = '';
+    let raw = '';
     let inputTokens = 0; let outputTokens = 0;
     const mt = media_type || 'image/jpeg';
     if (anthropicKey) {
-      provider = 'anthropic'; model = 'claude-sonnet-5';
+      provider = 'anthropic'; model = 'claude-haiku-4-5'; // matches the account's working ask-gnome key access
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -160,7 +173,10 @@ Deno.serve(async (req: Request) => {
       feature: 'listing_assistant', user_id: uid, market_id: mkt.id,
       effective_plan: eff.plan, provider, model, images: 1,
       input_tokens: inputTokens, output_tokens: outputTokens,
-      estimated_cost_cents: Math.round((inputTokens * 0.0003 + outputTokens * 0.0015) * 100) / 100,
+      // cents/token: haiku-4.5 $1/M in, $5/M out; gpt-4o $2.50/M in, $10/M out
+      estimated_cost_cents: Math.round((provider === 'openai'
+        ? inputTokens * 0.00025 + outputTokens * 0.001
+        : inputTokens * 0.0001 + outputTokens * 0.0005) * 100) / 100,
       duration_ms: Date.now() - t0, success: true,
     });
 
@@ -170,6 +186,8 @@ Deno.serve(async (req: Request) => {
       const admin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       await admin2.from('ai_usage_log').insert({
         feature: 'listing_assistant', success: false, duration_ms: Date.now() - t0,
+        user_id: uid ?? null, market_id: marketId ?? null,
+        effective_plan: effPlan ?? null, provider: provider || null, model: model || null,
       });
     } catch { /* best-effort */ }
     console.error('analyze-listing-photo:', e);

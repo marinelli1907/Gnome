@@ -24,7 +24,7 @@ const C = {
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 type Me = { user_id: string; role: string; permissions: string[]; is_owner: boolean };
-type Tab = 'home' | 'ai' | 'more';
+type Tab = 'home' | 'fulfill' | 'ai' | 'more';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -72,11 +72,12 @@ export default function App() {
       </View>
       <View style={{ flex: 1 }}>
         {tab === 'home' && <Home />}
+        {tab === 'fulfill' && <Fulfill can={can} />}
         {tab === 'ai' && <AiHQ can={can} />}
         {tab === 'more' && <More can={can} isOwner={admin.is_owner} />}
       </View>
       <View style={s.tabbar}>
-        {([['home', '🏠 Home'], ['ai', '🤖 AI HQ'], ['more', '☰ More']] as [Tab, string][]).map(([t, label]) => (
+        {([['home', '🏠 Home'], ['fulfill', '📦 Fulfill'], ['ai', '🤖 AI HQ'], ['more', '☰ More']] as [Tab, string][]).map(([t, label]) => (
           <Pressable key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]} onPress={() => setTab(t)}>
             <Text style={[s.tabText, tab === t && s.tabTextActive]}>{label}</Text>
           </Pressable>
@@ -171,16 +172,31 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const [reqs, setReqs] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [paused, setPaused] = useState<boolean | null>(null);
+  const [reads, setReads] = useState<boolean | null>(null);
+  const [usageToday, setUsageToday] = useState<{ cents: number; fails: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [room, setRoom] = useState<any | null>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [composing, setComposing] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
-    const [{ data: r }, { data: a }, { data: st }] = await Promise.all([
+    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const [{ data: r }, { data: a }, { data: st }, { data: rm }, { data: usage }] = await Promise.all([
       supabase.from('ai_action_requests').select('*').order('requested_at', { ascending: false }).limit(30),
       supabase.from('ai_agents').select('*').order('id'),
-      supabase.from('ai_settings').select('writes_paused').limit(1).maybeSingle(),
+      supabase.from('ai_settings').select('writes_paused, reads_enabled').limit(1).maybeSingle(),
+      supabase.from('ai_rooms').select('*').eq('status', 'active').order('updated_at', { ascending: false }).limit(12),
+      supabase.from('ai_usage_log').select('estimated_cost_cents, success').gte('created_at', since.toISOString()).limit(400),
     ]);
-    setReqs(r ?? []); setAgents(a ?? []); setPaused(st?.writes_paused ?? null);
+    setReqs(r ?? []); setAgents(a ?? []);
+    setPaused(st?.writes_paused ?? null); setReads(st?.reads_enabled ?? null);
+    setRooms(rm ?? []);
+    const rows = (usage ?? []) as any[];
+    setUsageToday({
+      cents: rows.reduce((t, x) => t + Number(x.estimated_cost_cents ?? 0), 0),
+      fails: rows.filter((x) => x.success === false).length,
+    });
     setRefreshing(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -197,23 +213,84 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
     const { error } = await supabase.rpc('admin_set_ai_paused', { p_paused: v });
     if (error) Alert.alert('Failed', error.message); else setPaused(v);
   };
+  const toggleReads = async (v: boolean) => {
+    const { error } = await supabase.rpc('admin_set_ai_reads', { p_enabled: v });
+    if (error) Alert.alert('Failed', error.message); else setReads(v);
+  };
+  const openChat = async (agentId: string, agentName: string) => {
+    // 1:1 = a room with exactly one agent; reuse an existing one when present.
+    const existing = rooms.find((r) => (r.agent_ids ?? []).length === 1 && r.agent_ids[0] === agentId);
+    if (existing) { setRoom(existing); return; }
+    const { data: uid } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from('ai_rooms')
+      .insert({ title: agentName, agent_ids: [agentId], created_by: uid.user?.id })
+      .select('*').single();
+    if (error) Alert.alert('Failed', error.message); else { setRoom(data); void load(); }
+  };
+
+  if (room) return <RoomView room={room} back={() => { setRoom(null); void load(); }} agents={agents} />;
+  if (composing) {
+    return <NewBoardroom agents={agents.filter((a) => a.status !== 'disabled')}
+      back={() => setComposing(false)}
+      created={(r) => { setComposing(false); setRoom(r); void load(); }} />;
+  }
 
   const pending = reqs.filter((r) => r.status === 'PENDING');
   const approved = reqs.filter((r) => r.status === 'APPROVED');
+  const enabledAgents = agents.filter((a) => a.status !== 'disabled');
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
-            <Text style={s.cardBig}>{paused ? 'AI writes paused 🔒' : 'AI writes enabled'}</Text>
-            <Text style={s.cardSub}>Kill switch — server-enforced. Reads/reports keep working.</Text>
+            <Text style={s.cardBig}>{paused ? 'AI actions paused 🔒' : 'AI actions enabled'}</Text>
+            <Text style={s.cardSub}>Kill switch for AI-initiated changes (approve/execute). Server-enforced.</Text>
           </View>
           {can('ai.pause_actions') && paused != null && (
             <Switch value={!paused} onValueChange={(v) => void togglePause(!v)} trackColor={{ true: C.green }} />
           )}
         </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardTitle}>{reads === false ? 'AI features paused 🔒' : 'AI features on'}</Text>
+            <Text style={s.cardSub}>Emergency stop for paid AI calls — Listing Assistant & Boardroom.</Text>
+          </View>
+          {can('ai.kill_switch') && reads != null && (
+            <Switch value={reads !== false} onValueChange={(v) => void toggleReads(v)} trackColor={{ true: C.green }} />
+          )}
+        </View>
+        {usageToday && (
+          <Text style={[s.cardSub, { marginTop: 8 }]}>
+            Provider: Anthropic (needs credits — OpenAI key optional fallback) · today {money(usageToday.cents)}
+            {usageToday.fails > 0 ? ` · ${usageToday.fails} failed call${usageToday.fails === 1 ? '' : 's'}` : ' · no failures'}
+          </Text>
+        )}
       </Card>
+
+      <Text style={s.h2}>Boardroom</Text>
+      <Card>
+        <Text style={s.cardSub}>Talk to one agent, or put several in a room. Bounded discussion, HQ synthesis. Chat can’t change production — actions still go through approvals.</Text>
+        <SmallBtn label="🏛 New Boardroom" onPress={() => setComposing(true)} />
+      </Card>
+      {rooms.map((r) => (
+        <Pressable key={r.id} onPress={() => setRoom(r)}>
+          <Card>
+            <Text style={s.cardTitle}>{(r.agent_ids ?? []).length > 1 ? '🏛' : '💬'} {r.title}</Text>
+            <Text style={s.cardSub}>{(r.agent_ids ?? []).join(', ')} · {String(r.updated_at).slice(0, 16).replace('T', ' ')}</Text>
+          </Card>
+        </Pressable>
+      ))}
+
+      <Text style={s.h2}>Agents — tap to chat</Text>
+      {enabledAgents.map((a) => (
+        <Pressable key={a.id} onPress={() => void openChat(a.id, a.name)}>
+          <Card>
+            <Text style={s.cardTitle}>💬 {a.name}</Text>
+            <Text style={s.cardSub}>{a.status} · L{a.automation_level} · budget {money(a.daily_budget_cents)}/day</Text>
+          </Card>
+        </Pressable>
+      ))}
 
       <Text style={s.h2}>Needs approval ({pending.length})</Text>
       {pending.length === 0 && <Card><Text style={s.cardSub}>No AI actions waiting.</Text></Card>}
@@ -239,13 +316,13 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
         </Card>
       ))}
 
-      <Text style={s.h2}>Agents</Text>
-      {agents.map((a) => (
-        <Card key={a.id}>
-          <Text style={s.cardTitle}>{a.name}</Text>
-          <Text style={s.cardSub}>{a.status} · L{a.automation_level} · {a.provider}/{a.model} · budget {money(a.daily_budget_cents)}/day</Text>
+      {agents.some((a) => a.status === 'disabled') && (
+        <Card>
+          <Text style={s.cardSub}>
+            Not yet enabled: {agents.filter((a) => a.status === 'disabled').map((a) => a.name).join(', ')}
+          </Text>
         </Card>
-      ))}
+      )}
 
       <Text style={s.h2}>Handled</Text>
       {reqs.filter((r) => ['EXECUTED', 'REJECTED', 'FAILED', 'EXPIRED'].includes(r.status)).slice(0, 10).map((r) => (
@@ -257,19 +334,22 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
 
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
-  const [view, setView] = useState<'menu' | 'users' | 'team' | 'audit'>('menu');
+  const [view, setView] = useState<'menu' | 'users' | 'team' | 'audit' | 'inventory'>('menu');
   if (view === 'users') return <Users back={() => setView('menu')} can={can} />;
   if (view === 'team') return <Team back={() => setView('menu')} />;
   if (view === 'audit') return <Audit back={() => setView('menu')} />;
+  if (view === 'inventory') return <Inventory back={() => setView('menu')} can={can} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
+      {can('inventory.view') && <MenuRow label="🌱 Inventory" onPress={() => setView('inventory')} />}
       {can('admins.view') && <MenuRow label="🛡 Admin Team" onPress={() => setView('team')} />}
       <MenuRow label="📜 Audit Log" onPress={() => setView('audit')} />
       <Card>
         <Text style={s.cardSub}>
-          Markets, Listings, Orders, Compliance, Inventory, Seed Drop, Plots, Finance,
-          Support, Taxonomy — next build. Backend permissions for all of them are live.
+          Seed Drop fulfillment lives in the 📦 Fulfill tab. Markets, Listings, Orders,
+          Compliance detail, Plots, Finance, Support, Taxonomy — next build; their
+          backend permissions are already live.
         </Text>
       </Card>
       <Pressable style={[s.btn, { marginTop: 20 }]} onPress={() => supabase.auth.signOut()}>
@@ -455,6 +535,472 @@ function Audit({ back }: { back: () => void }) {
   );
 }
 
+// ---------------------------------------------------------------- Boardroom
+const ROOM_PRESETS: { title: string; agents: string[] }[] = [
+  { title: 'Daily Standup', agents: ['gnome_hq', 'operations', 'inventory', 'seeds'] },
+  { title: 'Growth Council', agents: ['gnome_hq', 'operations', 'security'] },
+  { title: 'Seed Drop Ops', agents: ['inventory', 'seeds'] },
+];
+
+function NewBoardroom({ agents, back, created }: {
+  agents: any[]; back: () => void; created: (room: any) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (id: string) => setPicked((p) => p.includes(id) ? p.filter((x) => x !== id) : (p.length < 5 ? [...p, id] : p));
+  const create = async (t: string, ids: string[]) => {
+    if (!ids.length) { Alert.alert('Pick at least one agent'); return; }
+    const { data: uid } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from('ai_rooms')
+      .insert({ title: t || ids.join(' + '), agent_ids: ids, created_by: uid.user?.id })
+      .select('*').single();
+    if (error) Alert.alert('Failed', error.message); else created(data);
+  };
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <BackRow label="← AI HQ" onPress={back} />
+      <Text style={s.h2}>New Boardroom</Text>
+      <Text style={s.cardSub}>Up to 5 agents. They answer you and can push back on each other for one bounded round; HQ wraps it up. Being in a room never expands what an agent may do.</Text>
+      {ROOM_PRESETS.map((p) => (
+        <Pressable key={p.title} onPress={() => void create(p.title, p.agents.filter((id) => agents.some((a) => a.id === id)))}>
+          <Card><Text style={s.cardTitle}>⚡ {p.title}</Text><Text style={s.cardSub}>{p.agents.join(', ')}</Text></Card>
+        </Pressable>
+      ))}
+      <Text style={s.h3}>Or build your own</Text>
+      <TextInput style={s.input} placeholder="Room name (optional)" value={title} onChangeText={setTitle} placeholderTextColor={C.muted} />
+      {agents.map((a) => (
+        <Pressable key={a.id} onPress={() => toggle(a.id)}>
+          <Card>
+            <Text style={s.cardTitle}>{picked.includes(a.id) ? '☑' : '☐'} {a.name}</Text>
+          </Card>
+        </Pressable>
+      ))}
+      <Pressable style={s.btn} onPress={() => void create(title, picked)}>
+        <Text style={s.btnText}>Open room ({picked.length})</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function RoomView({ room, back, agents }: { room: any; back: () => void; agents: any[] }) {
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const agentName = (id?: string | null) => agents.find((a) => a.id === id)?.name ?? id ?? 'Gnome';
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('ai_room_messages')
+      .select('*').eq('room_id', room.id).order('id', { ascending: true }).limit(200);
+    setMsgs(data ?? []);
+  }, [room.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true); setDraft('');
+    setMsgs((m) => [...m, { id: 'local', sender_type: 'admin', content: text }]);
+    const { data, error } = await supabase.functions.invoke('boardroom', {
+      body: { room_id: room.id, message: text },
+    });
+    if (error || data?.error) {
+      Alert.alert('Boardroom', data?.message ?? data?.detail ?? error?.message ?? 'Failed');
+    }
+    await load();
+    setSending(false);
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+      <View style={{ flex: 1, padding: 16 }}>
+        <BackRow label={`← ${room.title}`} onPress={back} />
+        <FlatList
+          data={msgs}
+          keyExtractor={(m, i) => String(m.id ?? i)}
+          renderItem={({ item }) => (
+            <View style={[s.bubble, item.sender_type === 'admin' ? s.bubbleMe : item.sender_type === 'system' ? s.bubbleSys : s.bubbleAgent]}>
+              {item.sender_type === 'agent' && <Text style={s.bubbleWho}>{agentName(item.sender_agent_id)}</Text>}
+              <Text style={item.sender_type === 'admin' ? s.bubbleTextMe : s.bubbleText}>{item.content}</Text>
+            </View>
+          )}
+          ListEmptyComponent={<Text style={s.cardSub}>Ask anything — agents answer with real Gnome numbers.</Text>}
+        />
+        {sending && <Text style={s.cardSub}>The room is thinking…</Text>}
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+          <TextInput style={[s.input, { flex: 1, marginBottom: 0, minWidth: 0 }]} placeholder="Message the room…"
+            value={draft} onChangeText={setDraft} multiline placeholderTextColor={C.muted} />
+          <Pressable style={[s.btn, { marginTop: 0, opacity: sending ? 0.5 : 1 }]} onPress={() => void send()} disabled={sending}>
+            <Text style={s.btnText}>↑</Text>
+          </Pressable>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+// ---------------------------------------------------------------- Seed Drop fulfillment
+function Fulfill({ can }: { can: (p: string) => boolean }) {
+  const [queue, setQueue] = useState<any[]>([]);
+  const [order, setOrder] = useState<any | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lane, setLane] = useState<'review' | 'pick' | 'packed' | 'shipped'>('pick');
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const { data, error } = await supabase.rpc('admin_seed_queue');
+    if (error) Alert.alert('Failed', error.message);
+    setQueue((data as any[]) ?? []);
+    setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  if (!can('seed_drop.view')) {
+    return <Centered><Text style={s.deniedTitle}>Seed Drop access not enabled for your role.</Text></Centered>;
+  }
+
+  const lanes: Record<string, any[]> = {
+    review: queue.filter((o) => o.status === 'needs_review'),
+    pick: queue.filter((o) => ['paid', 'selected'].includes(o.status)),
+    packed: queue.filter((o) => o.status === 'packed'),
+    shipped: queue.filter((o) => o.status === 'shipped'),
+  };
+
+  const refreshOrder = async (id: string) => {
+    const { data } = await supabase.rpc('admin_seed_queue');
+    const q = (data as any[]) ?? [];
+    setQueue(q);
+    const fresh = q.find((o) => o.id === id);
+    if (fresh) setOrder(fresh); else { setOrder(null); setPicking(false); }
+  };
+  const pick = async (itemId: string) => {
+    const { error } = await supabase.rpc('admin_pick_seed_item', { p_item: itemId });
+    if (error) Alert.alert('Pick failed', error.message); else await refreshOrder(order.id);
+  };
+  const pack = () => {
+    const unpicked = (order.items ?? []).filter((i: any) => i.status === 'reserved').length;
+    Alert.alert('Pack this order?', unpicked ? `${unpicked} packet(s) not marked picked — pack anyway?` : 'All packets picked. Seal the envelope.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Pack', onPress: async () => {
+        const { error } = await supabase.rpc('admin_pack_seed_order',
+          { p_order: order.id, p_override_reason: unpicked ? 'packed with unpicked items (owner override)' : null });
+        if (error) Alert.alert('Pack failed', error.message); else await refreshOrder(order.id);
+      } },
+    ]);
+  };
+  const ship = () => {
+    let carrier = 'USPS'; let tracking = '';
+    Alert.prompt?.('Ship — tracking number', 'USPS tracking (optional, Enter to skip)', async (t) => {
+      tracking = t ?? '';
+      const { error } = await supabase.rpc('admin_ship_seed_order', { p_order: order.id, p_carrier: carrier, p_tracking: tracking });
+      if (error) Alert.alert('Ship failed', error.message); else await refreshOrder(order.id);
+    });
+  };
+
+  // ---- Pick Mode: garage-usable, huge type, one hand ----
+  if (order && picking) {
+    const items = (order.items ?? []) as any[];
+    const remaining = items.filter((i) => i.status === 'reserved');
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <BackRow label="← Done picking" onPress={() => setPicking(false)} />
+        <Text style={s.h2}>Pick · {order.customer ?? 'order'}</Text>
+        {remaining.length === 0 && <Card><Text style={s.cardBig}>All picked ✅</Text></Card>}
+        {items.map((i) => (
+          <Pressable key={i.id} disabled={i.status !== 'reserved'} onPress={() => void pick(i.id)}>
+            <View style={[s.pickCard, i.status !== 'reserved' && { opacity: 0.35 }]}>
+              <Text style={s.pickBin}>{i.bin ?? 'no bin'}</Text>
+              <Text style={s.pickName}>{i.qty} × {i.crop}{i.variety ? ` — ${i.variety}` : ''}</Text>
+              <Text style={s.pickLot}>lot {i.lot ?? '—'}{i.lot_status !== 'fresh' && i.lot_status !== 'active' ? `  ⚠️ ${i.lot_status}` : ''}</Text>
+              <Text style={s.pickTap}>{i.status === 'reserved' ? 'TAP WHEN IN HAND' : i.status.toUpperCase()}</Text>
+            </View>
+          </Pressable>
+        ))}
+        {remaining.length === 0 && can('seed_drop.pack') && (
+          <Pressable style={s.btn} onPress={pack}><Text style={s.btnText}>Pack order →</Text></Pressable>
+        )}
+      </ScrollView>
+    );
+  }
+
+  // ---- Order detail ----
+  if (order) {
+    const shipTo = order.ship ?? order.profile_snapshot?.ship ?? null;
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshOrder(order.id)} tintColor={C.green} />}>
+        <BackRow label="← Queue" onPress={() => setOrder(null)} />
+        <Card>
+          <Text style={s.cardBig}>{order.customer ?? 'Seed Drop order'}</Text>
+          <Text style={s.cardSub}>{order.status.toUpperCase()} · {String(order.created_at).slice(0, 10)}{order.tracking ? ` · ${order.tracking}` : ''}</Text>
+          {shipTo ? <Text style={s.cardText}>{[shipTo.name, shipTo.address_line, `${shipTo.city ?? ''} ${shipTo.state ?? ''} ${shipTo.postal_code ?? ''}`].filter(Boolean).join('\n')}</Text> : null}
+        </Card>
+        <Text style={s.h3}>Packets</Text>
+        {(order.items ?? []).map((i: any) => (
+          <Card key={i.id}>
+            <Text style={s.cardTitle}>{i.qty} × {i.crop}{i.variety ? ` — ${i.variety}` : ''}</Text>
+            <Text style={s.cardSub}>bin {i.bin ?? '—'} · lot {i.lot ?? '—'} · {i.status}</Text>
+          </Card>
+        ))}
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          {['paid', 'selected', 'needs_review'].includes(order.status) && can('seed_drop.pick') && (
+            <SmallBtn label="▶ Start Picking" onPress={() => setPicking(true)} />
+          )}
+          {['paid', 'selected', 'needs_review'].includes(order.status) && can('seed_drop.pack') && (
+            <SmallBtn label="Pack" onPress={pack} />
+          )}
+          {order.status === 'packed' && can('seed_drop.ship') && (
+            <SmallBtn label="🚚 Ship" onPress={ship} />
+          )}
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ---- Queue ----
+  const laneDefs: [typeof lane, string, number][] = [
+    ['review', 'Review', lanes.review.length],
+    ['pick', 'To pick', lanes.pick.length],
+    ['packed', 'Packed', lanes.packed.length],
+    ['shipped', 'Shipped', lanes.shipped.length],
+  ];
+  return (
+    <View style={{ flex: 1, padding: 16 }}>
+      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+        {laneDefs.map(([k, label, count]) => (
+          <Pressable key={k} style={[s.lane, lane === k && s.laneActive]} onPress={() => setLane(k)}>
+            <Text style={[s.laneText, lane === k && s.laneTextActive]}>{label} {count ? `(${count})` : ''}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <FlatList
+        data={lanes[lane]}
+        keyExtractor={(o) => o.id}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}
+        renderItem={({ item }) => (
+          <Pressable onPress={() => setOrder(item)}>
+            <Card>
+              <Text style={s.cardTitle}>{item.customer ?? 'Order'} · {(item.items ?? []).reduce((t: number, i: any) => t + Number(i.qty ?? 0), 0)} packets</Text>
+              <Text style={s.cardSub}>{(item.items ?? []).map((i: any) => i.crop).join(', ').slice(0, 70)}</Text>
+            </Card>
+          </Pressable>
+        )}
+        ListEmptyComponent={<Card><Text style={s.cardSub}>Nothing in this lane. 🌱</Text></Card>}
+      />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------- Inventory
+function Inventory({ back, can }: { back: () => void; can: (p: string) => boolean }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any | null>(null);
+  const [sel, setSel] = useState<any | null>(null);
+  const [lots, setLots] = useState<any[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+  const [q, setQ] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+
+  const load = useCallback(async () => {
+    const [{ data: p }, { data: sum }] = await Promise.all([
+      supabase.from('seed_products').select('*').order('crop'),
+      supabase.rpc('admin_inventory_summary'),
+    ]);
+    setProducts((p as any[]) ?? []); setSummary(sum);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const openItem = async (p: any) => {
+    setSel(p);
+    const { data } = await supabase.from('seed_lots').select('*')
+      .eq('seed_product_id', p.id).order('created_at', { ascending: false });
+    setLots((data as any[]) ?? []);
+  };
+
+  const lotAction = (lot: any, kind: 'adjust' | 'move' | 'quarantine') => {
+    if (kind === 'adjust') {
+      Alert.prompt?.('Adjust packets', `${lot.internal_lot_number}: current ${lot.current_qty}. Enter +/- change`, async (v) => {
+        const delta = Number(v);
+        if (!Number.isFinite(delta) || delta === 0) return;
+        const { error } = await supabase.rpc('admin_adjust_lot', { p_lot: lot.id, p_delta: delta, p_reason: 'manual count from Gnome Admin' });
+        if (error) Alert.alert('Failed', error.message); else void openItem(sel);
+      });
+    } else if (kind === 'move') {
+      Alert.prompt?.('Move lot', 'New bin / storage location', async (v) => {
+        if (!v) return;
+        const { error } = await supabase.rpc('admin_move_lot', { p_lot: lot.id, p_storage: v });
+        if (error) Alert.alert('Failed', error.message); else void openItem(sel);
+      });
+    } else {
+      const to = lot.status === 'quarantined' ? 'active' : 'quarantined';
+      Alert.alert(to === 'quarantined' ? 'Quarantine lot?' : 'Release from quarantine?', lot.internal_lot_number, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: async () => {
+          const { error } = await supabase.rpc('admin_set_lot_status', { p_lot: lot.id, p_status: to, p_reason: 'from Gnome Admin' });
+          if (error) Alert.alert('Failed', error.message); else void openItem(sel);
+        } },
+      ]);
+    }
+  };
+
+  const archiveItem = async (archive: boolean) => {
+    const { error } = await supabase.rpc('admin_upsert_seed_product', { p_id: sel.id, p_crop: null, p_variety: null, p_category: null, p_archived: archive });
+    if (error) Alert.alert('Failed', error.message);
+    else { setSel({ ...sel, archived: archive }); void load(); }
+  };
+  const deleteItem = () => {
+    Alert.alert('Delete this item?', 'Only possible if it has never been received or shipped.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        const { error } = await supabase.rpc('admin_delete_seed_product', { p_id: sel.id });
+        if (error) {
+          Alert.alert(error.message.includes('HAS_HISTORY')
+            ? 'This item has fulfillment history and can’t be permanently deleted. Archive it instead.'
+            : error.message);
+        } else { setSel(null); void load(); }
+      } },
+    ]);
+  };
+
+  if (adding) return <InventoryForm back={() => { setAdding(false); void load(); }} />;
+  if (receiving && sel) return <ReceiveForm product={sel} back={() => { setReceiving(false); void openItem(sel); }} />;
+
+  if (sel) {
+    const available = lots.filter((l) => ['fresh', 'active'].includes(l.status)).reduce((t, l) => t + Number(l.current_qty), 0);
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <BackRow label="← Inventory" onPress={() => setSel(null)} />
+        <Card>
+          <Text style={s.cardBig}>{sel.crop}{sel.variety ? ` — ${sel.variety}` : ''}{sel.archived ? '  🗄' : ''}</Text>
+          <Text style={s.cardSub}>{sel.category} · {sel.sku ?? 'no SKU'} · {sel.packet_size ?? ''} {sel.supplier ? `· ${sel.supplier}` : ''}</Text>
+          <Text style={s.cardText}>{available} packets available · reorder at {sel.reorder_threshold ?? 5}</Text>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {can('inventory.receive') && <SmallBtn label="＋ Receive stock" onPress={() => setReceiving(true)} />}
+            {can('inventory.archive') && <SmallBtn label={sel.archived ? 'Reactivate' : 'Archive'} onPress={() => void archiveItem(!sel.archived)} />}
+            {can('inventory.delete_unused') || can('*') ? <SmallBtn label="Delete" danger onPress={deleteItem} /> : null}
+          </View>
+        </Card>
+        <Text style={s.h3}>Lots</Text>
+        {lots.length === 0 && <Card><Text style={s.cardSub}>No stock received yet.</Text></Card>}
+        {lots.map((l) => (
+          <Card key={l.id}>
+            <Text style={s.cardTitle}>{l.internal_lot_number} · {l.current_qty}/{l.original_qty} packets</Text>
+            <Text style={s.cardSub}>bin {l.storage_location ?? '—'} · {l.status}{l.germination_pct ? ` · germ ${l.germination_pct}%` : ''}</Text>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              {can('inventory.adjust') && <SmallBtn label="Adjust" onPress={() => lotAction(l, 'adjust')} />}
+              {can('inventory.move') && <SmallBtn label="Move" onPress={() => lotAction(l, 'move')} />}
+              {can('inventory.quarantine') && <SmallBtn label={l.status === 'quarantined' ? 'Release' : 'Quarantine'} danger={l.status !== 'quarantined'} onPress={() => lotAction(l, 'quarantine')} />}
+            </View>
+          </Card>
+        ))}
+      </ScrollView>
+    );
+  }
+
+  const list = products
+    .filter((p) => showArchived || !p.archived)
+    .filter((p) => !q || `${p.crop} ${p.variety ?? ''} ${p.sku ?? ''}`.toLowerCase().includes(q.toLowerCase()));
+  const low = (summary?.low_stock_items as any[]) ?? [];
+  return (
+    <View style={{ flex: 1, padding: 16 }}>
+      <BackRow label="← More" onPress={back} />
+      {summary && (
+        <Card>
+          <Text style={s.cardSub}>
+            {summary.skus} items · {low.length} low stock · {summary.quarantined} quarantined · {summary.needs_retest ?? 0} need retest
+          </Text>
+        </Card>
+      )}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TextInput style={[s.input, { flex: 1, minWidth: 0 }]} placeholder="Search crop, variety, SKU…" value={q} onChangeText={setQ} placeholderTextColor={C.muted} autoCapitalize="none" />
+        {can('inventory.create') && (
+          <Pressable style={[s.btn, { marginTop: 0 }]} onPress={() => setAdding(true)}><Text style={s.btnText}>＋</Text></Pressable>
+        )}
+      </View>
+      <Pressable onPress={() => setShowArchived((v) => !v)}>
+        <Text style={[s.cardSub, { marginBottom: 8 }]}>{showArchived ? '☑' : '☐'} show archived</Text>
+      </Pressable>
+      <FlatList
+        data={list}
+        keyExtractor={(p) => p.id}
+        renderItem={({ item }) => (
+          <Pressable onPress={() => void openItem(item)}>
+            <Card>
+              <Text style={s.cardTitle}>{item.crop}{item.variety ? ` — ${item.variety}` : ''}{item.archived ? '  🗄' : ''}</Text>
+              <Text style={s.cardSub}>{item.category}{item.sku ? ` · ${item.sku}` : ''}{low.some((l) => l.crop === item.crop && l.variety === item.variety) ? '  ⚠️ low' : ''}</Text>
+            </Card>
+          </Pressable>
+        )}
+        ListEmptyComponent={<Card><Text style={s.cardSub}>No items yet — add your first seed product.</Text></Card>}
+      />
+    </View>
+  );
+}
+
+function InventoryForm({ back }: { back: () => void }) {
+  const [f, setF] = useState({ crop: '', variety: '', category: 'vegetable', sku: '', supplier: '', packet_size: '', reorder: '' });
+  const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const save = async () => {
+    if (!f.crop.trim()) { Alert.alert('Crop is required'); return; }
+    const { error } = await supabase.rpc('admin_upsert_seed_product', {
+      p_id: null, p_crop: f.crop.trim(), p_variety: f.variety.trim() || null, p_category: f.category,
+      p_sku: f.sku.trim() || null, p_supplier: f.supplier.trim() || null,
+      p_packet_size: f.packet_size.trim() || null,
+      p_reorder_threshold: f.reorder ? Number(f.reorder) : null,
+    });
+    if (error) Alert.alert('Failed', error.message); else back();
+  };
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <BackRow label="← Inventory" onPress={back} />
+      <Text style={s.h2}>New item</Text>
+      <TextInput style={s.input} placeholder="Crop (e.g. Tomato)" value={f.crop} onChangeText={(v) => set('crop', v)} placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Variety (e.g. Cherokee Purple)" value={f.variety} onChangeText={(v) => set('variety', v)} placeholderTextColor={C.muted} />
+      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        {['vegetable', 'herb', 'flower', 'pollinator', 'salad', 'fruit'].map((c) => (
+          <Pressable key={c} style={[s.lane, f.category === c && s.laneActive]} onPress={() => set('category', c)}>
+            <Text style={[s.laneText, f.category === c && s.laneTextActive]}>{c}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <TextInput style={s.input} placeholder="SKU (optional)" value={f.sku} onChangeText={(v) => set('sku', v)} placeholderTextColor={C.muted} autoCapitalize="characters" />
+      <TextInput style={s.input} placeholder="Supplier (optional)" value={f.supplier} onChangeText={(v) => set('supplier', v)} placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Packet size (e.g. 25 seeds)" value={f.packet_size} onChangeText={(v) => set('packet_size', v)} placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Reorder threshold (default 5)" value={f.reorder} onChangeText={(v) => set('reorder', v)} keyboardType="number-pad" placeholderTextColor={C.muted} />
+      <Pressable style={s.btn} onPress={() => void save()}><Text style={s.btnText}>Create item</Text></Pressable>
+    </ScrollView>
+  );
+}
+
+function ReceiveForm({ product, back }: { product: any; back: () => void }) {
+  const [f, setF] = useState({ qty: '', lot: '', supplier: product.supplier ?? '', supplierLot: '', bin: '', germ: '' });
+  const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
+  const save = async () => {
+    const qty = Number(f.qty);
+    if (!Number.isFinite(qty) || qty <= 0) { Alert.alert('Enter packet count'); return; }
+    if (!f.lot.trim()) { Alert.alert('Internal lot number required', 'e.g. TOM-CP-2026A'); return; }
+    const { error } = await supabase.rpc('admin_receive_lot', {
+      p_product: product.id, p_qty: qty, p_internal_lot: f.lot.trim(),
+      p_supplier: f.supplier.trim() || null, p_supplier_lot: f.supplierLot.trim() || null,
+      p_storage: f.bin.trim() || null, p_germination: f.germ ? Number(f.germ) : null,
+    });
+    if (error) Alert.alert('Failed', error.message); else back();
+  };
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <BackRow label="← Item" onPress={back} />
+      <Text style={s.h2}>Receive · {product.crop}{product.variety ? ` — ${product.variety}` : ''}</Text>
+      <TextInput style={s.input} placeholder="Packets received" value={f.qty} onChangeText={(v) => set('qty', v)} keyboardType="number-pad" placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Internal lot # (e.g. TOM-CP-2026A)" value={f.lot} onChangeText={(v) => set('lot', v)} autoCapitalize="characters" placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Bin / storage (e.g. Shelf A2)" value={f.bin} onChangeText={(v) => set('bin', v)} placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Supplier" value={f.supplier} onChangeText={(v) => set('supplier', v)} placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Supplier lot # (optional)" value={f.supplierLot} onChangeText={(v) => set('supplierLot', v)} placeholderTextColor={C.muted} />
+      <TextInput style={s.input} placeholder="Germination % (optional)" value={f.germ} onChangeText={(v) => set('germ', v)} keyboardType="number-pad" placeholderTextColor={C.muted} />
+      <Pressable style={s.btn} onPress={() => void save()}><Text style={s.btnText}>Receive into stock</Text></Pressable>
+    </ScrollView>
+  );
+}
+
 // ---------------------------------------------------------------- bits
 function Centered({ children }: { children: React.ReactNode }) {
   return <View style={[s.centered]}>{children}</View>;
@@ -525,6 +1071,22 @@ const s = StyleSheet.create({
   },
   menuText: { fontSize: 15, fontWeight: '700', color: C.green },
   signTitle: { fontSize: 26, fontWeight: '800', color: C.green },
+  lane: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  laneActive: { backgroundColor: C.green, borderColor: C.green },
+  laneText: { fontSize: 12.5, fontWeight: '700', color: C.muted },
+  laneTextActive: { color: '#fff' },
+  bubble: { borderRadius: 14, padding: 12, marginBottom: 8, maxWidth: '92%' },
+  bubbleMe: { backgroundColor: C.green, alignSelf: 'flex-end' },
+  bubbleAgent: { backgroundColor: C.surface, alignSelf: 'flex-start', borderWidth: 1, borderColor: C.border },
+  bubbleSys: { backgroundColor: 'transparent', alignSelf: 'center' },
+  bubbleWho: { fontSize: 11, fontWeight: '800', color: C.gold, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
+  bubbleText: { fontSize: 14, color: C.green, lineHeight: 20 },
+  bubbleTextMe: { fontSize: 14, color: '#fff', lineHeight: 20 },
+  pickCard: { backgroundColor: C.surface, borderRadius: 16, padding: 18, marginBottom: 10, borderWidth: 2, borderColor: C.green },
+  pickBin: { fontSize: 30, fontWeight: '900', color: C.gold },
+  pickName: { fontSize: 22, fontWeight: '800', color: C.green, marginTop: 4 },
+  pickLot: { fontSize: 15, color: C.muted, marginTop: 2 },
+  pickTap: { fontSize: 13, fontWeight: '800', color: C.mid, marginTop: 10, letterSpacing: 0.6 },
   deniedEmoji: { fontSize: 40 },
   deniedTitle: { fontSize: 18, fontWeight: '800', color: C.green, textAlign: 'center' },
   deniedSub: { fontSize: 13.5, color: C.muted, textAlign: 'center', lineHeight: 19 },

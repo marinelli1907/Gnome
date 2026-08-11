@@ -80,7 +80,7 @@ const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
   'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
   'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at';
-const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count)`;
+const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), market:markets(name), claims(count)`;
 
 function shapeListing(row: any): Listing {
   const claim_count = Array.isArray(row.claims) ? row.claims[0]?.count ?? 0 : 0;
@@ -223,7 +223,7 @@ export function useIncomingClaims(uid?: string) {
         // so disambiguate the claimer embed by FK constraint name. The listing embed
         // must name its columns too: `listings(*)` expands to every column including
         // lat/lng, whose SELECT is revoked → 42501 kills the whole query.
-        .select(`*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings!inner(${LISTING_FIELDS})`)
+        .select(`*, claimer:profiles!claims_claimer_id_fkey(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), listing:listings!inner(${LISTING_FIELDS})`)
         .eq('listing.owner_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -240,7 +240,7 @@ export function useMyClaims(uid?: string) {
     queryFn: async (): Promise<Claim[]> => {
       const { data, error } = await supabase
         .from('claims')
-        .select(`*, listing:listings(${LISTING_FIELDS}, owner:profiles(*))`)
+        .select(`*, listing:listings(${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended))`)
         .eq('claimer_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -788,7 +788,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
     queryFn: async (): Promise<Listing[]> => {
       const { data, error } = await supabase
         .from('listing_promotions')
-        .select(`id, ends_at, listing:listings(${LISTING_FIELDS}, owner:profiles(*), market:markets(name), claims(count))`)
+        .select(`id, ends_at, listing:listings(${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), market:markets(name), claims(count))`)
         .eq('status', 'active')
         .gt('ends_at', new Date().toISOString())
         .order('ends_at', { ascending: true })
@@ -893,7 +893,7 @@ export function useClaimThread(claimId?: string) {
     queryFn: async (): Promise<Claim | null> => {
       const { data, error } = await supabase
         .from('claims')
-        .select(`*, claimer:profiles!claims_claimer_id_fkey(*), listing:listings(${LISTING_FIELDS}, owner:profiles(*))`)
+        .select(`*, claimer:profiles!claims_claimer_id_fkey(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), listing:listings(${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended))`)
         .eq('id', claimId as string)
         .maybeSingle();
       if (error) throw error;
