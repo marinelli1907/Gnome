@@ -4,9 +4,17 @@
 // privacy-safe coarse coordinates (approx_lat/lng, ~0.7mi cells — never exact
 // addresses). Falls back gracefully when location is denied: everything shows,
 // sorted newest-first, and the radius chips prompt for permission.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ListingCard from '../components/ListingCard';
-import { CATEGORIES, categoryFor } from '../../lib/categories';
+import {
+  fetchTaxonomy,
+  breadcrumb,
+  matchNodes,
+  nodeInAnySubtree,
+  subtreeIds,
+  type TaxonomyIndex,
+  type TaxonomyNode,
+} from '../../lib/taxonomy';
 import type { WebListing } from '../../lib/gnome';
 import { logWeb } from '../../lib/analytics';
 import { TYPE_LABEL } from '../../lib/format';
@@ -15,9 +23,13 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 const COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,approx_lat,approx_lng';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,approx_lat,approx_lng,taxonomy_node_id';
 
-type GeoListing = WebListing & { approx_lat: number | null; approx_lng: number | null };
+type GeoListing = WebListing & {
+  approx_lat: number | null;
+  approx_lng: number | null;
+  taxonomy_node_id: string | null;
+};
 
 const TYPES = ['free', 'trade', 'sale', 'wanted', 'plot'] as const;
 
@@ -66,8 +78,47 @@ export default function BrowseClient() {
   const [locError, setLocError] = useState<string | null>(null);
   const [radius, setRadius] = useState<number>(25);
   const [type, setType] = useState<string | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
   const [q, setQ] = useState('');
+
+  // Categories — the app's backend-managed taxonomy tree, not the legacy flat
+  // list. `taxNodeId` is the active filter (any depth); the drilldown browses
+  // one level at a time like the app's TaxonomyPicker.
+  const [taxIndex, setTaxIndex] = useState<TaxonomyIndex | null>(null);
+  const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
+  const [drillOpen, setDrillOpen] = useState(false);
+  const [drillAtId, setDrillAtId] = useState<string | null>(null); // null = roots
+  const drillRef = useRef<HTMLDivElement>(null);
+
+  // Move focus into the panel on open — the trigger that opened it may be
+  // about to unmount ("Browse all categories ›" renders only while closed),
+  // which would otherwise drop keyboard focus to <body>.
+  useEffect(() => {
+    if (drillOpen) drillRef.current?.focus();
+  }, [drillOpen]);
+
+  useEffect(() => {
+    // Bounded retry: the app's react-query hook retries transient failures;
+    // without this a single blip (e.g. Supabase free-tier unpause) would hide
+    // the whole category system until a reload. fetchTaxonomy un-poisons its
+    // cache on failure, so each attempt is a fresh request.
+    let alive = true;
+    void (async () => {
+      for (let attempt = 0; attempt < 3 && alive; attempt++) {
+        const idx = await fetchTaxonomy();
+        if (idx) {
+          if (alive) setTaxIndex(idx);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const taxNode: TaxonomyNode | null =
+    taxIndex && taxNodeId ? taxIndex.byId.get(taxNodeId) ?? null : null;
+  const drillAt: TaxonomyNode | null =
+    taxIndex && drillAtId ? taxIndex.byId.get(drillAtId) ?? null : null;
 
   // Honor deep links: ?type= (from the Plots page) and ?loc= (the homepage
   // ZIP/city box) — a passed location geocodes and persists like manual entry.
@@ -184,13 +235,23 @@ export default function BrowseClient() {
           : null,
     }));
     if (type) rows = rows.filter((l) => l.listing_type === type);
-    if (category) rows = rows.filter((l) => l.category === category);
+    if (taxNode && taxIndex) {
+      // Subtree filter, same as the app: "Vegetables" matches a listing filed
+      // under Vegetables › Tomatoes › Roma.
+      const ids = subtreeIds(taxIndex, taxNode);
+      rows = rows.filter((l) => l.taxonomy_node_id != null && ids.has(l.taxonomy_node_id));
+    }
     if (q.trim()) {
       const needle = q.trim().toLowerCase();
+      // Alias-aware, like the app: a listing matches when its title/description
+      // contains the query OR its taxonomy node sits inside any node the query
+      // matched by name/synonym ("hamburger" finds Ground Beef).
+      const matched = taxIndex ? matchNodes(taxIndex, needle) : [];
       rows = rows.filter(
         (l) =>
           l.title.toLowerCase().includes(needle) ||
-          (l.description ?? '').toLowerCase().includes(needle),
+          (l.description ?? '').toLowerCase().includes(needle) ||
+          (taxIndex !== null && nodeInAnySubtree(taxIndex, l.taxonomy_node_id, matched)),
       );
     }
     if (coords && radius > 0) {
@@ -205,7 +266,7 @@ export default function BrowseClient() {
       return +new Date(b.created_at) - +new Date(a.created_at);
     });
     return rows;
-  }, [listings, coords, radius, type, category, q]);
+  }, [listings, coords, radius, type, taxNode, taxIndex, q]);
 
   return (
     <div>
@@ -218,10 +279,143 @@ export default function BrowseClient() {
           />
         </div>
 
+        {/* Categories — same model as the app: root chips from the backend
+            tree, always visible; tapping the active root again drills in. */}
+        {taxIndex && (
+          <div className="tax-rail" role="group" aria-label="Category">
+            <button
+              className={`chip${!taxNode ? ' active' : ''}`}
+              aria-pressed={!taxNode}
+              onClick={() => { setTaxNodeId(null); setDrillOpen(false); }}
+            >
+              All
+            </button>
+            {taxIndex.roots.map((root) => {
+              const active =
+                !!taxNode && (taxNode.id === root.id || taxNode.path.startsWith(root.path + '/'));
+              return (
+                <button
+                  key={root.id}
+                  className={`chip${active ? ' active' : ''}`}
+                  aria-pressed={active}
+                  aria-expanded={drillOpen && drillAtId === root.id}
+                  aria-controls="tax-drill"
+                  onClick={() => {
+                    if (active && taxNode?.id === root.id) {
+                      setDrillAtId(root.id);
+                      setDrillOpen(true);
+                    } else {
+                      setTaxNodeId(root.id);
+                      setDrillOpen(false);
+                    }
+                  }}
+                >
+                  {root.icon ? `${root.icon} ` : ''}{root.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Active category: breadcrumb chip to refine, ✕ to clear — or the
+            full-tree drilldown entry point when nothing is selected. */}
+        {taxIndex && taxNode ? (
+          <div className="tax-active-row">
+            <button
+              className="chip active"
+              onClick={() => {
+                // Open where the app's TaxonomyPicker does: at the node itself
+                // when it has children to refine into, else at its parent so a
+                // leaf selection shows its siblings instead of an empty panel.
+                setDrillAtId(
+                  taxIndex.childrenOf(taxNode.id).length ? taxNode.id : taxNode.parent_id,
+                );
+                setDrillOpen(!drillOpen);
+              }}
+              aria-expanded={drillOpen}
+              aria-controls="tax-drill"
+            >
+              ⚙ {breadcrumb(taxIndex, taxNode)}
+            </button>
+            <button
+              className="chip"
+              aria-label="Remove category filter"
+              onClick={() => { setTaxNodeId(null); setDrillOpen(false); }}
+            >
+              ✕
+            </button>
+          </div>
+        ) : taxIndex && !drillOpen ? (
+          <button className="linkbtn tax-browse-all" onClick={() => { setDrillAtId(null); setDrillOpen(true); }}>
+            Browse all categories ›
+          </button>
+        ) : null}
+
+        {/* Drilldown: one level at a time, like the app's TaxonomyPicker.
+            Focused on open (so Escape works and screen readers land in it). */}
+        {taxIndex && drillOpen && (
+          <div
+            className="tax-drill"
+            id="tax-drill"
+            role="region"
+            aria-label="Category browser"
+            tabIndex={-1}
+            ref={drillRef}
+            onKeyDown={(e) => { if (e.key === 'Escape') setDrillOpen(false); }}
+          >
+            <div className="tax-drill-head">
+              {drillAt ? (
+                <>
+                  <button
+                    className="linkbtn"
+                    onClick={() => setDrillAtId(drillAt.parent_id)}
+                  >
+                    ‹ Back
+                  </button>
+                  <span className="tax-drill-crumb">{breadcrumb(taxIndex, drillAt)}</span>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => { setTaxNodeId(drillAt.id); setDrillOpen(false); }}
+                  >
+                    All {drillAt.name}
+                  </button>
+                </>
+              ) : (
+                <span className="tax-drill-crumb">All categories</span>
+              )}
+              <button className="linkbtn tax-drill-close" aria-label="Close category browser" onClick={() => setDrillOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="chiprow">
+              {taxIndex.childrenOf(drillAt?.id ?? null).map((child) => {
+                const leaf = taxIndex.childrenOf(child.id).length === 0;
+                return (
+                  <button
+                    key={child.id}
+                    className={`chip${taxNodeId === child.id ? ' active' : ''}`}
+                    aria-pressed={taxNodeId === child.id}
+                    onClick={() => {
+                      if (leaf) {
+                        setTaxNodeId(child.id);
+                        setDrillOpen(false);
+                      } else {
+                        setDrillAtId(child.id);
+                      }
+                    }}
+                  >
+                    {child.icon ? `${child.icon} ` : ''}{child.name}{leaf ? '' : ' ›'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* One compact bar: everything else lives behind the Filters button. */}
         {(() => {
           const activeCount =
-            (type ? 1 : 0) + (category ? 1 : 0) + (coords && radius > 0 && radius !== 25 ? 1 : 0);
+            (type ? 1 : 0) + (coords && radius > 0 && radius !== 25 ? 1 : 0);
           return (
             <div className="filter-toggle-row">
               <button
@@ -234,11 +428,6 @@ export default function BrowseClient() {
               {!filtersOpen && type && (
                 <button className="chip active" onClick={() => setType(null)}>
                   {TYPE_LABEL[type as keyof typeof TYPE_LABEL]} ✕
-                </button>
-              )}
-              {!filtersOpen && category && (
-                <button className="chip active" onClick={() => setCategory(null)}>
-                  {categoryFor(category).emoji} {categoryFor(category).label} ✕
                 </button>
               )}
               {!filtersOpen && coords && radius > 0 && (
@@ -306,28 +495,10 @@ export default function BrowseClient() {
               )}
             </div>
 
-            <div className="fp-section">
-              <span className="filter-label">Category</span>
-              <div className="chiprow">
-                <button className={`chip${!category ? ' active' : ''}`} onClick={() => setCategory(null)}>
-                  All
-                </button>
-                {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
-                  <button
-                    key={c.id}
-                    className={`chip${category === c.id ? ' active' : ''}`}
-                    onClick={() => setCategory(category === c.id ? null : c.id)}
-                  >
-                    {c.emoji} {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="fp-actions">
               <button
                 className="btn btn-secondary btn-sm"
-                onClick={() => { setType(null); setCategory(null); setRadius(25); }}
+                onClick={() => { setType(null); setRadius(25); }}
               >
                 Clear all
               </button>

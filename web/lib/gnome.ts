@@ -163,6 +163,34 @@ export async function getMarketBySlug(slug: string): Promise<WebMarket | null> {
   return rows[0] ?? null;
 }
 
+// --- Delivery -------------------------------------------------------------
+export interface MarketDelivery {
+  market_id: string;
+  enabled: boolean;
+  radius_miles: number | null;
+  flat_fee_cents: number;
+  surcharge_after_miles: number | null;
+  surcharge_fee_cents: number | null;
+  same_day: boolean;
+  same_day_cutoff: string | null;
+  next_day: boolean;
+  next_day_cutoff: string | null;
+  scheduled: boolean;
+  order_by_dow: number | null;
+  delivery_dows: number[];
+  notes: string | null;
+}
+
+export async function getMarketDelivery(marketId: string): Promise<MarketDelivery | null> {
+  const rows = await rest<MarketDelivery>('market_delivery_settings', {
+    select: '*',
+    market_id: `eq.${marketId}`,
+    enabled: 'is.true',
+    limit: '1',
+  }, 300);
+  return rows[0] ?? null;
+}
+
 // --- Sitemap helpers ------------------------------------------------------
 export async function getAllActiveListingRefs(): Promise<{ id: string; slug: string | null; created_at: string }[]> {
   return rest('public_listings', { select: 'id,slug,created_at', order: 'created_at.desc', limit: '500' }, 300);

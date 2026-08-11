@@ -40,7 +40,12 @@ export default function UpgradeScreen() {
                 {PLAN_LABEL[p]} {current ? '· current' : ''}
               </Text>
               <Text style={styles.tierMeta}>
-                {l ? `${l.max_active_listings} active listings` : '—'}
+                {l
+                  ? `${l.max_active_listings == null ? 'Unlimited' : l.max_active_listings} active listings`
+                  : '—'}
+                {l?.max_pickup_locations
+                  ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}${l.extra_location_fee_cents ? ' +' : ''}`
+                  : ''}
                 {l && l.price_cents > 0 ? ` · ${formatPrice(l.price_cents)}/mo` : ' · free'}
               </Text>
             </View>

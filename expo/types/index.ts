@@ -61,13 +61,18 @@ export type MarketPlan = 'free' | 'grower' | 'farm' | 'sponsor';
 
 export interface PlanLimit {
   plan: MarketPlan;
-  max_active_listings: number;
+  /** null = unlimited (0062 remodel: farm & sponsor). */
+  max_active_listings: number | null;
   max_photos: number;
   analytics: boolean;
   featured: boolean;
   delivery_eligible: boolean;
   price_cents: number;
   included_boost_credits?: number;
+  /** Included pickup locations (0052; remodeled 0062: free 1, grower 2, farm 5). */
+  max_pickup_locations?: number;
+  /** Monthly price per extra pickup location; null = add-ons not offered. */
+  extra_location_fee_cents?: number | null;
 }
 
 export type PromotionSource = 'manual' | 'plan_credit' | 'paid' | 'sponsor';

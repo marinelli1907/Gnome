@@ -13,6 +13,7 @@ import { SignInCard, useSession } from '../components/auth';
 import PlotThread from '../components/PlotThread';
 import PaymentMethodsEditor from './PaymentMethodsEditor';
 import PickupAvailabilityEditor from './PickupAvailabilityEditor';
+import DeliverySettingsEditor from './DeliverySettingsEditor';
 import PickupOrdersManager from './PickupOrdersManager';
 
 // Explicit column list — post-0010 the base table rejects select=* for
@@ -133,6 +134,7 @@ export default function MyMarketClient() {
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [pickupOpen, setPickupOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -454,7 +456,9 @@ export default function MyMarketClient() {
         <div>
           <strong className="plan-name">{(market?.plan ?? 'free') === 'free' ? 'Neighbor (free)' : `${market?.plan} plan`}</strong>
           <span className="plan-usage">
-            {activeCount}/{market?.plan === 'farm' || market?.plan === 'sponsor' ? 500 : market?.plan === 'grower' ? 100 : 10} listings
+            {market?.plan === 'farm' || market?.plan === 'sponsor'
+              ? `${activeCount} listings · unlimited`
+              : `${activeCount}/${market?.plan === 'grower' ? 50 : 5} listings`}
             {' · '}{credits} boost credit{credits === 1 ? '' : 's'} left this month
           </span>
         </div>
@@ -507,10 +511,10 @@ export default function MyMarketClient() {
               </div>
             </div>
             <div className="mm-actions" style={{ flexWrap: 'wrap', gap: 8 }}>
-              <button className="btn btn-primary btn-sm" onClick={() => { setSaleOpen(!saleOpen); setExpenseOpen(false); setCustomizeOpen(false); setPaymentsOpen(false); setPickupOpen(false); }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setSaleOpen(!saleOpen); setExpenseOpen(false); setCustomizeOpen(false); setPaymentsOpen(false); setPickupOpen(false); setDeliveryOpen(false); }}>
                 💵 Record sale
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setExpenseOpen(!expenseOpen); setSaleOpen(false); setCustomizeOpen(false); setPaymentsOpen(false); setPickupOpen(false); }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setExpenseOpen(!expenseOpen); setSaleOpen(false); setCustomizeOpen(false); setPaymentsOpen(false); setPickupOpen(false); setDeliveryOpen(false); }}>
                 Record expense
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => setLedgerOpen(!ledgerOpen)}>
@@ -519,10 +523,13 @@ export default function MyMarketClient() {
               <button className="btn btn-secondary btn-sm" onClick={() => { setPaymentsOpen(!paymentsOpen); setPickupOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
                 💳 Payment methods
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setPickupOpen(!pickupOpen); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setPickupOpen(!pickupOpen); setDeliveryOpen(false); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
                 🕐 Pickup times
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setCustomizeOpen(!customizeOpen); setSaleOpen(false); setExpenseOpen(false); setPaymentsOpen(false); setPickupOpen(false); }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setDeliveryOpen(!deliveryOpen); setPickupOpen(false); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
+                🚚 Delivery
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setCustomizeOpen(!customizeOpen); setSaleOpen(false); setExpenseOpen(false); setPaymentsOpen(false); setPickupOpen(false); setDeliveryOpen(false); }}>
                 🎨 Customize Market
               </button>
             </div>
@@ -625,6 +632,7 @@ export default function MyMarketClient() {
 
             {paymentsOpen && <PaymentMethodsEditor marketId={market.id} />}
             {pickupOpen && <PickupAvailabilityEditor marketId={market.id} />}
+            {deliveryOpen && <DeliverySettingsEditor marketId={market.id} plan={market.plan ?? 'free'} />}
 
             {ledgerOpen && (
               <div className="preview-note" style={{ marginTop: 12 }}>

@@ -4,7 +4,16 @@ import AppLink from '../../components/AppLink';
 import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
 import { areaLabel, TYPE_LABEL } from '@/lib/format';
-import { getMarketBySlug, getMarketListings } from '@/lib/gnome';
+import { getMarketBySlug, getMarketDelivery, getMarketListings } from '@/lib/gnome';
+
+const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const fee = (c: number) => (c === 0 ? 'free' : `$${(c / 100).toFixed(2).replace(/\.00$/, '')}`);
+const clock = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return m ? `${hh}:${String(m).padStart(2, '0')} ${ampm}` : `${hh} ${ampm}`;
+};
 
 export const revalidate = 300;
 
@@ -40,7 +49,10 @@ export default async function MarketPage({ params }: Params) {
       </main>
     );
   }
-  const listings = await getMarketListings(m.id, 60);
+  const [listings, delivery] = await Promise.all([
+    getMarketListings(m.id, 60),
+    getMarketDelivery(m.id),
+  ]);
   const counts = listings.reduce<Record<string, number>>((acc, l) => {
     acc[l.listing_type] = (acc[l.listing_type] ?? 0) + 1;
     return acc;
@@ -99,6 +111,35 @@ export default async function MarketPage({ params }: Params) {
           counts[t] ? <span key={t} className={`tag type-${t}`}>{counts[t]} {TYPE_LABEL[t]}</span> : null,
         )}
       </div>
+
+      {delivery && (
+        <div className="preview-note" style={{ maxWidth: 720 }}>
+          <strong>🚚 This Market delivers</strong>
+          <p style={{ margin: '6px 0 0' }}>
+            {delivery.radius_miles != null ? `Within ${delivery.radius_miles} miles` : 'Locally'}
+            {' · '}{fee(delivery.flat_fee_cents)} delivery
+            {delivery.surcharge_after_miles != null && delivery.surcharge_fee_cents != null
+              ? ` (+${fee(delivery.surcharge_fee_cents)} beyond ${delivery.surcharge_after_miles} mi)`
+              : ''}
+          </p>
+          {(delivery.same_day || delivery.next_day || delivery.scheduled) && (
+            <p style={{ margin: '4px 0 0' }}>
+              {[
+                delivery.same_day && delivery.same_day_cutoff
+                  ? `Same-day if you order by ${clock(delivery.same_day_cutoff.slice(0, 5))}`
+                  : delivery.same_day ? 'Same-day delivery' : null,
+                delivery.next_day && delivery.next_day_cutoff
+                  ? `next-day by ${clock(delivery.next_day_cutoff.slice(0, 5))}`
+                  : delivery.next_day ? 'next-day delivery' : null,
+                delivery.scheduled && delivery.order_by_dow != null && delivery.delivery_dows.length
+                  ? `order by ${DOW[delivery.order_by_dow]} for ${delivery.delivery_dows.map((d) => DOW[d]).join(' / ')} delivery`
+                  : null,
+              ].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          {delivery.notes ? <p style={{ margin: '4px 0 0' }}>{delivery.notes}</p> : null}
+        </div>
+      )}
 
       <div className="cta-stack" style={{ flexDirection: 'row', maxWidth: 460 }}>
         <AppLink kind="market" id={m.id} label="Follow in Gnome" variant="primary" />

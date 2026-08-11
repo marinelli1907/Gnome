@@ -40,7 +40,7 @@ export default function MyMarketCard({ uid }: { uid: string }) {
   const includedBoosts = limits.data?.[plan]?.included_boost_credits ?? 0;
   const boostsLeft = credits.data ?? 0;
   const pct = cap ? Math.min(1, count / cap) : 0;
-  const near = plan === 'free' && cap != null && count >= 8;
+  const near = plan === 'free' && cap != null && count >= Math.ceil(cap * 0.8);
   const barColor = pct >= 1 ? Colors.error : pct >= 0.8 ? Colors.gold : Colors.primary;
 
   return (
