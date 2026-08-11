@@ -112,7 +112,7 @@ export default function EditMarketScreen() {
           style={styles.multiline}
         />
 
-        <Button label="Save garden" onPress={save} loading={update.isPending} />
+        <Button label="Save Market" onPress={save} loading={update.isPending} />
 
         <Text style={styles.toolsTitle}>Market tools</Text>
         <Pressable
@@ -131,6 +131,15 @@ export default function EditMarketScreen() {
           accessibilityLabel="Pickup availability"
         >
           <Text style={styles.toolLinkText}>Pickup availability</Text>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </Pressable>
+        <Pressable
+          style={[styles.toolLink, { marginTop: 10 }]}
+          onPress={() => router.push('/market/delivery-settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Delivery"
+        >
+          <Text style={styles.toolLinkText}>Delivery</Text>
           <ChevronRight size={18} color={Colors.textSecondary} />
         </Pressable>
         <Pressable

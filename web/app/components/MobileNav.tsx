@@ -154,10 +154,6 @@ export default function MobileNav({ iosUrl }: { iosUrl: string }) {
             <button type="button" className="mn-close" aria-label="Close menu" onClick={() => setOpen(false)}>
               <span aria-hidden="true">✕</span>
             </button>
-            <Link className={`mn-item${isHere('/browse') ? ' is-here' : ''}`} href="/browse">
-              Browse
-            </Link>
-
             <p className="mn-heading">Grow</p>
             {GROW.map((g) => (
               <Link key={g.href} className={`mn-item mn-sub${isHere(g.href) ? ' is-here' : ''}`} href={g.href}>

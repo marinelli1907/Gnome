@@ -34,13 +34,14 @@ import {
   useMarketPaymentMethods,
   useOrder,
   useOrderAction,
+  useOrderDeliveryDetails,
   useOrderPickupDetails,
   usePickupSlots,
   type PaymentMethodKind,
   type PickupSlot,
 } from '@/lib/marketops';
 
-const CANCELLABLE = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY'] as const;
+const CANCELLABLE = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY', 'OUT_FOR_DELIVERY'] as const;
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,7 +57,11 @@ export default function OrderDetailScreen() {
   const isSeller = !!o && !!myMarket.data && myMarket.data.id === o.market_id;
   const marketName = o?.market?.name ?? myMarket.data?.name ?? 'the market';
 
-  const pickup = useOrderPickupDetails(isBuyer ? id : undefined, o?.status);
+  const isDelivery = o?.fulfillment_type === 'delivery';
+  const pickup = useOrderPickupDetails(isBuyer && !isDelivery ? id : undefined, o?.status);
+  const delivery = useOrderDeliveryDetails(
+    (isBuyer || isSeller) ? id : undefined, o?.fulfillment_type,
+  );
   const payMethods = useMarketPaymentMethods(isSeller || isBuyer ? o?.market_id : undefined);
   const sellerSlots = usePickupSlots(isSeller ? o?.market_id : undefined);
 
@@ -113,7 +118,7 @@ export default function OrderDetailScreen() {
 
   const runAction = async (action: Parameters<typeof act.mutateAsync>[0]['action'], after?: () => void) => {
     try {
-      await act.mutateAsync({ orderId: o.id, action });
+      await act.mutateAsync({ orderId: o.id, action, fulfillment: o.fulfillment_type });
       after?.();
     } catch (e: any) {
       const msg: string = e?.message ?? '';
@@ -181,7 +186,7 @@ export default function OrderDetailScreen() {
   const openComplete = () => {
     setPayReceived(null);
     setPayMethod('cash');
-    setPayAmount((o.subtotal_cents / 100).toFixed(2));
+    setPayAmount(((o.subtotal_cents + (o.delivery_fee_cents ?? 0)) / 100).toFixed(2));
     setCompleteOpen(true);
   };
 
@@ -206,7 +211,7 @@ export default function OrderDetailScreen() {
     new Set<string>([...enabledMethods.map((m) => m.method), 'cash']),
   );
 
-  const showBuyerPickupCard = isBuyer && (o.status === 'CONFIRMED' || o.status === 'READY');
+  const showBuyerPickupCard = isBuyer && !isDelivery && (o.status === 'CONFIRMED' || o.status === 'READY');
 
   return (
     <View style={styles.screen}>
@@ -219,7 +224,7 @@ export default function OrderDetailScreen() {
         {/* Header: market + status */}
         <View style={styles.headRow}>
           <Text style={styles.marketName} numberOfLines={1}>
-            {isBuyer ? marketName : 'Pickup order'}
+            {isBuyer ? marketName : isDelivery ? 'Delivery order' : 'Pickup order'}
           </Text>
           <OrderStatusBadge status={o.status} />
         </View>
@@ -277,6 +282,36 @@ export default function OrderDetailScreen() {
           <Text style={styles.subtotalLabel}>Subtotal</Text>
           <Text style={styles.subtotalValue}>{money(o.subtotal_cents)}</Text>
         </View>
+        {isDelivery && o.delivery_fee_cents != null ? (
+          <>
+            <View style={styles.subtotalRow}>
+              <Text style={styles.subtotalLabel}>
+                Delivery{o.delivery_distance_miles != null ? ` · ${o.delivery_distance_miles} mi` : ''}
+                {o.delivery_surcharge_cents ? ` (incl. ${money(o.delivery_surcharge_cents)} distance fee)` : ''}
+              </Text>
+              <Text style={styles.subtotalValue}>{money(o.delivery_fee_cents)}</Text>
+            </View>
+            <View style={styles.subtotalRow}>
+              <Text style={[styles.subtotalLabel, { fontFamily: fonts.bold, color: Colors.text }]}>Total</Text>
+              <Text style={styles.subtotalValue}>{money(o.subtotal_cents + o.delivery_fee_cents)}</Text>
+            </View>
+          </>
+        ) : null}
+
+        {/* Delivery address: buyer always; seller once confirmed (the RPC
+            withholds it before then — city + distance only). */}
+        {isDelivery && delivery.data ? (
+          <View style={styles.noteCard}>
+            <Text style={styles.noteLabel}>Delivery address</Text>
+            <Text style={styles.noteText}>
+              {delivery.data.delivery_address
+                ?? `${delivery.data.delivery_city ?? 'Nearby'}${delivery.data.delivery_state ? ', ' + delivery.data.delivery_state : ''} — full address after you confirm`}
+            </Text>
+            {delivery.data.delivery_notes ? (
+              <Text style={[styles.noteText, { marginTop: 4 }]}>“{delivery.data.delivery_notes}”</Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Buyer note / decline reason */}
         {o.buyer_note ? (
@@ -365,11 +400,25 @@ export default function OrderDetailScreen() {
             ) : null}
             {o.status === 'CONFIRMED' ? (
               <View style={{ gap: 10 }}>
-                <Button label="Mark ready" onPress={() => void runAction({ kind: 'ready' })} loading={act.isPending} />
+                {isDelivery ? (
+                  <Button label="Out for delivery 🚚" onPress={() => void runAction({ kind: 'out_for_delivery' })} loading={act.isPending} />
+                ) : (
+                  <Button label="Mark ready" onPress={() => void runAction({ kind: 'ready' })} loading={act.isPending} />
+                )}
                 <Button label="Complete order" variant="secondary" onPress={openComplete} disabled={act.isPending} />
               </View>
             ) : null}
             {o.status === 'READY' ? (
+              isDelivery ? (
+                <View style={{ gap: 10 }}>
+                  <Button label="Out for delivery 🚚" onPress={() => void runAction({ kind: 'out_for_delivery' })} loading={act.isPending} />
+                  <Button label="Complete order" variant="secondary" onPress={openComplete} disabled={act.isPending} />
+                </View>
+              ) : (
+                <Button label="Complete order" onPress={openComplete} loading={act.isPending} />
+              )
+            ) : null}
+            {o.status === 'OUT_FOR_DELIVERY' ? (
               <Button label="Complete order" onPress={openComplete} loading={act.isPending} />
             ) : null}
           </View>

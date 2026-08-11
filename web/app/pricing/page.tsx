@@ -11,6 +11,45 @@ export const metadata: Metadata = {
 const GROWER = process.env.NEXT_PUBLIC_STRIPE_LINK_GROWER;
 const FARM = process.env.NEXT_PUBLIC_STRIPE_LINK_FARM;
 
+export const revalidate = 3600;
+
+// Plan numbers come from plan_limits — the same rows the backend enforces —
+// so this page can never drift from reality (Part 1: one source of truth).
+interface PlanRow {
+  plan: string;
+  max_active_listings: number | null;
+  max_pickup_locations: number;
+  extra_location_fee_cents: number | null;
+  price_cents: number;
+}
+
+async function fetchPlanLimits(): Promise<Record<string, PlanRow>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) return {};
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/plan_limits?select=plan,max_active_listings,max_pickup_locations,extra_location_fee_cents,price_cents`,
+      { headers: { apikey: anon, Authorization: `Bearer ${anon}` }, next: { revalidate: 3600 } },
+    );
+    if (!res.ok) return {};
+    const rows = (await res.json()) as PlanRow[];
+    return Object.fromEntries(rows.map((r) => [r.plan, r]));
+  } catch {
+    return {};
+  }
+}
+
+const listingsLine = (r?: PlanRow, fallback = '') =>
+  r ? (r.max_active_listings == null ? 'Unlimited active listings' : `${r.max_active_listings} active listings`) : fallback;
+const locationsLine = (r?: PlanRow, fallback = '') => {
+  if (!r) return fallback;
+  const base = `${r.max_pickup_locations} pickup location${r.max_pickup_locations === 1 ? '' : 's'}`;
+  return r.extra_location_fee_cents != null
+    ? `${base} — add more for $${(r.extra_location_fee_cents / 100).toFixed(0)}/mo each`
+    : base;
+};
+
 const TIERS = [
   {
     name: 'Neighbor',
@@ -18,8 +57,9 @@ const TIERS = [
     cadence: 'forever',
     blurb: 'For browsing, sharing occasionally, and posting wanted asks.',
     features: [
-      '5 active listings',
-      'Your own Market page + 1 pickup location',
+      '@LISTINGS',
+      '@LOCATIONS',
+      'Your own Market page',
       'Local delivery — up to 15 miles, one flat fee',
       'AI listing drafts — 5/day',
       'Garden planner — 10 questions/day',
@@ -34,8 +74,8 @@ const TIERS = [
     blurb: 'For serious gardeners who sell regularly — the natural next step.',
     highlight: true,
     features: [
-      '50 active listings',
-      '2 pickup locations — add more for $5/mo each',
+      '@LISTINGS',
+      '@LOCATIONS',
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — neighbors reserve, you grow',
       '1 free listing boost every month',
@@ -50,8 +90,8 @@ const TIERS = [
     cadence: '/month',
     blurb: 'For high-volume sellers, farm stands, and established producers.',
     features: [
-      'Unlimited active listings',
-      '5 pickup locations',
+      '@LISTINGS',
+      '@LOCATIONS',
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — pre-sell your whole season',
       '5 free listing boosts every month',
@@ -62,7 +102,23 @@ const TIERS = [
   },
 ];
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const limits = await fetchPlanLimits();
+  const PLAN_KEY: Record<string, string> = { Neighbor: 'free', Grower: 'grower', Farm: 'farm' };
+  const FALLBACK: Record<string, { listings: string; locations: string }> = {
+    Neighbor: { listings: '5 active listings', locations: '1 pickup location' },
+    Grower: { listings: '50 active listings', locations: '2 pickup locations — add more for $5/mo each' },
+    Farm: { listings: 'Unlimited active listings', locations: '5 pickup locations' },
+  };
+  const resolved = TIERS.map((t) => ({
+    ...t,
+    features: t.features.map((f) => {
+      const row = limits[PLAN_KEY[t.name]];
+      if (f === '@LISTINGS') return listingsLine(row, FALLBACK[t.name].listings);
+      if (f === '@LOCATIONS') return locationsLine(row, FALLBACK[t.name].locations);
+      return f;
+    }),
+  }));
   return (
     <main className="container" style={{ paddingTop: 40, paddingBottom: 64 }}>
       <section className="hero" style={{ paddingTop: 0, paddingBottom: 20 }}>
@@ -76,7 +132,7 @@ export default function PricingPage() {
       </section>
 
       <div className="tiers">
-        {TIERS.map((t) => (
+        {resolved.map((t) => (
           <div key={t.name} className={`tier${'highlight' in t && t.highlight ? ' highlight' : ''}`}>
             {'highlight' in t && t.highlight && <span className="tier-flag">Most popular</span>}
             <h2>{t.name}</h2>

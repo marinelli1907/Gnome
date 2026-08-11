@@ -65,7 +65,7 @@ export interface PickupSlot {
 
 export type MarketOrderStatus =
   | 'REQUESTED' | 'CONFIRMED' | 'TIME_PROPOSED' | 'DECLINED'
-  | 'READY' | 'COMPLETED' | 'CANCELLED';
+  | 'READY' | 'OUT_FOR_DELIVERY' | 'COMPLETED' | 'CANCELLED';
 
 export interface MarketOrderItem {
   id: string;
@@ -94,6 +94,13 @@ export interface MarketOrder {
   buyer_note: string | null;
   decline_reason: string | null;
   created_at: string;
+  /** 'pickup' | 'delivery' (0066). Address text is NOT table-readable — it
+   *  releases through order_delivery_details() after confirmation. */
+  fulfillment_type: 'pickup' | 'delivery';
+  delivery_distance_miles: number | null;
+  delivery_base_fee_cents: number | null;
+  delivery_surcharge_cents: number | null;
+  delivery_fee_cents: number | null;
   items?: MarketOrderItem[];
   market?: { name: string } | null;
   buyer?: { name: string } | null;
@@ -371,7 +378,14 @@ export function usePickupSlots(marketId?: string, days = 10) {
 
 // ---------------------------------------------------------------------------
 // Orders
-const ORDER_SELECT = '*, items:market_order_items(*), market:markets(name)';
+// Only the granted columns — the delivery-address snapshot is withheld at the
+// grant level (0066) and would 42501 a select('*').
+const ORDER_COLS =
+  'id,market_id,buyer_id,status,requested_start,requested_end,confirmed_start,confirmed_end,' +
+  'proposed_start,proposed_end,timezone,subtotal_cents,buyer_note,decline_reason,created_at,' +
+  'pickup_location_id,pickup_location_name,pickup_location_type,' +
+  'fulfillment_type,delivery_distance_miles,delivery_base_fee_cents,delivery_surcharge_cents,delivery_fee_cents';
+const ORDER_SELECT = ORDER_COLS + ', items:market_order_items(*), market:markets(name)';
 
 export function useMyOrders(uid?: string) {
   return useQuery({
@@ -385,7 +399,7 @@ export function useMyOrders(uid?: string) {
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      return (data ?? []) as MarketOrder[];
+      return (data ?? []) as unknown as MarketOrder[];
     },
   });
 }
@@ -398,12 +412,12 @@ export function useMarketOrders(marketId?: string) {
     queryFn: async (): Promise<MarketOrder[]> => {
       const { data, error } = await supabase
         .from('market_orders')
-        .select('*, items:market_order_items(*), buyer:profiles!market_orders_buyer_id_fkey(name)')
+        .select(ORDER_COLS + ', items:market_order_items(*), buyer:profiles!market_orders_buyer_id_fkey(name)')
         .eq('market_id', marketId as string)
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
-      return (data ?? []) as MarketOrder[];
+      return (data ?? []) as unknown as MarketOrder[];
     },
   });
 }
@@ -437,8 +451,11 @@ export function useCreateOrder(uid?: string) {
     mutationFn: async (input: {
       marketId: string;
       lines: CartLine[];
-      slot: PickupSlot;
+      slot: { slot_start: string; slot_end: string };
       note?: string | null;
+      fulfillment?: 'pickup' | 'delivery';
+      locationId?: string | null;
+      addressId?: string | null;
     }): Promise<string> => {
       if (!uid) throw new Error('Sign in to order.');
       const { data, error } = await supabase.rpc('create_market_order', {
@@ -447,15 +464,25 @@ export function useCreateOrder(uid?: string) {
         p_start: input.slot.slot_start,
         p_end: input.slot.slot_end,
         p_note: input.note ?? null,
+        p_location: input.locationId ?? null,
+        p_fulfillment: input.fulfillment ?? 'pickup',
+        p_address: input.addressId ?? null,
       });
       if (error) throw error;
       return data as string;
     },
     onSuccess: (orderId, input) => {
       void logEvent('market_order_requested', {
-        userId: uid, metadata: { market_id: input.marketId, items: input.lines.length },
+        userId: uid,
+        metadata: {
+          market_id: input.marketId, items: input.lines.length,
+          fulfillment: input.fulfillment ?? 'pickup',
+        },
       });
-      void notifyOrderEvent('pickup_request', orderId);
+      void notifyOrderEvent(
+        (input.fulfillment ?? 'pickup') === 'delivery' ? 'delivery_order_requested' : 'pickup_request',
+        orderId,
+      );
       invalidateOrders(qc);
     },
   });
@@ -468,12 +495,15 @@ export type OrderAction =
   | { kind: 'decline'; reason: string }
   | { kind: 'cancel'; reason?: string }
   | { kind: 'ready' }
+  | { kind: 'out_for_delivery' }
   | { kind: 'complete'; recordPayment: boolean; method?: string; amountCents?: number };
 
 export function useOrderAction(uid?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { orderId: string; action: OrderAction }): Promise<string | null> => {
+    mutationFn: async (input: {
+      orderId: string; action: OrderAction; fulfillment?: 'pickup' | 'delivery';
+    }): Promise<string | null> => {
       const { orderId, action } = input;
       let rpc: string; let args: Record<string, unknown>;
       switch (action.kind) {
@@ -483,6 +513,7 @@ export function useOrderAction(uid?: string) {
         case 'decline': rpc = 'decline_market_order'; args = { p_order: orderId, p_reason: action.reason }; break;
         case 'cancel': rpc = 'cancel_market_order'; args = { p_order: orderId, p_reason: action.reason ?? null }; break;
         case 'ready': rpc = 'mark_order_ready'; args = { p_order: orderId }; break;
+        case 'out_for_delivery': rpc = 'mark_out_for_delivery'; args = { p_order: orderId }; break;
         case 'complete': rpc = 'complete_market_order'; args = { p_order: orderId, p_record_payment: action.recordPayment, p_method: action.method ?? 'cash', p_amount_cents: action.amountCents ?? null }; break;
       }
       const { data, error } = await supabase.rpc(rpc, args);
@@ -490,19 +521,54 @@ export function useOrderAction(uid?: string) {
       return (data as string) ?? null;
     },
     onSuccess: (_d, input) => {
+      const delivery = input.fulfillment === 'delivery';
       const evt: Record<OrderAction['kind'], string | null> = {
-        confirm: 'pickup_confirmed',
+        confirm: delivery ? 'delivery_confirmed' : 'pickup_confirmed',
         propose: 'pickup_time_proposed',
-        respond: input.action.kind === 'respond' && (input.action as any).accept ? 'pickup_confirmed' : 'pickup_request',
-        decline: 'pickup_cancelled',
-        cancel: 'pickup_cancelled',
+        respond: input.action.kind === 'respond' && (input.action as any).accept
+          ? (delivery ? 'delivery_confirmed' : 'pickup_confirmed')
+          : (delivery ? 'delivery_order_requested' : 'pickup_request'),
+        decline: delivery ? 'delivery_cancelled' : 'pickup_cancelled',
+        cancel: delivery ? 'delivery_cancelled' : 'pickup_cancelled',
         ready: 'pickup_ready',
-        complete: null,
+        out_for_delivery: 'delivery_out_for_delivery',
+        complete: delivery ? 'delivery_completed' : null,
       };
       const e = evt[input.action.kind];
       if (e) void notifyOrderEvent(e, input.orderId);
       void logEvent(`market_order_${input.action.kind}`, { userId: uid, metadata: { order_id: input.orderId } });
       invalidateOrders(qc);
+    },
+  });
+}
+
+/** Delivery order details: address released to the seller post-confirmation
+ *  (the buyer always sees their own). Fee breakdown + true total included. */
+export interface OrderDeliveryDetails {
+  order_id: string;
+  fulfillment_type: 'pickup' | 'delivery';
+  delivery_address: string | null;
+  delivery_city: string | null;
+  delivery_state: string | null;
+  delivery_postal_code: string | null;
+  delivery_notes: string | null;
+  delivery_distance_miles: number | null;
+  delivery_base_fee_cents: number | null;
+  delivery_surcharge_cents: number | null;
+  delivery_fee_cents: number | null;
+  subtotal_cents: number;
+  total_cents: number;
+}
+
+export function useOrderDeliveryDetails(orderId?: string, fulfillment?: string) {
+  return useQuery({
+    queryKey: ['orderDelivery', orderId],
+    enabled: isSupabaseConfigured && !!orderId && fulfillment === 'delivery',
+    queryFn: async (): Promise<OrderDeliveryDetails | null> => {
+      const { data, error } = await supabase.rpc('order_delivery_details', { p_order: orderId });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as OrderDeliveryDetails | null;
     },
   });
 }

@@ -12,6 +12,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { usePickupSettings } from '@/lib/marketops';
+import { useDeliverySettings } from '@/lib/delivery';
 import { marketShareUrl } from '@/lib/links';
 
 /**
@@ -48,6 +49,7 @@ export default function MarketScreen() {
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
   const pickupSettings = usePickupSettings(id);
+  const deliverySettings = useDeliverySettings(id);
 
   useEffect(() => {
     if (market.data) {
@@ -85,7 +87,9 @@ export default function MarketScreen() {
   const isOwner = userId === m.owner_id;
   const items = listings.data ?? [];
   const hasSaleItems = items.some((l) => l.listing_type === 'sale' && l.price_cents != null);
-  const canOrderPickup = !!userId && !isOwner && !!pickupSettings.data && hasSaleItems;
+  const canOrderPickup =
+    !!userId && !isOwner && hasSaleItems &&
+    (!!pickupSettings.data || !!deliverySettings.data?.enabled);
 
   const shareUrl = marketShareUrl(m);
   const onShare = () => {
@@ -169,7 +173,7 @@ export default function MarketScreen() {
       )}
       {canOrderPickup && (
         <Button
-          label="🧺 Order for pickup"
+          label={deliverySettings.data?.enabled ? "🧺 Order — pickup or delivery" : "🧺 Order for pickup"}
           onPress={() => router.push(`/market/order/${m.id}`)}
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
         />

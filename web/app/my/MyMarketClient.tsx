@@ -135,6 +135,21 @@ export default function MyMarketClient() {
   const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [pickupOpen, setPickupOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
+  // Resolved plan entitlements — the backend's single source (0064). No more
+  // hardcoded caps in this file.
+  const [ent, setEnt] = useState<{
+    plan: string; subscription_status: string | null;
+    max_active_listings: number | null; active_listings: number;
+    max_pickup_locations: number; extra_location_fee_cents: number | null;
+    extra_pickup_locations: number; effective_pickup_locations: number;
+  } | null>(null);
+  useEffect(() => {
+    const sb = supabaseBrowser();
+    void sb.rpc('my_plan_entitlements').then(({ data }) => {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) setEnt(row);
+    });
+  }, []);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -456,9 +471,17 @@ export default function MyMarketClient() {
         <div>
           <strong className="plan-name">{(market?.plan ?? 'free') === 'free' ? 'Neighbor (free)' : `${market?.plan} plan`}</strong>
           <span className="plan-usage">
-            {market?.plan === 'farm' || market?.plan === 'sponsor'
-              ? `${activeCount} listings · unlimited`
-              : `${activeCount}/${market?.plan === 'grower' ? 50 : 5} listings`}
+            {ent
+              ? ent.max_active_listings == null
+                ? `${activeCount} listings · unlimited`
+                : `${activeCount}/${ent.max_active_listings} listings`
+              : `${activeCount} listings`}
+            {ent ? (
+              <> · {ent.max_pickup_locations} pickup location{ent.max_pickup_locations === 1 ? '' : 's'} included
+              {ent.extra_pickup_locations > 0 ? ` +${ent.extra_pickup_locations} add-on` : ''}
+              {` · ${ent.effective_pickup_locations} allowed`}
+              {ent.extra_location_fee_cents != null ? ` · extras $${(ent.extra_location_fee_cents / 100).toFixed(0)}/mo each` : ''}</>
+            ) : null}
             {' · '}{credits} boost credit{credits === 1 ? '' : 's'} left this month
           </span>
         </div>

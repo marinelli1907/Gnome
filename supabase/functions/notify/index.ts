@@ -198,6 +198,12 @@ const ORDER_EVENTS: Record<string, { sender: 'buyer' | 'seller' | 'either'; titl
   pickup_ready:         { sender: 'seller', title: 'Order ready 🧺', body: (o) => `Your order is packed and ready for ${fmtWindow(o)}.` },
   buyer_on_the_way:     { sender: 'buyer',  title: 'On the way 🚗', body: (o, n) => `${n} is on the way for the ${fmtWindow(o)} pickup.` },
   buyer_arrived:        { sender: 'buyer',  title: 'Arrived 👋', body: (o, n) => `${n} has arrived for pickup.` },
+  // Delivery lifecycle (0066) — same order rows, fulfillment-aware copy.
+  delivery_order_requested: { sender: 'buyer',  title: 'New delivery order 🚚', body: (o, n) => `${n} requested delivery ${fmtWindow(o)} — ${o.item_count} item${o.item_count === 1 ? '' : 's'}, $${((o.subtotal_cents + (o.delivery_fee_cents ?? 0)) / 100).toFixed(2)}.` },
+  delivery_confirmed:       { sender: 'either', title: 'Delivery confirmed ✅', body: (o) => `Your delivery is set for ${fmtWindow(o)}.` },
+  delivery_out_for_delivery:{ sender: 'seller', title: 'Out for delivery 🚚', body: () => `Your Gnome order is out for delivery.` },
+  delivery_completed:       { sender: 'either', title: 'Delivered 🎉', body: () => `Your Gnome order was delivered. Enjoy!` },
+  delivery_cancelled:       { sender: 'either', title: 'Delivery cancelled', body: () => `A delivery order was cancelled. Details in Gnome.` },
 };
 
 function fmtWindow(o: any, proposed = false): string {
@@ -217,7 +223,7 @@ async function handleOrderEvent(admin: any, req: Request, event: string, orderId
 
   const { data: order, error } = await admin
     .from('market_orders')
-    .select('id, buyer_id, market_id, status, requested_start, confirmed_start, proposed_start, timezone, subtotal_cents, market:markets(owner_id, name)')
+    .select('id, buyer_id, market_id, status, requested_start, confirmed_start, proposed_start, timezone, subtotal_cents, delivery_fee_cents, fulfillment_type, market:markets(owner_id, name)')
     .eq('id', orderId)
     .single();
   if (error || !order) return json({ error: 'order not found' }, 404);

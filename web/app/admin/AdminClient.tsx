@@ -185,7 +185,11 @@ export default function AdminClient() {
 
   async function setSuspended(p: AdminProfile, suspended: boolean) {
     setBusy(true); setError(null);
-    const { error } = await supabaseBrowser().from('profiles').update({ suspended }).eq('id', p.id);
+    // 0064 locked profiles.suspended behind an is_admin() definer RPC — a
+    // direct PATCH now 403s (and previously let users un-suspend themselves).
+    const { error } = await supabaseBrowser().rpc('admin_set_suspended', {
+      p_user: p.id, p_suspended: suspended,
+    });
     if (error) setError(error.message);
     else { await audit(suspended ? 'user_suspended' : 'user_restored', 'user', p.id); await searchUsers(); }
     setBusy(false);

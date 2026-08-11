@@ -13,11 +13,14 @@
 //   STRIPE_PRICE_GROWER    price_...   (Grower monthly price id)
 //   STRIPE_PRICE_FARM      price_...   (Farm monthly price id)
 //   STRIPE_PRICE_BOOST     price_...   (one-off 7-day boost price id, optional)
+//   STRIPE_PRICE_LOCATION_ADDON  price_... (extra pickup location, per-unit monthly)
+//   STRIPE_PRICE_SEED_SUB        price_... (Seed Drop subscription price id)
 //
 // Deploy with verify_jwt OFF — Stripe authenticates via the signature header.
 // Webhook endpoint URL: https://<ref>.supabase.co/functions/v1/stripe-webhook
 // Events to send: checkout.session.completed, customer.subscription.updated,
-//                 customer.subscription.deleted
+//                 customer.subscription.deleted, invoice.paid,
+//                 invoice.payment_failed
 
 import Stripe from 'npm:stripe';
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -65,6 +68,23 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+
+  // Replay idempotency: insert-first on the event id — a redelivered event is
+  // acknowledged without touching entitlements again (0068.stripe_events).
+  {
+    const { error: dupErr } = await admin
+      .from('stripe_events')
+      .insert({ id: event.id, type: event.type });
+    if (dupErr) {
+      if (dupErr.code === '23505') {
+        console.log(`replay of ${event.id} (${event.type}) — skipped`);
+        return new Response(JSON.stringify({ received: true, replay: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      console.error('stripe_events insert:', dupErr);
+    }
+  }
 
   const planForPrice = (priceId: string | null | undefined): 'grower' | 'farm' | null => {
     if (!priceId) return null;
@@ -137,19 +157,51 @@ Deno.serve(async (req: Request) => {
         }
 
         if (session.mode === 'subscription' && ref) {
-          const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
-          const plan = planForPrice(items.data[0]?.price?.id);
-          if (!plan) { console.error('unknown price on session', session.id); break; }
-          await admin.from('markets').update({ plan }).eq('id', ref);
-          await admin.from('market_subscriptions').insert({
-            market_id: ref,
-            plan,
-            provider: 'stripe',
-            customer_id: String(session.customer ?? ''),
-            subscription_id: String(session.subscription ?? ''),
-            status: 'active',
-          });
-          console.log(`market ${ref} upgraded to ${plan}`);
+          const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 10 });
+          const addonPrice = Deno.env.get('STRIPE_PRICE_LOCATION_ADDON');
+          const seedSubPrice = Deno.env.get('STRIPE_PRICE_SEED_SUB');
+
+          // Seed Drop subscription checkout: ref = seedsub_<subscription row id>
+          if (ref.startsWith('seedsub_') && seedSubPrice
+              && items.data.some((i) => i.price?.id === seedSubPrice)) {
+            const subRowId = ref.slice('seedsub_'.length);
+            await admin.from('seed_drop_subscriptions').update({
+              status: 'active',
+              next_order_date: new Date().toISOString().slice(0, 10),
+              stripe_customer_id: String(session.customer ?? ''),
+              stripe_subscription_id: String(session.subscription ?? ''),
+            }).eq('id', subRowId);
+            console.log(`seed drop subscription ${subRowId} activated`);
+            break;
+          }
+
+          const plan = planForPrice(
+            items.data.find((i) => planForPrice(i.price?.id))?.price?.id,
+          );
+          // Extra pickup locations ride the same subscription as quantity on
+          // the add-on price. Entitlement = webhook-verified quantity only.
+          const addonQty = addonPrice
+            ? items.data.find((i) => i.price?.id === addonPrice)?.quantity ?? 0
+            : 0;
+          if (!plan && !addonQty) { console.error('unknown price on session', session.id); break; }
+
+          const patch: Record<string, unknown> = {};
+          if (plan) patch.plan = plan;
+          if (addonQty) patch.extra_pickup_locations = addonQty;
+          await admin.from('markets').update(patch).eq('id', ref);
+          if (plan) {
+            await admin.from('market_subscriptions').insert({
+              market_id: ref,
+              plan,
+              provider: 'stripe',
+              customer_id: String(session.customer ?? ''),
+              subscription_id: String(session.subscription ?? ''),
+              status: 'active',
+            });
+          }
+          // Keep restricted/active location flags consistent with the new cap.
+          await admin.rpc('reconcile_pickup_locations', { p_market: ref });
+          console.log(`market ${ref}: plan=${plan ?? 'unchanged'} addons=${addonQty}`);
         }
         break;
       }
@@ -158,6 +210,26 @@ Deno.serve(async (req: Request) => {
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
         const active = sub.status === 'active' || sub.status === 'trialing';
+
+        // Seed Drop subscription lifecycle mirrors Stripe state.
+        const { data: seedRow } = await admin
+          .from('seed_drop_subscriptions')
+          .select('id,status')
+          .eq('stripe_subscription_id', sub.id)
+          .maybeSingle();
+        if (seedRow) {
+          const next =
+            event.type === 'customer.subscription.deleted' ? 'cancelled'
+            : active ? 'active'
+            : sub.status === 'past_due' || sub.status === 'unpaid' ? 'payment_failed'
+            : sub.status === 'paused' ? 'paused'
+            : 'incomplete';
+          await admin.from('seed_drop_subscriptions')
+            .update({ status: next }).eq('id', seedRow.id);
+          console.log(`seed sub ${seedRow.id} → ${next} (${sub.status})`);
+          break;
+        }
+
         const { data: row } = await admin
           .from('market_subscriptions')
           .select('market_id,plan')
@@ -174,11 +246,58 @@ Deno.serve(async (req: Request) => {
             current_period_end: new Date(sub.items.data[0]?.current_period_end * 1000).toISOString(),
           })
           .eq('subscription_id', sub.id);
+        const addonPrice2 = Deno.env.get('STRIPE_PRICE_LOCATION_ADDON');
+        const addonQty2 = active && addonPrice2
+          ? sub.items.data.find((i) => i.price?.id === addonPrice2)?.quantity ?? 0
+          : 0;
         await admin
           .from('markets')
-          .update({ plan: active ? row.plan : 'free' })
+          .update({
+            plan: active ? row.plan : 'free',
+            extra_pickup_locations: addonQty2,
+          })
           .eq('id', row.market_id);
-        console.log(`market ${row.market_id} → ${active ? row.plan : 'free'} (${sub.status})`);
+        // Non-destructive: over-cap locations flip to plan_restricted, never deleted.
+        await admin.rpc('reconcile_pickup_locations', { p_market: row.market_id });
+        console.log(`market ${row.market_id} → ${active ? row.plan : 'free'} addons=${addonQty2} (${sub.status})`);
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as unknown as { subscription?: string | { id: string } };
+        const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+        if (!subId) break;
+        const { data: seedRow } = await admin
+          .from('seed_drop_subscriptions')
+          .select('id').eq('stripe_subscription_id', subId).maybeSingle();
+        if (seedRow) {
+          await admin.from('seed_drop_subscriptions')
+            .update({ status: 'payment_failed' }).eq('id', seedRow.id);
+          console.log(`seed sub ${seedRow.id} → payment_failed`);
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        // A paid Seed Drop subscription invoice generates the next box through
+        // the deterministic engine (reserves real packet inventory).
+        const invoice = event.data.object as unknown as { subscription?: string | { id: string } };
+        const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+        if (!subId) break;
+        const { data: seedRow } = await admin
+          .from('seed_drop_subscriptions')
+          .select('id,status,next_order_date')
+          .eq('stripe_subscription_id', subId).maybeSingle();
+        if (seedRow && seedRow.status !== 'cancelled') {
+          if (seedRow.status !== 'active') {
+            await admin.from('seed_drop_subscriptions')
+              .update({ status: 'active' }).eq('id', seedRow.id);
+          }
+          const { data: orderId, error: genErr } = await admin
+            .rpc('generate_seed_subscription_order', { p_sub: seedRow.id, p_paid: true });
+          if (genErr) console.error('generate_seed_subscription_order:', genErr);
+          else console.log(`seed sub ${seedRow.id}: order ${orderId} generated`);
+        }
         break;
       }
 

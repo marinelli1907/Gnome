@@ -154,6 +154,10 @@ export default function RootLayout() {
                 options={{ title: 'Payment methods', ...headerStyle }}
               />
               <Stack.Screen
+                name="market/delivery-settings"
+                options={{ title: 'Delivery', ...headerStyle }}
+              />
+              <Stack.Screen
                 name="growlog/[claimId]"
                 options={{ title: 'Grow Log', ...headerStyle }}
               />

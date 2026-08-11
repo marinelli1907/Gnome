@@ -11,6 +11,7 @@ export const STATUS_META: Record<MarketOrderStatus, { label: string; color: stri
   TIME_PROPOSED: { label: 'New time suggested', color: Colors.warning },
   CONFIRMED: { label: 'Confirmed', color: Colors.primary },
   READY: { label: 'Ready for pickup', color: Colors.success },
+  OUT_FOR_DELIVERY: { label: 'Out for delivery', color: Colors.success },
   COMPLETED: { label: 'Completed', color: Colors.textTertiary },
   DECLINED: { label: 'Declined', color: Colors.error },
   CANCELLED: { label: 'Cancelled', color: Colors.textTertiary },

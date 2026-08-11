@@ -72,7 +72,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav className="nav-cta">
               <span className="nav-links">
-                <Link href="/browse">Browse</Link>
                 <span className="nav-grow">
                   <button type="button" aria-haspopup="true" aria-label="Grow menu: Garden Planner, Seed Drop, Reserve a Plot">Grow ▾</button>
                   <span className="nav-grow-menu" role="menu">

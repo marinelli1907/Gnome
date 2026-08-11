@@ -22,7 +22,7 @@ import { useMyMarket } from '@/lib/db';
 import { money, useMarketOrders, type MarketOrder } from '@/lib/marketops';
 
 type Tab = 'today' | 'upcoming' | 'all';
-const OPEN = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY'];
+const OPEN = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY', 'OUT_FOR_DELIVERY'];
 
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -50,6 +50,12 @@ function PickupRow({ o, onPress }: { o: MarketOrder; onPress: () => void }) {
         </Text>
         <View style={styles.rowBadges}>
           <OrderStatusBadge status={o.status} />
+          {o.fulfillment_type === 'delivery' ? (
+            <Badge
+              label={o.delivery_distance_miles != null ? `Delivery · ${o.delivery_distance_miles} mi` : 'Delivery'}
+              color={Colors.info}
+            />
+          ) : null}
           {needsResponse ? <Badge label="Needs response" color={Colors.accent} /> : null}
         </View>
       </View>
