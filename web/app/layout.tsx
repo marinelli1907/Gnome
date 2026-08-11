@@ -94,6 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/my">My Market</Link>
                 <AuthNavLink />
               </span>
+              <Link className="btn btn-secondary btn-sm" href="/browse">Buy</Link>
               <Link className="btn btn-primary btn-sm" href="/sell">Sell</Link>
               <a className="btn btn-secondary btn-sm nav-app-cta" href={IOS}>Get the app</a>
               {/* Below 900px the links above are hidden — this is how you reach them. */}
