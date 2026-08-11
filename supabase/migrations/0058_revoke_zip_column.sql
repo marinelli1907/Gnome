@@ -1,0 +1,10 @@
+-- 0058/0059: make profiles.zip_code private for real (applied live).
+--
+-- 0058 revoked the COLUMN grant and did nothing: profiles carries a
+-- TABLE-level SELECT grant which covers every column. Verified live — a
+-- cross-user ZIP read still returned 200 afterwards. 0059 does it properly:
+--   revoke select on public.profiles from anon, authenticated;
+--   grant select (<every column except zip_code>) ... to anon, authenticated;
+-- Owner reads keep working through my_profile() (SECURITY DEFINER, pinned to
+-- auth.uid()); UPDATE is untouched so the profile editor still saves a ZIP.
+-- This was gated on the web deploy that moved LoginClient onto my_profile().
