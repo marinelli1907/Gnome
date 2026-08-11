@@ -4,7 +4,7 @@ import HomeLocate from './components/HomeLocate';
 import ListingCard from './components/ListingCard';
 import MarketCard from './components/MarketCard';
 import { CATEGORIES } from '@/lib/categories';
-import { getActiveListings, getFeaturedListings, getFeaturedMarkets } from '@/lib/gnome';
+import { getActiveListings, getFeaturedListings, getFeaturedMarkets, getTaxonomyRoots } from '@/lib/gnome';
 
 export const revalidate = 120;
 
@@ -16,7 +16,7 @@ const AREAS = [
 ];
 
 const STEPS = [
-  { n: '🍅', t: 'Find what’s growing nearby', d: 'Browse fresh produce, eggs, honey, plants and garden goods from neighbors and small growers around you.' },
+  { n: '🍅', t: 'Find what’s fresh nearby', d: 'Browse produce, eggs, honey, plants and handmade goods from neighbors and small growers around you.' },
   { n: '🌱', t: 'Grow your own, with help', d: 'The AI Garden Planner knows your zone and the calendar; the Seed Drop sends the right seeds. No land? Reserve a plot in a neighbor’s garden.' },
   { n: '🤝', t: 'Share or sell the extra', d: 'Claim a free share, offer a trade, or request to buy — pickup is arranged neighbor to neighbor, no fees between you.' },
   { n: '🏡', t: 'Build your neighborhood market', d: 'Every grower gets a storefront with real trust stats. Repeat buyers, plot reservations, a stronger local food network.' },
@@ -31,10 +31,11 @@ const HERO_CARDS = [
 ];
 
 export default async function HomePage() {
-  const [featured, recent, markets] = await Promise.all([
+  const [featured, recent, markets, roots] = await Promise.all([
     getFeaturedListings(8),
     getActiveListings({ limit: 8 }),
     getFeaturedMarkets(6),
+    getTaxonomyRoots(),
   ]);
 
   return (
@@ -81,8 +82,8 @@ export default async function HomePage() {
         <div className="pillars">
           <Link href="/browse" className="pillar">
             <span className="pillar-emoji">🧺</span>
-            <h3>See what’s growing near you</h3>
-            <p>Produce, plants, eggs, and garden goods from people nearby — free shares, trades, sales, and wanted posts.</p>
+            <h3>See what’s fresh near you</h3>
+            <p>Produce, eggs, honey, baked goods, and handmade goods from people nearby — free shares, trades, sales, and wanted posts.</p>
             <span className="pillar-cta">Browse nearby →</span>
           </Link>
           <Link href="/garden" className="pillar">
@@ -116,19 +117,29 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* ------------------------------------------- categories */}
+      {/* ------------------------------------------- categories
+          Same 16 backend taxonomy roots as the app and the Buy page; each tile
+          opens Browse with that category already selected. Flat legacy list
+          only if the taxonomy fetch comes back empty. */}
       <section className="container section">
         <Vine className="vine" />
         <div className="section-head">
-          <h2>What’s growing near you</h2>
+          <h2>Grown, raised &amp; made near you</h2>
         </div>
         <div className="cat-grid">
-          {CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
-            <Link key={c.id} className="cat-tile" href={`/category/${c.id}`}>
-              <span className="cat-emoji">{c.emoji}</span>
-              <span className="cat-label">{c.label}</span>
-            </Link>
-          ))}
+          {roots.length > 0
+            ? roots.map((r) => (
+                <Link key={r.slug} className="cat-tile" href={`/browse?cat=${r.slug}`}>
+                  <span className="cat-emoji">{r.icon ?? '🧺'}</span>
+                  <span className="cat-label">{r.name}</span>
+                </Link>
+              ))
+            : CATEGORIES.filter((c) => c.id !== 'other').map((c) => (
+                <Link key={c.id} className="cat-tile" href={`/category/${c.id}`}>
+                  <span className="cat-emoji">{c.emoji}</span>
+                  <span className="cat-label">{c.label}</span>
+                </Link>
+              ))}
         </div>
       </section>
 
@@ -136,7 +147,7 @@ export default async function HomePage() {
       {recent.length > 0 && (
         <section className="container section">
           <div className="section-head">
-            <h2>Growing near you today</h2>
+            <h2>Fresh near you today</h2>
             <Link href="/browse">View everything nearby →</Link>
           </div>
           <div className="grid">{recent.map((l) => <ListingCard key={l.id} listing={l} />)}</div>
@@ -269,7 +280,7 @@ export default async function HomePage() {
       {/* ------------------------------------------- areas + final CTA */}
       <section className="container section">
         <Vine className="vine" />
-        <div className="section-head"><h2>Now growing near you</h2></div>
+        <div className="section-head"><h2>Gnome is growing in…</h2></div>
         <div className="chips">
           {AREAS.map((a) => <Link key={a.slug} className="chip" href={`/near/${a.slug}`}>📍 {a.label}</Link>)}
         </div>

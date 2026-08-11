@@ -35,6 +35,7 @@ export interface WebListing {
   featured_until: string | null;
   has_active_promotion: boolean | null;
   is_demo?: boolean | null;
+  inventory_count?: number | null;
   market_position?: number | null;
   market_featured?: boolean | null;
   approx_lat?: number | null;
@@ -71,7 +72,7 @@ export interface WebMarket {
 }
 
 const LISTING_COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured,inventory_count';
 
 async function rest<T>(view: string, params: Record<string, string>, revalidate: number): Promise<T[]> {
   if (!SUPABASE_URL || !ANON) return [];
@@ -161,6 +162,24 @@ export async function getMarketBySlug(slug: string): Promise<WebMarket | null> {
     limit: '1',
   }, 300);
   return rows[0] ?? null;
+}
+
+// --- Taxonomy roots (server-side) -----------------------------------------
+// The same 16 backend roots the app and the Buy page render — the homepage
+// category grid must never drift from them.
+export interface TaxonomyRoot {
+  slug: string;
+  name: string;
+  icon: string | null;
+}
+
+export async function getTaxonomyRoots(): Promise<TaxonomyRoot[]> {
+  return rest<TaxonomyRoot>('marketplace_taxonomy_nodes', {
+    select: 'slug,name,icon',
+    depth: 'eq.0',
+    active: 'eq.true',
+    order: 'display_order',
+  }, 3600);
 }
 
 // --- Delivery -------------------------------------------------------------

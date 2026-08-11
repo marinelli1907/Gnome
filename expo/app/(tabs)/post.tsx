@@ -389,10 +389,10 @@ export default function PostScreen() {
           placeholder={isWanted ? 'Fresh basil' : 'Cherry tomatoes'}
         />
         <Field
-          label={isWanted ? 'How much do you need? (optional)' : 'Quantity (optional)'}
+          label={isWanted ? 'How much do you need? (optional)' : isPlot ? 'Plot size' : 'Quantity (optional)'}
           value={quantity}
           onChangeText={setQuantity}
-          placeholder={isWanted ? 'A handful for pesto' : 'About 2 lbs / a full basket'}
+          placeholder={isWanted ? 'A handful for pesto' : isPlot ? '4×8 ft raised bed' : 'About 2 lbs / a full basket'}
         />
 
         {/* Type-specific */}
@@ -427,9 +427,17 @@ export default function PostScreen() {
               placeholder="60"
               keyboardType="decimal-pad"
             />
+            <Field
+              label="Plots available"
+              value={inventory}
+              onChangeText={setInventory}
+              placeholder="1"
+              keyboardType="number-pad"
+            />
             <Text style={styles.hint}>
-              What a neighbor pays to reserve this plot for the season. They tell you what to grow;
-              you approve and settle payment directly.
+              What a neighbor pays to reserve one plot for the season. Offering several
+              identical plots? Set how many — the listing stays up until the last one
+              is reserved. They tell you what to grow; you approve and settle payment directly.
             </Text>
           </View>
         )}

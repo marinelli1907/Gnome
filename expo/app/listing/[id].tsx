@@ -213,7 +213,12 @@ export default function ListingDetailScreen() {
             {listing.taxonomy_node_id && taxonomy.data?.byId.get(listing.taxonomy_node_id)
               ? breadcrumb(taxonomy.data, taxonomy.data.byId.get(listing.taxonomy_node_id)!)
               : `${cat.emoji} ${cat.label}`}
-            {listing.quantity ? `  ·  ${listing.quantity}` : ''}
+            {listing.quantity
+              ? `  ·  ${listing.listing_type === 'plot' ? `Plot size: ${listing.quantity}` : listing.quantity}`
+              : ''}
+            {listing.listing_type === 'plot' && listing.inventory_count != null
+              ? `  ·  ${listing.inventory_count} plot${listing.inventory_count === 1 ? '' : 's'} available`
+              : ''}
           </Text>
 
           {verified.data === true ? (

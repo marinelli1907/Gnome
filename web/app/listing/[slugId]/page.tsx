@@ -101,7 +101,11 @@ export default async function ListingPage({ params }: Params) {
             <div className={`value ${l.listing_type === 'sale' ? 'sale' : ''}`}>{listingValue(l)}</div>
             <div className="meta-line">
               {cat.emoji} {cat.label}
-              {l.quantity ? ` · ${l.quantity}` : ''} · {where} · {fulfillment}
+              {l.quantity ? ` · ${l.listing_type === 'plot' ? `Plot size: ${l.quantity}` : l.quantity}` : ''}
+              {l.listing_type === 'plot' && l.inventory_count != null
+                ? ` · ${l.inventory_count} plot${l.inventory_count === 1 ? '' : 's'} available`
+                : ''}
+              {' · '}{where} · {fulfillment}
             </div>
             {l.description ? <p className="desc">{l.description}</p> : null}
           </div>

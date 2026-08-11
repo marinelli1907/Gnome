@@ -167,9 +167,11 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         .then(() => {});
 
       // 4) The listing itself. kind mirror + type-specific fields match the app.
-      // One listing = one reservable plot, so "3 identical plots" = 3 rows —
-      // each gets reserved (and comes off the market) independently.
-      const n = listingType === 'plot' ? Math.min(10, Math.max(1, Number(plotCount) || 1)) : 1;
+      // A plot listing carries its size (quantity text) and how many identical
+      // plots are available (inventory_count) — approvals decrement it and the
+      // listing stays live until the last plot is reserved (0072).
+      const plotsAvailable =
+        listingType === 'plot' ? Math.min(50, Math.max(1, Number(plotCount) || 1)) : null;
       const row = {
         owner_id: uid,
         market_id: market?.id ?? null,
@@ -188,10 +190,11 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         trade_for: listingType === 'trade' ? tradeFor.trim() : null,
         city: city.trim(),
         state: state.trim().toUpperCase(),
+        inventory_count: plotsAvailable,
       };
       const { data: rows, error } = await supabase
         .from('listings')
-        .insert(Array.from({ length: n }, () => ({ ...row })))
+        .insert([row])
         .select('id,slug');
       const data = rows?.[0];
       if (error) {
@@ -207,8 +210,8 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         );
       }
       if (!data) throw new Error('Posting failed — try again.');
-      logWeb('listing_published', { type: listingType, count: n });
-      setDone({ id: data.id, slug: data.slug, count: n });
+      logWeb('listing_published', { type: listingType, count: plotsAvailable ?? 1 });
+      setDone({ id: data.id, slug: data.slug, count: 1 });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Posting failed — try again.');
     } finally {
@@ -231,8 +234,8 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     const href = `/listing/${done.slug ? `${done.slug}-` : ''}${done.id}`;
     return (
       <div className="authcard">
-        <h2>🎉 {done.count > 1 ? `Your ${done.count} plots are live` : 'Your listing is live'}</h2>
-        <p className="sub">Neighbors browsing the web and the Gnome app can see {done.count > 1 ? 'them' : 'it'} right now.</p>
+        <h2>🎉 Your listing is live</h2>
+        <p className="sub">Neighbors browsing the web and the Gnome app can see it right now.</p>
         <div className="row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a className="btn btn-primary btn-sm" href={href}>View your listing</a>
           <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
@@ -298,9 +301,9 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
 
       {listingType === 'plot' && (
         <p className="authhint" style={{ margin: 0 }}>
-          🧑‍🌾 A neighbor reserves a plot and picks the crop; you grow it. Offering
-          several identical plots? Set the count below and each gets its own
-          reservable listing. Plot offers are a{' '}
+          🧑‍🌾 A neighbor reserves a plot and picks the crop; you grow it. Set the
+          plot size and how many identical plots you have — the listing stays up
+          until the last one is reserved. Plot offers are a{' '}
           <a href="/pricing">Grower &amp; Farm plan</a> feature.
         </p>
       )}
@@ -325,7 +328,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
           </select>
         </div>
         <div className="field">
-          <label>{listingType === 'plot' ? 'Plot size (optional)' : 'Quantity (optional)'}</label>
+          <label>{listingType === 'plot' ? 'Plot size — e.g. 4×8 ft' : 'Quantity (optional)'}</label>
           <input
             value={quantity}
             placeholder={listingType === 'plot' ? '4×8 raised bed, full sun' : 'About 2 lbs'}
@@ -354,7 +357,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
             <input inputMode="decimal" value={price} placeholder="40.00" onChange={(e) => setPrice(e.target.value)} />
           </div>
           <div className="field">
-            <label>Identical plots (1–10)</label>
+            <label>Plots available</label>
             <input
               inputMode="numeric"
               value={plotCount}

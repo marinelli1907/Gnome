@@ -85,6 +85,9 @@ export default function BrowseClient() {
   // one level at a time like the app's TaxonomyPicker.
   const [taxIndex, setTaxIndex] = useState<TaxonomyIndex | null>(null);
   const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
+  // Deep link: /browse?cat=<root slug> (homepage category tiles). Resolved
+  // once the taxonomy index lands.
+  const [pendingCatSlug, setPendingCatSlug] = useState<string | null>(null);
   const [drillOpen, setDrillOpen] = useState(false);
   const [drillAtId, setDrillAtId] = useState<string | null>(null); // null = roots
   const drillRef = useRef<HTMLDivElement>(null);
@@ -115,6 +118,13 @@ export default function BrowseClient() {
     return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    if (!taxIndex || !pendingCatSlug) return;
+    const root = taxIndex.roots.find((r) => r.slug === pendingCatSlug);
+    if (root) setTaxNodeId(root.id);
+    setPendingCatSlug(null);
+  }, [taxIndex, pendingCatSlug]);
+
   const taxNode: TaxonomyNode | null =
     taxIndex && taxNodeId ? taxIndex.byId.get(taxNodeId) ?? null : null;
   const drillAt: TaxonomyNode | null =
@@ -126,6 +136,8 @@ export default function BrowseClient() {
     const params = new URLSearchParams(window.location.search);
     const t = params.get('type');
     if (t && (TYPES as readonly string[]).includes(t)) setType(t);
+    const cat = params.get('cat');
+    if (cat?.trim()) setPendingCatSlug(cat.trim());
     const loc = params.get('loc');
     if (loc?.trim()) {
       void (async () => {
