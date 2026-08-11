@@ -1,9 +1,14 @@
 // Gnome — AI garden planner ("what should I plant right now, here?").
 //
-// Secret:  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...  (shared with draft-listing)
+// Provider: GEMINI FREE TIER FIRST via ./providers.ts (gemini-3.6-flash —
+// Flash-class for plant identification/diagnosis quality; multimodal for the
+// "check my plant" photo flow). Paid providers only when allow_paid_fallback.
 // verify_jwt stays ON: only signed-in users can call this (also the cost gate).
 
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import {
+  MODELS, type ModelRef, type Turn as PTurn, providerKeys, callWithFallback,
+  estCents, actualCents, RateLimitedError,
+} from './providers.ts';
 
 // --- Cost gate: real signed-in users only, capped per day. -----------------
 // verify_jwt has already validated the signature; we only read the claims.
@@ -75,14 +80,24 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: CORS });
   }
   try {
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return json({ error: 'The garden planner is not configured yet.' }, 503);
-    }
-
     const userId = userIdFrom(req);
     if (!userId) {
       return json({ error: 'Sign in to use the garden planner.' }, 401);
+    }
+
+    const cfgClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data: settings } = await cfgClient.from('ai_settings')
+      .select('reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
+    if (settings?.reads_enabled === false) {
+      return json({ error: 'The garden planner is paused right now — back soon.' }, 503);
+    }
+    const keys = providerKeys();
+    const chain: ModelRef[] = [];
+    if (keys.gemini) chain.push({ provider: 'gemini', model: MODELS.hq });
+    if (settings?.allow_paid_fallback === true && keys.openai) chain.push({ provider: 'openai', model: 'gpt-4o' });
+    if (settings?.allow_paid_fallback === true && keys.anthropic) chain.push({ provider: 'anthropic', model: 'claude-sonnet-5' });
+    if (!chain.length) {
+      return json({ error: 'The garden planner is not configured yet.' }, 503);
     }
     if (!(await underDailyCap(userId, 'planner', 10, 40))) {
       return json({ error: "You've hit today's free planner limit — Grower and Farm plans get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
@@ -114,51 +129,45 @@ Deno.serve(async (req: Request) => {
     });
 
     // Optional plant photo (the "check my plant" flow): attach it to the
-    // final user turn as a vision block. Size-capped; key stays server-side.
+    // final user turn as a vision part. Size-capped; key stays server-side.
     const hasPhoto = typeof imageBase64 === 'string'
       && imageBase64.length > 100 && imageBase64.length < 11_000_000;
-    const apiMessages: Anthropic.MessageParam[] = turns.map((t, i) => {
+    const media = typeof mediaType === 'string' && /^image\/(jpeg|png|webp)$/.test(mediaType)
+      ? mediaType : 'image/jpeg';
+    const pTurns: PTurn[] = turns.map((t, i) => {
       if (hasPhoto && i === turns.length - 1 && t.role === 'user') {
-        return {
-          role: 'user',
-          content: [
-            {
-              type: 'image' as const,
-              source: {
-                type: 'base64' as const,
-                media_type: (typeof mediaType === 'string' && /^image\/(jpeg|png|webp)$/.test(mediaType)
-                  ? mediaType : 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/webp',
-                data: imageBase64,
-              },
-            },
-            { type: 'text' as const, text: t.content },
-          ],
-        };
+        return { role: 'user', parts: [{ imageB64: imageBase64, mediaType: media }, { text: t.content }] };
       }
-      return { role: t.role, content: t.content };
+      return { role: t.role, parts: [{ text: t.content }] };
     });
 
-    const anthropic = new Anthropic({ apiKey });
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 1200,
+    const t0 = Date.now();
+    const r = await callWithFallback(chain, {
       system: `${SYSTEM_BASE}\n\nGardener's location: ${loc}\nToday's date: ${today}`
         + (hasPhoto
           ? `\n\nA PLANT PHOTO IS ATTACHED. Diagnose what you can actually see: identify the plant if possible, then the most likely issue(s) — disease, pest, nutrient deficiency, or water stress — with your confidence level, and 2-4 concrete next steps. If the photo is unclear or it could be several things, say so honestly. Never recommend a specific pesticide product or dosage; for chemical treatment say to follow the label and check with the county extension office.`
           : ''),
-      messages: apiMessages,
+      turns: pTurns,
+      maxTokens: 1200,
     });
-
-    if (response.stop_reason === 'refusal') {
-      return json({ error: "Couldn't answer that one — try rephrasing your gardening question." }, 422);
-    }
-    const text = response.content.find((b: { type: string }) => b.type === 'text');
-    if (!text || !('text' in text)) {
+    if (!r.text.trim()) {
       return json({ error: 'No plan came back — try again.' }, 502);
     }
+    await cfgClient.from('ai_usage_log').insert({
+      feature: 'planner', user_id: userId, provider: r.provider, model: r.model,
+      images: hasPhoto ? 1 : 0,
+      input_tokens: r.inTok, output_tokens: r.outTok,
+      estimated_cost_cents: estCents(r.model, r.inTok, r.outTok),
+      actual_cost_cents: actualCents(r.provider, r.model, r.inTok, r.outTok),
+      free_tier: r.provider === 'gemini',
+      duration_ms: Date.now() - t0, success: true,
+    });
 
-    return json({ reply: (text as { text: string }).text });
+    return json({ reply: r.text });
   } catch (e) {
+    if (e instanceof RateLimitedError) {
+      return json({ error: 'Gnome AI is temporarily busy. Try again shortly.' }, 503);
+    }
     console.error('garden-planner error:', e);
     // Surface the upstream cause during beta — same policy as draft-listing.
     return json({ error: 'The planner hit a snag — try again in a moment.', detail: String(e).slice(0, 300) }, 500);

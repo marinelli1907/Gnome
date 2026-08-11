@@ -6,7 +6,9 @@
 // STRICTLY to the calling user's own market/plan/listings — never anyone
 // else's rows).
 //
-// Secret:  ANTHROPIC_API_KEY (shared with draft-listing / garden-planner)
+// Provider: GEMINI FREE TIER FIRST via ./providers.ts (gemini-3.5-flash-lite
+// — the highest-volume feature rides the highest free-tier rate limit).
+// Paid providers only when ai_settings.allow_paid_fallback=true.
 // verify_jwt stays ON: signed-in users only — the cost gate. The web client
 // shows sign-in inside the chat panel for logged-out visitors.
 //
@@ -14,8 +16,11 @@
 // a listing, plan, or account. Action support is a future, separately
 // authorized surface.
 
-import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  MODELS, type ModelRef, type Turn as PTurn, providerKeys, callWithFallback,
+  estCents, actualCents, RateLimitedError,
+} from './providers.ts';
 
 function userIdFrom(req: Request): string | null {
   try {
@@ -133,11 +138,22 @@ Deno.serve(async (req: Request) => {
       status, headers: { ...CORS, 'Content-Type': 'application/json' },
     });
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!apiKey) return json(503, { error: 'The gnome is napping — AI isn’t configured yet.' });
-
   const userId = userIdFrom(req);
   if (!userId) return json(401, { error: 'Sign in to chat with Gnome.' });
+
+  // Kill switch + paid-fallback gate (server-side config, never client input).
+  const cfgClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const { data: settings } = await cfgClient.from('ai_settings')
+    .select('reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
+  if (settings?.reads_enabled === false) {
+    return json(503, { error: 'The gnome is on a short break — AI is paused right now.' });
+  }
+  const keys = providerKeys();
+  const chain: ModelRef[] = [];
+  if (keys.gemini) chain.push({ provider: 'gemini', model: MODELS.lite });
+  if (settings?.allow_paid_fallback === true && keys.openai) chain.push({ provider: 'openai', model: 'gpt-4o-mini' });
+  if (settings?.allow_paid_fallback === true && keys.anthropic) chain.push({ provider: 'anthropic', model: 'claude-haiku-4-5' });
+  if (!chain.length) return json(503, { error: 'The gnome is napping — AI isn’t configured yet.' });
 
   if (!(await underDailyCap(userId, 20, 50))) {
     return json(429, {
@@ -166,23 +182,35 @@ Deno.serve(async (req: Request) => {
   const page = typeof body.page === 'string' ? body.page.slice(0, 80) : '/';
   const ctx = await userContext(userId);
 
+  const t0 = Date.now();
   try {
-    const anthropic = new Anthropic({ apiKey });
-    const resp = await anthropic.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 500,
+    const pTurns: PTurn[] = turns.map((t) => ({ role: t.role, parts: [{ text: t.content }] }));
+    const r = await callWithFallback(chain, {
       system: `${SYSTEM}\n\nCURRENT PAGE: ${page}\nUSER CONTEXT (their own account only): ${ctx}`,
-      messages: turns,
+      turns: pTurns,
+      maxTokens: 500,
     });
-    const reply = resp.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { text: string }).text)
-      .join('\n')
-      .trim();
+    const reply = r.text.trim();
     if (!reply) throw new Error('empty completion');
+    await cfgClient.from('ai_usage_log').insert({
+      feature: 'assistant', user_id: userId, provider: r.provider, model: r.model,
+      input_tokens: r.inTok, output_tokens: r.outTok,
+      estimated_cost_cents: estCents(r.model, r.inTok, r.outTok),
+      actual_cost_cents: actualCents(r.provider, r.model, r.inTok, r.outTok),
+      free_tier: r.provider === 'gemini',
+      duration_ms: Date.now() - t0, success: true,
+    });
     return json(200, { reply });
   } catch (e) {
+    if (e instanceof RateLimitedError) {
+      return json(503, { error: 'Gnome AI is temporarily busy. Try again shortly.' });
+    }
     console.error('ask-gnome error:', e);
+    try {
+      await cfgClient.from('ai_usage_log').insert({
+        feature: 'assistant', user_id: userId, success: false, duration_ms: Date.now() - t0,
+      });
+    } catch { /* best-effort */ }
     return json(502, {
       error: 'The gnome tripped over a root — try that again in a moment.',
     });

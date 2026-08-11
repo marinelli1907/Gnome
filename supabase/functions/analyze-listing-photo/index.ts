@@ -3,8 +3,9 @@
 // POST { image_base64, media_type? } with the caller's JWT.
 // Entitlement is resolved SERVER-SIDE from market_effective_plan (paid or
 // complimentary Grower/Farm/Sponsor — never "a Stripe sub exists").
-// Provider-neutral: Anthropic first, OpenAI fallback (keys are function
-// secrets; clients never see them). The model returns STRUCTURED JSON only;
+// Provider-neutral via ./providers.ts: GEMINI FREE TIER FIRST (multimodal
+// gemini-3.6-flash); OpenAI/Anthropic only when allow_paid_fallback=true.
+// The model returns STRUCTURED JSON only; every field is validated here and
 // taxonomy candidates are matched against the real tree — the AI cannot
 // invent nodes. Every call is logged to ai_usage_log; the per-user daily cap
 // (ai_settings.listing_daily_limit) is reserved ATOMICALLY via ai_reserve_slot
@@ -12,6 +13,10 @@
 // Images are analyzed in memory and never stored. The description prompt aims
 // for a warm, neighborly voice.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import {
+  MODELS, type ModelRef, providerKeys, callWithFallback,
+  estCents, actualCents, RateLimitedError,
+} from './providers.ts';
 
 const SCHEMA_PROMPT = `You help a neighbor sell what they grew or made at a local farmers market app.
 Look at the photo and reply with ONLY a JSON object (no markdown) shaped exactly like:
@@ -67,7 +72,7 @@ Deno.serve(async (req: Request) => {
     // Emergency stop for read-side provider spend (ai_settings.reads_enabled).
     // writes_paused stays the AI-action gate; this one halts paid API calls.
     const { data: settings } = await admin.from('ai_settings')
-      .select('listing_daily_limit, reads_enabled').limit(1).maybeSingle();
+      .select('listing_daily_limit, reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
     if (settings?.reads_enabled === false) {
       return json({ error: 'AI_PAUSED', message: 'AI features are temporarily paused by the Gnome team.' }, 503);
     }
@@ -80,48 +85,36 @@ Deno.serve(async (req: Request) => {
     });
     if (!reserved) return json({ error: 'DAILY_LIMIT', message: 'Daily AI listing limit reached — try again tomorrow.' }, 429);
 
-    // Provider call (Anthropic primary, OpenAI fallback).
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')?.trim();
-    const openaiKey = Deno.env.get('OPENAI_API_KEY')?.trim();
+    // Provider call — Gemini free tier first; paid providers only when the
+    // server-side allow_paid_fallback flag is on. Clients never pick models.
+    const keys = providerKeys();
+    const allowPaid = settings?.allow_paid_fallback === true;
+    const chain: ModelRef[] = [];
+    if (keys.gemini) chain.push({ provider: 'gemini', model: MODELS.vision });
+    if (allowPaid && keys.openai) chain.push({ provider: 'openai', model: 'gpt-4o' });
+    if (allowPaid && keys.anthropic) chain.push({ provider: 'anthropic', model: 'claude-haiku-4-5' });
+    if (!chain.length) {
+      return json({ error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet — create your listing manually.' }, 503);
+    }
+    const mt = media_type || 'image/jpeg';
     let raw = '';
     let inputTokens = 0; let outputTokens = 0;
-    const mt = media_type || 'image/jpeg';
-    if (anthropicKey) {
-      provider = 'anthropic'; model = 'claude-haiku-4-5'; // matches the account's working ask-gnome key access
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model, max_tokens: 900,
-          messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: mt, data: image_base64 } },
-            { type: 'text', text: SCHEMA_PROMPT },
-          ] }],
-        }),
+    try {
+      const r = await callWithFallback(chain, {
+        system: 'You identify garden produce and homemade goods for a neighborly farmers-market app.',
+        turns: [{ role: 'user', parts: [
+          { imageB64: image_base64, mediaType: mt },
+          { text: SCHEMA_PROMPT },
+        ] }],
+        maxTokens: 900, json: true,
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(`anthropic ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
-      raw = body.content?.[0]?.text ?? '';
-      inputTokens = body.usage?.input_tokens ?? 0; outputTokens = body.usage?.output_tokens ?? 0;
-    } else if (openaiKey) {
-      provider = 'openai'; model = 'gpt-4o';
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${openaiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model, max_tokens: 900,
-          messages: [{ role: 'user', content: [
-            { type: 'image_url', image_url: { url: `data:${mt};base64,${image_base64}` } },
-            { type: 'text', text: SCHEMA_PROMPT },
-          ] }],
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(`openai ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
-      raw = body.choices?.[0]?.message?.content ?? '';
-      inputTokens = body.usage?.prompt_tokens ?? 0; outputTokens = body.usage?.completion_tokens ?? 0;
-    } else {
-      return json({ error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet — create your listing manually.' }, 503);
+      provider = r.provider; model = r.model;
+      raw = r.text; inputTokens = r.inTok; outputTokens = r.outTok;
+    } catch (e) {
+      if (e instanceof RateLimitedError) {
+        return json({ error: 'AI_BUSY', message: 'Gnome AI is temporarily busy. Try again shortly.' }, 503);
+      }
+      throw e;
     }
 
     // Validate structure — never pipe prose into the app.
@@ -173,10 +166,9 @@ Deno.serve(async (req: Request) => {
       feature: 'listing_assistant', user_id: uid, market_id: mkt.id,
       effective_plan: eff.plan, provider, model, images: 1,
       input_tokens: inputTokens, output_tokens: outputTokens,
-      // cents/token: haiku-4.5 $1/M in, $5/M out; gpt-4o $2.50/M in, $10/M out
-      estimated_cost_cents: Math.round((provider === 'openai'
-        ? inputTokens * 0.00025 + outputTokens * 0.001
-        : inputTokens * 0.0001 + outputTokens * 0.0005) * 100) / 100,
+      estimated_cost_cents: estCents(model, inputTokens, outputTokens),
+      actual_cost_cents: actualCents(provider as 'gemini' | 'openai' | 'anthropic', model, inputTokens, outputTokens),
+      free_tier: provider === 'gemini',
       duration_ms: Date.now() - t0, success: true,
     });
 

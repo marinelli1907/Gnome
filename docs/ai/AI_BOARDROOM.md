@@ -4,6 +4,18 @@ Direct chats and multi-agent rooms for the owner (and any admin holding
 `ai.chat`). Everything runs through the `boardroom` edge function — clients
 never hold provider keys.
 
+## Providers (Gemini-first, 2026-08-11)
+Each agent speaks through its OWN configured `ai_agents.provider/model` —
+Gemini free tier by default (`gemini-3.6-flash` for HQ/compliance/security/
+finance, `gemini-3.5-flash-lite` for the rest). Gemini provides language and
+reasoning ONLY; authorization stays entirely in Gnome's permission/tool layer.
+Paid providers (OpenAI/Anthropic) join an agent's chain only when
+`ai_settings.allow_paid_fallback=true` (default false). Free-tier 429s end
+the turn gracefully: the owner's message is already saved, a system line says
+"Gnome AI is temporarily busy", and the room resumes on the next message.
+In a 1:1 room the single agent (including Gnome HQ) answers directly; in
+group rooms HQ holds back and synthesizes.
+
 ## Shape
 - `ai_rooms` — title, `agent_ids[]` (≤5), status (`active/archived/budget_locked`), creator.
 - `ai_room_messages` — admin / agent / system messages, append-only via RLS.

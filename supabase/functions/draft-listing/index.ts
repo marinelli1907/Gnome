@@ -5,13 +5,17 @@
 // category, description, and (for sales) a conservative price suggestion.
 // The user always reviews and can edit everything — this drafts, never posts.
 //
-// Deploy:  supabase functions deploy draft-listing
-// Secret:  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+// Provider: GEMINI FREE TIER FIRST via ./providers.ts (gemini-3.6-flash
+// multimodal, JSON response mode + server-side validation). Paid providers
+// only when ai_settings.allow_paid_fallback=true.
 //
 // verify_jwt stays ON (default): only signed-in users can call this, which is
 // also the cost gate — anonymous traffic never reaches the model.
 
-import Anthropic from 'npm:@anthropic-ai/sdk';
+import {
+  MODELS, type ModelRef, providerKeys, callWithFallback,
+  estCents, actualCents, RateLimitedError,
+} from './providers.ts';
 
 // --- Cost gate: real signed-in users only, capped per day. -----------------
 // verify_jwt has already validated the signature; we only read the claims.
@@ -104,14 +108,24 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: CORS });
   }
   try {
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return json({ error: 'AI drafting is not configured yet.' }, 503);
-    }
-
     const userId = userIdFrom(req);
     if (!userId) {
       return json({ error: 'Sign in to use AI drafting.' }, 401);
+    }
+
+    const cfgClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data: settings } = await cfgClient.from('ai_settings')
+      .select('reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
+    if (settings?.reads_enabled === false) {
+      return json({ error: 'AI drafting is paused right now — fill the form by hand for now.' }, 503);
+    }
+    const keys = providerKeys();
+    const chain: ModelRef[] = [];
+    if (keys.gemini) chain.push({ provider: 'gemini', model: MODELS.vision });
+    if (settings?.allow_paid_fallback === true && keys.openai) chain.push({ provider: 'openai', model: 'gpt-4o' });
+    if (settings?.allow_paid_fallback === true && keys.anthropic) chain.push({ provider: 'anthropic', model: 'claude-sonnet-5' });
+    if (!chain.length) {
+      return json({ error: 'AI drafting is not configured yet.' }, 503);
     }
     if (!(await underDailyCap(userId, 'draft', 5, 25))) {
       return json({ error: "You've used today's free AI drafts. Grower and Farm plans get 25 a day — or fill the form by hand, it works great." }, 429);
@@ -127,44 +141,54 @@ Deno.serve(async (req: Request) => {
     const media = ALLOWED_MEDIA.includes(mediaType) ? mediaType : 'image/jpeg';
     const type = ['free', 'trade', 'sale', 'wanted'].includes(listingType) ? listingType : 'free';
 
-    const anthropic = new Anthropic({ apiKey });
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 1024,
-      output_config: {
-        effort: 'low', // fast draft; the user reviews everything anyway
-        format: { type: 'json_schema', schema: DRAFT_SCHEMA },
-      },
-      system: SYSTEM,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: media, data: imageBase64 } },
-            {
-              type: 'text',
-              text: `Draft a "${type}" listing for what this photo shows. Fill every field of the schema.`,
-            },
-          ],
-        },
-      ],
+    const t0 = Date.now();
+    const r = await callWithFallback(chain, {
+      system: SYSTEM + `\n\nReply with ONLY a JSON object shaped exactly like:
+{"title": "Short appealing title, max ~50 chars",
+ "category": one of ${JSON.stringify(CATEGORY_IDS)},
+ "description": "One or two friendly neighborly sentences.",
+ "suggested_price_cents": integer US cents for the natural unit, or null if unsure,
+ "suggested_unit": "dozen|lb|jar|bunch|each" or null}`,
+      turns: [{
+        role: 'user',
+        parts: [
+          { imageB64: imageBase64, mediaType: media },
+          { text: `Draft a "${type}" listing for what this photo shows. Fill every field of the schema.` },
+        ],
+      }],
+      maxTokens: 1024, json: true,
     });
-
-    if (response.stop_reason === 'refusal') {
-      return json({ error: "Couldn't analyze this photo. Try another one or fill the form yourself." }, 422);
-    }
-
-    const text = response.content.find((b: { type: string }) => b.type === 'text');
-    if (!text || !('text' in text)) {
+    if (!r.text.trim()) {
       return json({ error: 'No draft produced — try again.' }, 502);
     }
-    const draft = JSON.parse((text as { text: string }).text);
+    const parsed = JSON.parse(r.text.replace(/^```json?\s*|\s*```$/g, ''));
 
-    // Belt-and-suspenders: never return a category the app doesn't know.
-    if (!CATEGORY_IDS.includes(draft.category)) draft.category = 'other';
+    // Validate every field server-side — provider output never becomes
+    // authoritative data unchecked (schema kept in DRAFT_SCHEMA above).
+    const draft = {
+      title: typeof parsed.title === 'string' ? parsed.title.slice(0, 80) : '',
+      category: CATEGORY_IDS.includes(parsed.category) ? parsed.category : 'other',
+      description: typeof parsed.description === 'string' ? parsed.description.slice(0, 400) : '',
+      suggested_price_cents: Number.isFinite(Number(parsed.suggested_price_cents))
+        ? Math.max(0, Math.min(100000, Math.round(Number(parsed.suggested_price_cents)))) : null,
+      suggested_unit: typeof parsed.suggested_unit === 'string' ? parsed.suggested_unit.slice(0, 20) : null,
+    };
+    if (!draft.title) return json({ error: 'No draft produced — try again.' }, 502);
+
+    await cfgClient.from('ai_usage_log').insert({
+      feature: 'draft', user_id: userId, provider: r.provider, model: r.model, images: 1,
+      input_tokens: r.inTok, output_tokens: r.outTok,
+      estimated_cost_cents: estCents(r.model, r.inTok, r.outTok),
+      actual_cost_cents: actualCents(r.provider, r.model, r.inTok, r.outTok),
+      free_tier: r.provider === 'gemini',
+      duration_ms: Date.now() - t0, success: true,
+    });
 
     return json({ draft });
   } catch (e) {
+    if (e instanceof RateLimitedError) {
+      return json({ error: 'Gnome AI is temporarily busy. Try again shortly.' }, 503);
+    }
     console.error('draft-listing error:', e);
     // Surface the upstream cause during beta — invaluable for debugging,
     // and nothing here is more sensitive than an HTTP status + message.

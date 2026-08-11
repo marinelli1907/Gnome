@@ -173,7 +173,8 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const [agents, setAgents] = useState<any[]>([]);
   const [paused, setPaused] = useState<boolean | null>(null);
   const [reads, setReads] = useState<boolean | null>(null);
-  const [usageToday, setUsageToday] = useState<{ cents: number; fails: number } | null>(null);
+  const [usageToday, setUsageToday] = useState<{ cents: number; actualCents: number; fails: number } | null>(null);
+  const [providers, setProviders] = useState<{ stats: any; health: any } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [room, setRoom] = useState<any | null>(null);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -182,19 +183,23 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const load = useCallback(async () => {
     setRefreshing(true);
     const since = new Date(); since.setHours(0, 0, 0, 0);
-    const [{ data: r }, { data: a }, { data: st }, { data: rm }, { data: usage }] = await Promise.all([
+    const [{ data: r }, { data: a }, { data: st }, { data: rm }, { data: usage }, { data: pstats }, health] = await Promise.all([
       supabase.from('ai_action_requests').select('*').order('requested_at', { ascending: false }).limit(30),
       supabase.from('ai_agents').select('*').order('id'),
-      supabase.from('ai_settings').select('writes_paused, reads_enabled').limit(1).maybeSingle(),
+      supabase.from('ai_settings').select('writes_paused, reads_enabled, allow_paid_fallback').limit(1).maybeSingle(),
       supabase.from('ai_rooms').select('*').eq('status', 'active').order('updated_at', { ascending: false }).limit(12),
-      supabase.from('ai_usage_log').select('estimated_cost_cents, success').gte('created_at', since.toISOString()).limit(400),
+      supabase.from('ai_usage_log').select('estimated_cost_cents, actual_cost_cents, success').gte('created_at', since.toISOString()).limit(400),
+      supabase.rpc('admin_ai_provider_stats'),
+      supabase.functions.invoke('ai-health', { body: {} }).then((x) => x.data).catch(() => null),
     ]);
     setReqs(r ?? []); setAgents(a ?? []);
     setPaused(st?.writes_paused ?? null); setReads(st?.reads_enabled ?? null);
     setRooms(rm ?? []);
+    setProviders({ stats: (pstats as any) ?? {}, health });
     const rows = (usage ?? []) as any[];
     setUsageToday({
       cents: rows.reduce((t, x) => t + Number(x.estimated_cost_cents ?? 0), 0),
+      actualCents: rows.reduce((t, x) => t + Number(x.actual_cost_cents ?? 0), 0),
       fails: rows.filter((x) => x.success === false).length,
     });
     setRefreshing(false);
@@ -260,12 +265,33 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
             <Switch value={reads !== false} onValueChange={(v) => void toggleReads(v)} trackColor={{ true: C.green }} />
           )}
         </View>
-        {usageToday && (
-          <Text style={[s.cardSub, { marginTop: 8 }]}>
-            Provider: Anthropic{usageToday.fails > 0
-              ? ` · ⚠️ ${usageToday.fails} failed call${usageToday.fails === 1 ? '' : 's'} today (check API credits)`
-              : ' · healthy today'} · spend {money(usageToday.cents)}
-          </Text>
+        {providers && (
+          <View style={{ marginTop: 8 }}>
+            {(() => {
+              const h = providers.health?.providers ?? {};
+              const st = providers.stats ?? {};
+              const line = (name: string, key: string) => {
+                const cfg = h[key]?.configured;
+                const ps = st[key];
+                const ok = ps?.last_success ? ` · last ok ${String(ps.last_success).slice(5, 16).replace('T', ' ')}` : '';
+                const bad = ps?.fails_today > 0 ? ` · ⚠️ ${ps.fails_today} fail${ps.fails_today === 1 ? '' : 's'} today` : '';
+                return `${name}: ${cfg === undefined ? '…' : cfg ? 'configured' : 'not configured'}${cfg ? ok + bad : ''}`;
+              };
+              const hq = providers.health?.hq;
+              return (
+                <>
+                  <Text style={s.cardSub}>{line('Gemini (primary, free tier)', 'gemini')}</Text>
+                  <Text style={s.cardSub}>{line('OpenAI', 'openai')}</Text>
+                  <Text style={s.cardSub}>{line('Anthropic', 'anthropic')}</Text>
+                  {hq && <Text style={s.cardSub}>Gnome HQ runs on {hq.provider}/{hq.model}</Text>}
+                  <Text style={s.cardSub}>
+                    Paid fallback {providers.health?.settings?.allow_paid_fallback ? 'ON' : 'OFF'}
+                    {usageToday ? ` · today actual ${money(usageToday.actualCents)} · paid-equivalent ${money(usageToday.cents)}` : ''}
+                  </Text>
+                </>
+              );
+            })()}
+          </View>
         )}
       </Card>
 
