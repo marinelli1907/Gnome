@@ -1,0 +1,8 @@
+-- 0057: marketplace categories for handmade goods (data-only, applied live).
+-- New root "Handmade & Home" (🧼) with Soap, Bath & Body, Candles, Gift Baskets.
+-- Soap and Bath & Body carry requires_compliance_review + REVIEW_REQUIRED as
+-- METADATA for the admin queue: cosmetics are regulated differently than
+-- produce and deserve a legal read before we encourage volume. This does NOT
+-- gate publishing — the publish gate gets its verdict from compliance_rules
+-- (still 0 active Ohio rules), never from a node's classification.
+-- Nodes are admin-managed data; Admin → Taxonomy can edit these without code.

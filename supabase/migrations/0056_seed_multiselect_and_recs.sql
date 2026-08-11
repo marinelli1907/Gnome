@@ -1,0 +1,19 @@
+-- 0056: Seed Drop — greenhouse, multi-answer questions, editable recommendations.
+-- Applied to production as 'seed_profile_multiselect_and_recommendations'.
+--
+--  * seed_profiles += suns[], experiences[], packet_count. Legacy singular
+--    sun/experience columns are kept and mirrored so the existing engine,
+--    admin views and in-flight orders keep working. Zone stays single: it's
+--    one fact about where you live, not a preference.
+--  * seed_profile_matches(...) — ONE definition of "does this product suit
+--    this profile", shared by the preview and the packing engine so what a
+--    buyer is shown can never disagree with what gets packed. Sun: no answer
+--    or 'unsure' = no filter, 'full' also accepts partial-sun crops.
+--    Experience: only restrict to beginner-friendly when first-timer is the
+--    ONLY answer. Space: container-only growers get container-friendly crops;
+--    a greenhouse (or any bed) lifts that.
+--  * seed_recommendations(...) — what Gnome would pick, WITHOUT reserving
+--    anything, from in-stock eligible lots only, with a plain-English `why`
+--    and a `recommended` flag. Out-of-season/unmatched items are still
+--    returned so the buyer can overrule us.
+-- Full statements are recorded in the database migration history.

@@ -14,7 +14,8 @@ const STARTER_LINK = process.env.NEXT_PUBLIC_SEED_LINK_STARTER;
 
 const SIZES = [
   ['windowsill', 'Windowsill'], ['containers', 'Containers'], ['small_bed', 'Small raised bed'],
-  ['medium', 'Medium garden'], ['large', 'Large garden'], ['unsure', 'Not sure'],
+  ['medium', 'Medium garden'], ['large', 'Large garden'], ['greenhouse', 'Greenhouse'],
+  ['unsure', 'Not sure'],
 ] as const;
 const SUNS = [
   ['full', 'Full sun'], ['partial', 'Partial sun'], ['shade', 'Mostly shade'], ['unsure', 'Not sure'],
@@ -22,6 +23,20 @@ const SUNS = [
 const EXP = [
   ['first_time', 'First-timer'], ['beginner', 'Beginner'], ['some', 'Some experience'], ['experienced', 'Experienced'],
 ] as const;
+
+// Per-packet price and shipping. Env-overridable so pricing isn't a code
+// change; the totals shown here are what the buyer is asked to pay.
+const PACKET_CENTS = Number(process.env.NEXT_PUBLIC_SEED_PACKET_CENTS ?? 350);
+const SHIP_CENTS = Number(process.env.NEXT_PUBLIC_SEED_SHIP_CENTS ?? 495);
+const FREE_SHIP_AT = Number(process.env.NEXT_PUBLIC_SEED_FREE_SHIP_AT ?? 8);
+const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+
+type Rec = {
+  product_id: string; crop: string; variety: string | null; category: string;
+  description: string | null; days_to_maturity: number | null;
+  packet_seed_count: number | null; in_stock: number;
+  recommended: boolean; why: string | null;
+};
 const PREFS = [
   'vegetables', 'herbs', 'flowers', 'pollinator plants', 'salad garden',
   'salsa garden', 'container garden', 'surprise me',
@@ -35,13 +50,20 @@ export default function SeedProfileClient() {
   const [zone, setZone] = useState<string>('6');
   const [zoneAuto, setZoneAuto] = useState(false);
   const [sizes, setSizes] = useState<string[]>([]);
-  const [sun, setSun] = useState<string>('unsure');
-  const [exp, setExp] = useState<string>('beginner');
+  // Every question with options is multi-answer now.
+  const [suns, setSuns] = useState<string[]>([]);
+  const [exps, setExps] = useState<string[]>([]);
   const [prefs, setPrefs] = useState<string[]>([]);
   const [exclusions, setExclusions] = useState('');
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Gnome's picks from REAL stock for this zone — the buyer can overrule any
+  // of it. `picked` is the buyer's basket; it starts as our recommendation.
+  const [recs, setRecs] = useState<Rec[] | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [touchedPicks, setTouchedPicks] = useState(false);
 
   useEffect(() => {
     if (!uid) return;
@@ -53,13 +75,38 @@ export default function SeedProfileClient() {
         if (data.zone) setZone(String(data.zone));
         if (data.garden_sizes?.length) setSizes(data.garden_sizes);
         else if (data.garden_size && data.garden_size !== 'unsure') setSizes([data.garden_size]);
-        if (data.sun) setSun(data.sun);
-        if (data.experience) setExp(data.experience);
+        if (data.suns?.length) setSuns(data.suns);
+        else if (data.sun) setSuns([data.sun]);
+        if (data.experiences?.length) setExps(data.experiences);
+        else if (data.experience) setExps([data.experience]);
         if (data.preferences?.length) setPrefs(data.preferences);
         if (data.exclusions?.length) setExclusions(data.exclusions.join(', '));
         setSaved(true);
       });
   }, [uid]);
+
+  // Ask the database what it would actually send, from live stock for this
+  // zone. Re-runs as the answers change; the buyer's own edits are preserved
+  // once they've touched the basket.
+  useEffect(() => {
+    if (!uid) return;
+    const t = setTimeout(async () => {
+      const { data, error: e } = await supabaseBrowser().rpc('seed_recommendations', {
+        p_zone: Number(zone),
+        p_suns: suns,
+        p_experiences: exps,
+        p_sizes: sizes,
+        p_preferences: prefs,
+        p_exclusions: exclusions.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+        p_limit: 24,
+      });
+      if (e) return;
+      const rows = (data ?? []) as Rec[];
+      setRecs(rows);
+      if (!touchedPicks) setPicked(rows.filter((r) => r.recommended).map((r) => r.product_id));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [uid, zone, suns, exps, sizes, prefs, exclusions, touchedPicks]);
 
   // Auto hardiness zone from ZIP: geocode via Nominatim (keyless), then a
   // latitude-band estimate calibrated to USDA zones (±1 zone typical; the
@@ -95,8 +142,11 @@ export default function SeedProfileClient() {
       zone: Number(zone),
       garden_sizes: sizes,
       garden_size: sizes[0] ?? 'unsure',   // legacy single-value mirror
-      sun,
-      experience: exp,
+      suns,
+      experiences: exps,
+      sun: suns[0] ?? 'unsure',            // legacy mirrors keep the old
+      experience: exps[0] ?? 'beginner',   // engine + admin views working
+      packet_count: picked.length || null,
       preferences: prefs,
       exclusions: exclusions.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
       updated_at: new Date().toISOString(),
@@ -161,19 +211,21 @@ export default function SeedProfileClient() {
       </div>
 
       <div className="field">
-        <label>Sunlight</label>
+        <label>Sunlight (pick all that apply)</label>
         <div className="chiprow">
           {SUNS.map(([v, l]) => (
-            <button key={v} type="button" className={`chip${sun === v ? ' active' : ''}`} onClick={() => setSun(v)}>{l}</button>
+            <button key={v} type="button" className={`chip${suns.includes(v) ? ' active' : ''}`}
+              onClick={() => setSuns(suns.includes(v) ? suns.filter((s) => s !== v) : [...suns, v])}>{l}</button>
           ))}
         </div>
       </div>
 
       <div className="field">
-        <label>Experience</label>
+        <label>Experience (pick all that apply)</label>
         <div className="chiprow">
           {EXP.map(([v, l]) => (
-            <button key={v} type="button" className={`chip${exp === v ? ' active' : ''}`} onClick={() => setExp(v)}>{l}</button>
+            <button key={v} type="button" className={`chip${exps.includes(v) ? ' active' : ''}`}
+              onClick={() => setExps(exps.includes(v) ? exps.filter((s) => s !== v) : [...exps, v])}>{l}</button>
           ))}
         </div>
       </div>
@@ -193,6 +245,60 @@ export default function SeedProfileClient() {
       <div className="field">
         <label>Anything to leave out? (optional)</label>
         <input value={exclusions} placeholder="cilantro, sunflower…" onChange={(e) => setExclusions(e.target.value)} />
+      </div>
+
+      {/* Your box: Gnome's picks from real stock, fully editable. */}
+      <div className="field">
+        <label>Your packets — Gnome picked these, change anything you like</label>
+        {recs === null ? (
+          <p className="authhint">Checking what’s in stock for zone {zone}…</p>
+        ) : recs.length === 0 ? (
+          <p className="authhint">
+            Nothing is in stock for your answers right now. Save your profile and
+            you’ll be first in line when the next lots land — we never sell seed
+            we don’t physically have.
+          </p>
+        ) : (
+          <>
+            <div className="chiprow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              {recs.map((r) => {
+                const on = picked.includes(r.product_id);
+                return (
+                  <button
+                    key={r.product_id}
+                    type="button"
+                    className={`chip${on ? ' active' : ''}`}
+                    style={{ textAlign: 'left', padding: '10px 14px', borderRadius: 12 }}
+                    onClick={() => {
+                      setTouchedPicks(true);
+                      setPicked(on ? picked.filter((p) => p !== r.product_id) : [...picked, r.product_id]);
+                    }}
+                  >
+                    <strong>{on ? '✓ ' : '+ '}{r.crop}{r.variety ? ` — ${r.variety}` : ''}</strong>
+                    <span style={{ display: 'block', fontSize: 12, opacity: 0.8 }}>
+                      {r.recommended ? 'Gnome’s pick · ' : ''}{r.why}
+                      {r.packet_seed_count ? ` · ~${r.packet_seed_count} seeds` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="authhint" style={{ marginTop: 10 }}>
+              <strong>{picked.length} packet{picked.length === 1 ? '' : 's'}</strong>
+              {' · '}{money(picked.length * PACKET_CENTS)}
+              {picked.length >= FREE_SHIP_AT
+                ? ' + free shipping'
+                : ` + ${money(SHIP_CENTS)} shipping`}
+              {' = '}
+              <strong>
+                {money(picked.length * PACKET_CENTS + (picked.length >= FREE_SHIP_AT ? 0 : SHIP_CENTS))}
+              </strong>
+              {picked.length > 0 && picked.length < FREE_SHIP_AT
+                ? ` — add ${FREE_SHIP_AT - picked.length} more for free shipping`
+                : ''}
+            </p>
+          </>
+        )}
       </div>
 
       {error && <p className="autherror">{error}</p>}
