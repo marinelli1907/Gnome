@@ -78,7 +78,7 @@ const TIERS = [
       '@LOCATIONS',
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — neighbors reserve, you grow',
-      '1 free listing boost every month',
+      '3 listing promotions every month',
       'Full AI access — 25 drafts, 40 planner questions/day',
       'Featured eligibility on the homepage rail',
     ],
@@ -94,7 +94,7 @@ const TIERS = [
       '@LOCATIONS',
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — pre-sell your whole season',
-      '5 free listing boosts every month',
+      '10 listing promotions every month',
       'Featured eligibility + verified review',
       'Everything in Grower',
     ],
@@ -107,7 +107,7 @@ export default async function PricingPage() {
   const PLAN_KEY: Record<string, string> = { Neighbor: 'free', Grower: 'grower', Farm: 'farm' };
   const FALLBACK: Record<string, { listings: string; locations: string }> = {
     Neighbor: { listings: '5 active listings', locations: '1 pickup location' },
-    Grower: { listings: '50 active listings', locations: '2 pickup locations — add more for $5/mo each' },
+    Grower: { listings: '25 active listings', locations: '2 pickup locations — add more for $5/mo each' },
     Farm: { listings: 'Unlimited active listings', locations: '5 pickup locations' },
   };
   const resolved = TIERS.map((t) => ({
@@ -152,6 +152,27 @@ export default async function PricingPage() {
           </div>
         ))}
       </div>
+
+      <section className="hero" style={{ paddingTop: 36, paddingBottom: 12 }}>
+        <span className="kicker">Grow with Gnome</span>
+        <h2 style={{ fontSize: 28 }}>Seasonal Seed Drop — $24.99 per season</h2>
+        <p>
+          One personalized Seed Drop each growing season — up to four a year. Gnome sends
+          seeds when it&rsquo;s time to plant, not every month: each Drop is picked for your
+          ZIP and hardiness zone, your garden setup, sun, experience, likes and exclusions,
+          what you&rsquo;ve already received, and real germination-tested inventory. Join late
+          in a season and your first Drop simply starts with the next useful season. Skip or
+          cancel anytime. <a href="/seeds">Build your garden profile →</a>
+        </p>
+      </section>
+
+      <section className="hero" style={{ paddingTop: 8, paddingBottom: 24 }}>
+        <span className="kicker">Grow + Sell</span>
+        <p>
+          <strong>Grower + Seed Drop</strong> (~$199/yr) and <strong>Farm + Seed Drop</strong>{' '}
+          (~$429/yr) bundles are coming — full seller plan plus every seasonal Drop, one bill.
+        </p>
+      </section>
 
       <p className="pricing-fine">
         <strong>Gnome takes 0% of neighbor-to-neighbor sales — no transaction fees, ever.</strong>{' '}

@@ -361,13 +361,17 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
 
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
-  const [view, setView] = useState<'menu' | 'users' | 'team' | 'audit' | 'inventory'>('menu');
+  const [view, setView] = useState<'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons'>('menu');
   if (view === 'users') return <Users back={() => setView('menu')} can={can} />;
   if (view === 'team') return <Team back={() => setView('menu')} />;
   if (view === 'audit') return <Audit back={() => setView('menu')} />;
   if (view === 'inventory') return <Inventory back={() => setView('menu')} can={can} />;
+  if (view === 'commercial') return <Commercial back={() => setView('menu')} can={can} />;
+  if (view === 'seasons') return <Seasons back={() => setView('menu')} can={can} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
+      {can('subscriptions.view') && <MenuRow label="💰 Revenue & Promotions" onPress={() => setView('commercial')} />}
+      {can('seed_drop.view') && <MenuRow label="🌦 Seed Drop Seasons" onPress={() => setView('seasons')} />}
       {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
       {can('inventory.view') && <MenuRow label="🌱 Inventory" onPress={() => setView('inventory')} />}
       {can('admins.view') && <MenuRow label="🛡 Admin Team" onPress={() => setView('team')} />}
@@ -375,7 +379,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
       <Card>
         <Text style={s.cardSub}>
           Seed Drop fulfillment lives in the 📦 Fulfill tab. Markets, Listings, Orders,
-          Compliance detail, Plots, Finance, Support, Taxonomy — next build; their
+          Compliance detail, Plots, Support, Taxonomy — next build; their
           backend permissions are already live.
         </Text>
       </Card>
@@ -393,6 +397,7 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   const [sel, setSel] = useState<any | null>(null);
   const [ent, setEnt] = useState<any | null>(null);
   const [mkt, setMkt] = useState<any | null>(null);
+  const [promo, setPromo] = useState<any | null>(null);
 
   const search = async () => {
     const { data } = await supabase.from('profiles')
@@ -401,13 +406,26 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
     setRows(data ?? []); setSel(null);
   };
   const open = async (p: any) => {
-    setSel(p); setEnt(null); setMkt(null);
+    setSel(p); setEnt(null); setMkt(null); setPromo(null);
     const { data: m } = await supabase.from('markets').select('id,name,plan').eq('owner_id', p.id).limit(1).maybeSingle();
     setMkt(m);
     if (m) {
-      const { data: e } = await supabase.rpc('admin_market_entitlements', { p_market: m.id });
-      setEnt(e);
+      const [{ data: e }, { data: ps }] = await Promise.all([
+        supabase.rpc('admin_market_entitlements', { p_market: m.id }),
+        supabase.rpc('market_promotion_status', { p_market: m.id }),
+      ]);
+      setEnt(e); setPromo(ps as any);
     }
+  };
+  const grantPromoCredits = () => {
+    if (!mkt) return;
+    Alert.alert('Grant 3 promotion credits?', 'Complimentary purchased-style credits (never expire at monthly reset). Audited.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Grant', onPress: async () => {
+        const { error } = await supabase.rpc('admin_grant_promo_credits', { p_market: mkt.id, p_qty: 3, p_reason: 'Admin comp from Gnome Admin' });
+        if (error) Alert.alert('Failed', error.message); else void open(sel);
+      } },
+    ]);
   };
   const grant = (plan: 'grower' | 'farm', days: number | null, reason: string) => {
     if (!mkt) return;
@@ -464,6 +482,16 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
               {ent?.effective?.grant_expires ? ` · until ${String(ent.effective.grant_expires).slice(0, 10)}` : ''}
             </Text>
             <Text style={s.cardSub}>Stripe/base plan: {ent?.base_plan ?? mkt.plan}</Text>
+            {promo && (
+              <Text style={s.cardSub}>
+                Promotions: {promo.included_remaining} of {promo.included_allowance} included left · resets {String(promo.resets_on).slice(5)}
+                {promo.purchased_balance > 0 ? ` · ${promo.purchased_balance} purchased banked` : ''}
+                {(promo.active?.length ?? 0) > 0 ? ` · ${promo.active.length} active now` : ''}
+              </Text>
+            )}
+            {can('promotions.grant') && (
+              <SmallBtn label="Grant 3 promo credits" onPress={grantPromoCredits} />
+            )}
             {can('subscriptions.grant_complimentary') && (
               <>
                 <Text style={s.h3}>Grant free subscription</Text>
@@ -1024,6 +1052,185 @@ function ReceiveForm({ product, back }: { product: any; back: () => void }) {
       <TextInput style={s.input} placeholder="Supplier lot # (optional)" value={f.supplierLot} onChangeText={(v) => set('supplierLot', v)} placeholderTextColor={C.muted} />
       <TextInput style={s.input} placeholder="Germination % (optional)" value={f.germ} onChangeText={(v) => set('germ', v)} keyboardType="number-pad" placeholderTextColor={C.muted} />
       <Pressable style={s.btn} onPress={() => void save()}><Text style={s.btnText}>Receive into stock</Text></Pressable>
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------- Commercial (Revenue & Promotions)
+function Commercial({ back, can }: { back: () => void; can: (p: string) => boolean }) {
+  const [ov, setOv] = useState<any | null>(null);
+  const [promos, setPromos] = useState<any[]>([]);
+  const [econ, setEcon] = useState<any | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pickPerHr, setPickPerHr] = useState('20');
+  const [packPerHr, setPackPerHr] = useState('15');
+  const [hours, setHours] = useState('6');
+  const [orders, setOrders] = useState('200');
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const [{ data: o }, { data: p }, { data: e }] = await Promise.all([
+      supabase.rpc('admin_commercial_overview'),
+      supabase.from('listing_promotions')
+        .select('*, market:markets(name), listing:listings(title)')
+        .order('created_at', { ascending: false }).limit(25),
+      supabase.rpc('admin_seed_economics'),
+    ]);
+    setOv(o as any); setPromos((p as any[]) ?? []); setEcon(e as any);
+    setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const endPromo = (id: string) => {
+    Alert.alert('End this promotion?', 'Optionally restore the credit if Gnome invalidated it by mistake.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'End only', style: 'destructive', onPress: async () => {
+        const { error } = await supabase.rpc('admin_end_promotion', { p_promo: id, p_reason: 'Ended from Gnome Admin' });
+        if (error) Alert.alert('Failed', error.message); else void load();
+      } },
+      ...(can('promotions.refund_credit') ? [{ text: 'End + restore credit', onPress: async () => {
+        const { error } = await supabase.rpc('admin_end_promotion', { p_promo: id, p_reason: 'Invalidated — credit restored', p_restore_credit: true });
+        if (error) Alert.alert('Failed', error.message); else void load();
+      } }] : []),
+    ]);
+  };
+
+  const n = (k: string) => Number(ov?.[k] ?? 0);
+  const mix = (k: string) => Object.entries((ov?.[k] as Record<string, number>) ?? {}).map(([a, b]) => `${a}: ${b}`).join(' · ') || '—';
+  const ec = (k: string) => econ?.[k] == null ? '—' : money(Number(econ[k]));
+  const cap = (() => {
+    const o = Number(orders) || 0; const pk = Number(pickPerHr) || 1; const pc = Number(packPerHr) || 1; const h = Number(hours) || 0;
+    const need = o / pk + o / pc;
+    return { need: need.toFixed(1), ok: need <= h };
+  })();
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Plans & revenue</Text>
+      <Card>
+        <Text style={s.cardSub}>Effective plan mix</Text><Text style={s.cardText}>{mix('plan_mix')}</Text>
+        <Text style={[s.cardSub, { marginTop: 6 }]}>Entitlement sources</Text><Text style={s.cardText}>{mix('source_mix')}</Text>
+      </Card>
+      <Row2 items={[['MRR', n('mrr_cents') / 100], ['Comp grants', n('active_comp_grants')], ['Pickup add-ons', n('pickup_addons')]]} money0 />
+      <Row2 items={[['Seed subs', n('seed_subscribers_active')], ['Seed rev 90d', Math.round(n('seed_revenue_cents_90d') / 100)], ['Growers near cap', n('growers_near_cap')]]} />
+
+      <Text style={s.h2}>Promotions</Text>
+      <Row2 items={[['Active', n('promotions_active')], ['Last 30d', n('promotions_30d')], ['Sales 30d $', Math.round(n('promo_purchases_cents_30d') / 100)]]} />
+      {promos.map((p) => (
+        <Card key={p.id}>
+          <Text style={s.cardTitle}>{p.listing?.title ?? p.listing_id.slice(0, 8)} · {p.status}</Text>
+          <Text style={s.cardSub}>
+            {p.market?.name ?? ''} · {p.source} · {String(p.starts_at ?? p.created_at).slice(0, 10)} → {String(p.ends_at ?? '').slice(0, 10)}
+          </Text>
+          {p.status === 'active' && can('promotions.manage') && (
+            <SmallBtn label="End promotion" danger onPress={() => endPromo(p.id)} />
+          )}
+        </Card>
+      ))}
+      {promos.length === 0 && <Card><Text style={s.cardSub}>No promotions yet.</Text></Card>}
+
+      <Text style={s.h2}>Seed Drop economics (all-time)</Text>
+      <Card>
+        <Text style={s.cardText}>
+          Orders {econ?.orders ?? '—'} · shipped {econ?.shipped ?? '—'} · revenue {ec('revenue_cents')}
+        </Text>
+        <Text style={s.cardText}>
+          Packet COGS {ec('packet_cogs_cents')} · postage {ec('postage_cents')} · packaging {ec('packaging_cents')}
+        </Text>
+        <Text style={s.cardText}>
+          Gross profit {ec('gross_profit_cents')}
+          {econ?.revenue_cents > 0 ? ` · margin ${Math.round((econ.gross_profit_cents / econ.revenue_cents) * 100)}%` : ''}
+        </Text>
+        <Text style={s.cardSub}>Costs recorded on {econ?.costs_recorded_orders ?? 0} orders — missing costs stay blank, never invented.</Text>
+      </Card>
+
+      <Text style={s.h2}>Fulfillment capacity</Text>
+      <Card>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {([['Orders', orders, setOrders], ['Pick/hr', pickPerHr, setPickPerHr], ['Pack/hr', packPerHr, setPackPerHr], ['Hours', hours, setHours]] as [string, string, (v: string) => void][]).map(([label, v, set]) => (
+            <View key={label} style={{ flex: 1 }}>
+              <Text style={s.cardSub}>{label}</Text>
+              <TextInput style={[s.input, { minWidth: 0, marginBottom: 0, paddingVertical: 8 }]} value={v} onChangeText={set} keyboardType="number-pad" />
+            </View>
+          ))}
+        </View>
+        <Text style={[s.cardText, { marginTop: 8 }]}>
+          Needs ~{cap.need}h of pick+pack → {cap.ok ? '✅ fits' : '⚠️ does NOT fit'} in {hours}h.
+        </Text>
+      </Card>
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------- Seed Drop Seasons
+function Seasons({ back, can }: { back: () => void; can: (p: string) => boolean }) {
+  const [windows, setWindows] = useState<any[]>([]);
+  const [preview, setPreview] = useState<Record<string, any>>({});
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const { data } = await supabase.from('seed_season_windows')
+      .select('*').eq('active', true).order('generation_date');
+    setWindows((data as any[]) ?? []);
+    setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const doPreview = async (id: string) => {
+    const { data, error } = await supabase.rpc('admin_seed_wave_preview', { p_window: id });
+    if (error) Alert.alert('Failed', error.message);
+    else setPreview((p) => ({ ...p, [id]: data }));
+  };
+  const doGenerate = (w: any) => {
+    const f = preview[w.id]?.demand_forecast;
+    Alert.alert(
+      `Generate ${w.season_code} ${w.year} wave?`,
+      `${f?.eligible_count ?? '?'} eligible subscriber(s). Orders are created as pending_payment — the seasonal charge step still needs Stripe config. Inventory reserves at generation.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Generate', onPress: async () => {
+          const { data, error } = await supabase.rpc('admin_seed_wave_generate', { p_window: w.id });
+          if (error) Alert.alert('Failed', error.message);
+          else Alert.alert('Wave generated', `Created ${data?.created ?? 0} · skipped ${data?.skipped ?? 0}`, [{ text: 'OK' }]);
+        } },
+      ]);
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Seasonal calendar</Text>
+      <Card><Text style={s.cardSub}>One personalized Drop per season, up to 4/year. Join after a window’s cutoff → first Drop moves to the next season. $24.99/season (Stripe charge step pending owner config).</Text></Card>
+      {windows.map((w) => {
+        const pv = preview[w.id];
+        const f = pv?.demand_forecast;
+        const past = w.join_cutoff < today;
+        return (
+          <Card key={w.id}>
+            <Text style={s.cardTitle}>{w.season_code} {w.year} · zones {w.zone_min}–{w.zone_max}</Text>
+            <Text style={s.cardSub}>
+              Window {String(w.window_start).slice(5)} → cutoff {String(w.join_cutoff).slice(5)} · generate {String(w.generation_date).slice(5)} · ship {String(w.ship_start).slice(5)}–{String(w.ship_end).slice(5)}
+              {past ? ' · PAST CUTOFF' : ''}
+            </Text>
+            {f && (
+              <Text style={s.cardText}>
+                {f.eligible_count} eligible · packets {f.packets_expected_min}–{f.packets_expected_max} expected · {f.packets_available_total} in stock
+                {f.packets_available_total < f.packets_expected_min ? ' · ⚠️ SHORT' : ' · ✅'}
+              </Text>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <SmallBtn label="Preview wave" onPress={() => void doPreview(w.id)} />
+              {can('seed_drop.generate') && pv && (f?.eligible_count ?? 0) > 0 && (
+                <SmallBtn label="Generate wave" onPress={() => doGenerate(w)} />
+              )}
+            </View>
+          </Card>
+        );
+      })}
+      {windows.length === 0 && <Card><Text style={s.cardSub}>No active season windows configured.</Text></Card>}
     </ScrollView>
   );
 }

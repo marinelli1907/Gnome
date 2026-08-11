@@ -353,7 +353,7 @@ export default function SeedProfileClient() {
 
       {STARTER_LINK ? (
         <button className="btn btn-primary" disabled={busy} onClick={() => void checkout()}>
-          {busy ? 'Saving…' : 'Save & get my Starter Drop — $12'}
+          {busy ? 'Saving…' : 'Save & start my Seed Drop — $12 founding intro (then $24.99/season)'}
         </button>
       ) : (
         <>
@@ -361,7 +361,7 @@ export default function SeedProfileClient() {
             {busy ? 'Saving…' : saved ? 'Update my garden profile' : 'Save my garden profile'}
           </button>
           <p className="authhint">
-            {saved ? '✓ Profile saved. ' : ''}Starter Drops open this season — profile
+            {saved ? '✓ Profile saved. ' : ''}Seasonal Seed Drops: one personalized Drop each growing season, up to 4/year — profile
             holders are first in line, and your box is built from real stock the day you order.
           </p>
         </>

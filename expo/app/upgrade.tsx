@@ -115,11 +115,12 @@ export default function UpgradeScreen() {
                 {l?.max_pickup_locations
                   ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}${l.extra_location_fee_cents ? ` (+${formatPrice(l.extra_location_fee_cents)}/mo each extra)` : ''}`
                   : ''}
+                {l?.included_boost_credits ? ` · ${l.included_boost_credits} promotions/mo` : ''}
                 {l && l.price_cents > 0 ? ` · ${formatPrice(l.price_cents)}/mo` : ' · free'}
               </Text>
               {p !== 'free' && (
                 <Text style={styles.tierPerk}>
-                  Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules
+                  AI Listing Assistant · delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules
                 </Text>
               )}
               {p === 'free' && (

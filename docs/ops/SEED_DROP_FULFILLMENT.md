@@ -30,3 +30,13 @@ at reservation, so shipping never double-decrements.
 `paid/selected → (needs_review) → picked-items → packed → shipped`
 Cancel/release paths (existing RPCs) restore stock and write `released`.
 Fulfillment history is never deleted; items with history are archived.
+
+## Seasonal waves (2026-08-11)
+Fulfillment now begins from SEASON WINDOWS (docs/seed-drop/SEASONAL_WINDOWS.md):
+Admin → Seed Drop Seasons → preview wave (eligible subscribers, demand range
+vs stock) → generate (one pending_payment order per subscriber, inventory
+reserved once, idempotent re-runs — double generation impossible). Orders then
+flow through the existing lanes: needs_review → pick (bin + lot on every
+packet) → pack → ship-once with tracking + per-shipment costs
+(admin_set_seed_order_costs). Seasonal charge step awaits owner Stripe config;
+unpaid orders are never shipped.

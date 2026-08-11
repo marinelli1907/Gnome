@@ -47,3 +47,10 @@ Archive hides the item from active pickers/lists; reactivate any time.
 `INVENTORY_FULFILLMENT` preset: full inventory CRUD except `delete_unused`
 (owner keeps that via `*`; grantable as an extra permission), plus the
 Seed Drop pick/pack/ship set and `ai.chat`.
+
+## Demand forecasting (2026-08-11)
+Wave preview (admin_seed_wave_preview) returns an HONEST packet-demand range
+(0.75×–1.10× of eligible subscribers' target counts) against current
+fresh/active stock with a SHORT/OK flag — reorder recommendations remain
+recommendations; nothing purchases autonomously. Inventory CRUD, ledger,
+quarantine, archive-vs-delete rules are unchanged from the Owner Hub round.
