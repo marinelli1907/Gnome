@@ -389,7 +389,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       <div className="field-row">
         <div className="field">
           <label>City</label>
-          <input value={city} placeholder="Richmond Heights" onChange={(e) => setCity(e.target.value)} />
+          <input value={city} placeholder="City" onChange={(e) => setCity(e.target.value)} />
         </div>
         <div className="field state">
           <label>State</label>

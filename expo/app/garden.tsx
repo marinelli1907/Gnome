@@ -179,7 +179,7 @@ export default function GardenPlannerScreen() {
           style={styles.locationInput}
           value={location}
           onChangeText={setLocation}
-          placeholder="Richmond Heights, OH"
+          placeholder="City, State"
           placeholderTextColor={Colors.textTertiary}
         />
       </View>

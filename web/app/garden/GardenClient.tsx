@@ -161,7 +161,7 @@ export default function GardenClient() {
         <label>Where’s your garden?</label>
         <input
           value={location}
-          placeholder="Richmond Heights, OH"
+          placeholder="City, State"
           onChange={(e) => setLocation(e.target.value)}
         />
       </div>

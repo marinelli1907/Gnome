@@ -101,9 +101,9 @@ export default function EditMarketScreen() {
           </View>
         </Pressable>
 
-        <Field label="Garden name" value={name} onChangeText={setName} placeholder="Maria's Garden" />
+        <Field label="Market name" value={name} onChangeText={setName} placeholder="Your Market name" />
         <Field
-          label="About your garden (optional)"
+          label="About your Market (optional)"
           value={description}
           onChangeText={setDescription}
           placeholder="Backyard veg in Lyndhurst — tomatoes, herbs, too much zucchini."

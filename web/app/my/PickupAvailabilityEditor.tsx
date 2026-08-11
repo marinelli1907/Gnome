@@ -241,7 +241,7 @@ export default function PickupAvailabilityEditor({ marketId }: { marketId: strin
           <label>Public address (shown to everyone)</label>
           <input
             value={settings.public_address}
-            placeholder="123 Market St, Richmond Heights, OH"
+            placeholder="Street address"
             onChange={(e) => setSettings({ ...settings, public_address: e.target.value })}
           />
         </div>

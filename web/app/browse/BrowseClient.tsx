@@ -363,7 +363,7 @@ export default function BrowseClient() {
           <div className="locrow">
             <input
               value={locInput}
-              placeholder="Address or city, state — e.g. Richmond Heights, OH"
+              placeholder="Address or city, state"
               onChange={(e) => setLocInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void useAddress(); }}
               autoFocus
