@@ -22,6 +22,9 @@ interface PickupOrder {
   confirmed_start: string | null; confirmed_end: string | null;
   proposed_start: string | null; proposed_end: string | null;
   timezone: string; subtotal_cents: number;
+  fulfillment_type?: 'pickup' | 'delivery';
+  delivery_fee_cents?: number | null;
+  delivery_distance_miles?: number | null;
   buyer_note: string | null; decline_reason: string | null; created_at: string;
   items: OrderItem[];
   buyer: { name: string | null } | null;
@@ -91,7 +94,7 @@ export default function PickupOrdersManager({ marketId }: { marketId: string }) 
     const sb = supabaseBrowser();
     const [{ data: os, error: oerr }, { data: pm }] = await Promise.all([
       sb.from('market_orders')
-        .select('id,status,requested_start,requested_end,confirmed_start,confirmed_end,proposed_start,proposed_end,timezone,subtotal_cents,buyer_note,decline_reason,created_at,items:market_order_items(*),buyer:profiles!market_orders_buyer_id_fkey(name)')
+        .select('id,status,requested_start,requested_end,confirmed_start,confirmed_end,proposed_start,proposed_end,timezone,subtotal_cents,buyer_note,decline_reason,created_at,fulfillment_type,delivery_fee_cents,delivery_distance_miles,items:market_order_items(*),buyer:profiles!market_orders_buyer_id_fkey(name)')
         .eq('market_id', marketId)
         .order('created_at', { ascending: false }),
       sb.from('market_payment_methods')
@@ -204,7 +207,7 @@ export default function PickupOrdersManager({ marketId }: { marketId: string }) 
   return (
     <section className="section">
       <div className="section-head">
-        <h2>Pickup orders <span className="mm-count">{orders.length}</span></h2>
+        <h2>Orders <span className="mm-count">{orders.length}</span></h2>
       </div>
       <p className="sub">
         Buyers request a pickup window from your public page. Confirm, propose a
@@ -240,7 +243,10 @@ export default function PickupOrdersManager({ marketId }: { marketId: string }) 
                 <div className="mm-thumb"><span>🧺</span></div>
                 <div className="mm-info">
                   <span className="mm-title">
-                    {who} · {itemCount} item{itemCount === 1 ? '' : 's'} · {money(o.subtotal_cents)}
+                    {who} · {itemCount} item{itemCount === 1 ? '' : 's'} · {money(o.subtotal_cents + (o.delivery_fee_cents ?? 0))}
+                    {o.fulfillment_type === 'delivery'
+                      ? ` · 🚚 Delivery${o.delivery_distance_miles != null ? ` ${o.delivery_distance_miles} mi` : ''}${o.delivery_fee_cents ? ` (${money(o.delivery_fee_cents)} fee)` : ''}`
+                      : ''}
                   </span>
                   <div className="mm-meta">
                     <span className={STATUS_META[o.status].tag}>{STATUS_META[o.status].label}</span>
@@ -267,7 +273,7 @@ export default function PickupOrdersManager({ marketId }: { marketId: string }) 
                   ))}
                   <div className="lot-row">
                     <span style={{ fontWeight: 700 }}>Subtotal</span>
-                    <span className="lot-actions" style={{ fontWeight: 700 }}>{money(o.subtotal_cents)}</span>
+                    <span className="lot-actions" style={{ fontWeight: 700 }}>{money(o.subtotal_cents + (o.delivery_fee_cents ?? 0))}</span>
                   </div>
                   {o.buyer_note && (
                     <p className="authhint" style={{ marginTop: 8 }}>Buyer note: “{o.buyer_note}”</p>

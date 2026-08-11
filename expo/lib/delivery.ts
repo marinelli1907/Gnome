@@ -163,10 +163,16 @@ export function useSaveAddress(uid?: string) {
         if (error) throw error;
         return input.id;
       }
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('buyer_delivery_addresses').insert(row).select('id').single();
+      if (error && error.code === '23505' && row.is_default) {
+        // A default already exists (cache raced) — save as non-default.
+        ({ data, error } = await supabase
+          .from('buyer_delivery_addresses')
+          .insert({ ...row, is_default: false }).select('id').single());
+      }
       if (error) throw error;
-      return data.id as string;
+      return (data as { id: string }).id;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['myAddresses'] });
@@ -220,17 +226,20 @@ export interface DeliveryWindow {
 
 export function deliveryWindows(ds: DeliverySettings, days = 10): DeliveryWindow[] {
   const out: DeliveryWindow[] = [];
+  // Evaluate "today"/cutoffs in the MARKET's timezone — the server does, and a
+  // buyer travelling (or a device set to another tz) must see the same days.
   const now = new Date();
+  const marketNow = new Date(now.toLocaleString('en-US', { timeZone: ds.tz || 'America/New_York' }));
   for (let i = 0; i < days; i++) {
-    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    const day = new Date(marketNow.getFullYear(), marketNow.getMonth(), marketNow.getDate() + i);
     const dow = day.getDay();
     let ok = false;
     if (i === 0 && ds.same_day) {
       const cutoff = ds.same_day_cutoff?.slice(0, 5);
-      if (!cutoff || fmtHM(now) <= cutoff) ok = true;
+      if (!cutoff || fmtHM(marketNow) <= cutoff) ok = true;
     } else if (i === 1 && ds.next_day) {
       const cutoff = ds.next_day_cutoff?.slice(0, 5);
-      if (!cutoff || fmtHM(now) <= cutoff) ok = true;
+      if (!cutoff || fmtHM(marketNow) <= cutoff) ok = true;
     }
     if (!ok && i >= 1 && ds.scheduled && ds.delivery_dows.includes(dow)) {
       // order-by rule: the order-by day for this delivery day must not be past
@@ -238,7 +247,7 @@ export function deliveryWindows(ds: DeliverySettings, days = 10): DeliveryWindow
       else {
         const daysBack = (7 + dow - ds.order_by_dow) % 7;
         const orderBy = new Date(day.getFullYear(), day.getMonth(), day.getDate() - daysBack);
-        ok = now <= new Date(orderBy.getFullYear(), orderBy.getMonth(), orderBy.getDate(), 23, 59, 59);
+        ok = marketNow <= new Date(orderBy.getFullYear(), orderBy.getMonth(), orderBy.getDate(), 23, 59, 59);
       }
     }
     // No timing modes at all → any future day works (flat local delivery).

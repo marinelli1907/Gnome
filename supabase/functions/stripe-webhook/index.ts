@@ -162,8 +162,12 @@ Deno.serve(async (req: Request) => {
           const seedSubPrice = Deno.env.get('STRIPE_PRICE_SEED_SUB');
 
           // Seed Drop subscription checkout: ref = seedsub_<subscription row id>
-          if (ref.startsWith('seedsub_') && seedSubPrice
-              && items.data.some((i) => i.price?.id === seedSubPrice)) {
+          if (ref.startsWith('seedsub_')) {
+            if (!seedSubPrice || !items.data.some((i) => i.price?.id === seedSubPrice)) {
+              // Configuration gap — error out (releases idempotency in catch)
+              // so Stripe retries until STRIPE_PRICE_SEED_SUB is set right.
+              throw new Error(`seedsub checkout ${session.id} but STRIPE_PRICE_SEED_SUB unset/mismatched`);
+            }
             const subRowId = ref.slice('seedsub_'.length);
             await admin.from('seed_drop_subscriptions').update({
               status: 'active',
@@ -189,15 +193,35 @@ Deno.serve(async (req: Request) => {
           if (plan) patch.plan = plan;
           if (addonQty) patch.extra_pickup_locations = addonQty;
           await admin.from('markets').update(patch).eq('id', ref);
+          await admin.from('market_subscriptions').insert({
+            market_id: ref,
+            plan: plan ?? 'free',
+            kind: plan ? 'plan' : 'addon',
+            provider: 'stripe',
+            customer_id: String(session.customer ?? ''),
+            subscription_id: String(session.subscription ?? ''),
+            status: 'active',
+          });
           if (plan) {
-            await admin.from('market_subscriptions').insert({
-              market_id: ref,
-              plan,
-              provider: 'stripe',
-              customer_id: String(session.customer ?? ''),
-              subscription_id: String(session.subscription ?? ''),
-              status: 'active',
-            });
+            // A plan change through a Payment Link creates a NEW subscription —
+            // cancel any prior plan sub so the seller isn't double-billed and a
+            // later cancellation of the old sub can't clobber the new plan.
+            const { data: priors } = await admin
+              .from('market_subscriptions')
+              .select('subscription_id')
+              .eq('market_id', ref).eq('kind', 'plan')
+              .neq('subscription_id', String(session.subscription ?? ''))
+              .in('status', ['active', 'trialing', 'past_due']);
+            for (const prior of priors ?? []) {
+              try {
+                await stripe.subscriptions.cancel(prior.subscription_id);
+              } catch (err) {
+                console.error(`cancel prior sub ${prior.subscription_id}:`, err);
+              }
+              await admin.from('market_subscriptions')
+                .update({ status: 'canceled' })
+                .eq('subscription_id', prior.subscription_id);
+            }
           }
           // Keep restricted/active location flags consistent with the new cap.
           await admin.rpc('reconcile_pickup_locations', { p_market: ref });
@@ -232,7 +256,7 @@ Deno.serve(async (req: Request) => {
 
         const { data: row } = await admin
           .from('market_subscriptions')
-          .select('market_id,plan')
+          .select('market_id,plan,kind')
           .eq('subscription_id', sub.id)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -246,20 +270,51 @@ Deno.serve(async (req: Request) => {
             current_period_end: new Date(sub.items.data[0]?.current_period_end * 1000).toISOString(),
           })
           .eq('subscription_id', sub.id);
+
         const addonPrice2 = Deno.env.get('STRIPE_PRICE_LOCATION_ADDON');
-        const addonQty2 = active && addonPrice2
+        const carriesAddon = !!addonPrice2 && sub.items.data.some((i) => i.price?.id === addonPrice2);
+        const addonQty2 = active && carriesAddon
           ? sub.items.data.find((i) => i.price?.id === addonPrice2)?.quantity ?? 0
           : 0;
-        await admin
-          .from('markets')
-          .update({
-            plan: active ? row.plan : 'free',
-            extra_pickup_locations: addonQty2,
-          })
-          .eq('id', row.market_id);
+
+        if (row.kind === 'addon') {
+          // Add-on-only subscription: only the extras entitlement moves.
+          await admin.from('markets')
+            .update({ extra_pickup_locations: addonQty2 })
+            .eq('id', row.market_id);
+          await admin.rpc('reconcile_pickup_locations', { p_market: row.market_id });
+          console.log(`market ${row.market_id} addon sub → extras=${addonQty2} (${sub.status})`);
+          break;
+        }
+
+        // Plan subscription. Downgrade only when no OTHER active plan sub
+        // exists (a plan change created a replacement before the old one died).
+        if (!active) {
+          const { data: survivor } = await admin
+            .from('market_subscriptions')
+            .select('subscription_id')
+            .eq('market_id', row.market_id).eq('kind', 'plan')
+            .neq('subscription_id', sub.id)
+            .in('status', ['active', 'trialing'])
+            .limit(1)
+            .maybeSingle();
+          if (survivor) {
+            console.log(`market ${row.market_id}: old plan sub ${sub.status}, newer plan sub survives — no downgrade`);
+            break;
+          }
+        }
+        const patch2: Record<string, unknown> = { plan: active ? row.plan : 'free' };
+        // Extras ride this sub only when it actually carries the addon price
+        // (combined checkout); an addon bought on its own sub is untouched.
+        if (carriesAddon || !active) {
+          // On full downgrade extras die with the plan; a separate addon sub's
+          // deleted event will also zero them, harmlessly.
+          patch2.extra_pickup_locations = active ? addonQty2 : 0;
+        }
+        await admin.from('markets').update(patch2).eq('id', row.market_id);
         // Non-destructive: over-cap locations flip to plan_restricted, never deleted.
         await admin.rpc('reconcile_pickup_locations', { p_market: row.market_id });
-        console.log(`market ${row.market_id} → ${active ? row.plan : 'free'} addons=${addonQty2} (${sub.status})`);
+        console.log(`market ${row.market_id} → ${active ? row.plan : 'free'} (${sub.status})`);
         break;
       }
 
@@ -288,15 +343,37 @@ Deno.serve(async (req: Request) => {
           .from('seed_drop_subscriptions')
           .select('id,status,next_order_date')
           .eq('stripe_subscription_id', subId).maybeSingle();
-        if (seedRow && seedRow.status !== 'cancelled') {
-          if (seedRow.status !== 'active') {
-            await admin.from('seed_drop_subscriptions')
-              .update({ status: 'active' }).eq('id', seedRow.id);
+        if (!seedRow) {
+          // Stripe doesn't guarantee ordering: the first invoice.paid can beat
+          // checkout.session.completed (which links stripe_subscription_id).
+          // If this invoice is for the seed price, error out so Stripe retries
+          // after the link lands; other subs' invoices are acked normally.
+          const seedPrice2 = Deno.env.get('STRIPE_PRICE_SEED_SUB');
+          const inv = event.data.object as unknown as {
+            lines?: { data?: { price?: { id?: string } }[] };
+          };
+          const isSeedInvoice = !!seedPrice2
+            && !!inv.lines?.data?.some((l) => l.price?.id === seedPrice2);
+          if (isSeedInvoice) {
+            throw new Error(`invoice.paid for seed sub ${subId} arrived before checkout linked it — retry`);
           }
+          break;
+        }
+        if (seedRow.status === 'cancelled' || seedRow.status === 'paused') {
+          // Paused/cancelled boxes never ship on autopilot; billing state is
+          // reconciled by the subscription lifecycle events.
+          console.log(`seed sub ${seedRow.id} is ${seedRow.status} — no box generated`);
+          break;
+        }
+        if (seedRow.status !== 'active') {
+          await admin.from('seed_drop_subscriptions')
+            .update({ status: 'active' }).eq('id', seedRow.id);
+        }
+        {
           const { data: orderId, error: genErr } = await admin
             .rpc('generate_seed_subscription_order', { p_sub: seedRow.id, p_paid: true });
-          if (genErr) console.error('generate_seed_subscription_order:', genErr);
-          else console.log(`seed sub ${seedRow.id}: order ${orderId} generated`);
+          if (genErr) throw new Error(`generate_seed_subscription_order: ${genErr.message}`);
+          console.log(`seed sub ${seedRow.id}: order ${orderId} generated`);
         }
         break;
       }
@@ -306,6 +383,9 @@ Deno.serve(async (req: Request) => {
     }
   } catch (e) {
     console.error('webhook handling error:', e);
+    // Release the idempotency claim — otherwise Stripe's automatic retry hits
+    // the 23505 branch and the event's side effects are lost forever.
+    await admin.from('stripe_events').delete().eq('id', event.id);
     return new Response('Handler error', { status: 500 });
   }
 

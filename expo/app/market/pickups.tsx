@@ -80,7 +80,7 @@ export default function SellerPickupsScreen() {
 
     const todayList = list
       .filter((o) => {
-        if (o.status !== 'CONFIRMED' && o.status !== 'READY') return false;
+        if (o.status !== 'CONFIRMED' && o.status !== 'READY' && o.status !== 'OUT_FOR_DELIVERY') return false;
         return new Date(orderWindow(o).start).toDateString() === todayKey;
       })
       .sort(

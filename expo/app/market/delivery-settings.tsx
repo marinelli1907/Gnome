@@ -96,6 +96,15 @@ export default function DeliverySettingsScreen() {
       Alert.alert('Schedule incomplete', 'Pick an order-by day and at least one delivery day.');
       return;
     }
+    const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (paid && sameDay && !HHMM.test(sameDayCutoff)) {
+      Alert.alert('Check the same-day cutoff', 'Use 24-hour HH:MM, like 11:00.');
+      return;
+    }
+    if (paid && nextDay && !HHMM.test(nextDayCutoff)) {
+      Alert.alert('Check the next-day cutoff', 'Use 24-hour HH:MM, like 18:00.');
+      return;
+    }
     save.mutate(
       {
         enabled,

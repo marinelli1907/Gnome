@@ -41,7 +41,7 @@ import {
   type PickupSlot,
 } from '@/lib/marketops';
 
-const CANCELLABLE = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY', 'OUT_FOR_DELIVERY'] as const;
+const CANCELLABLE = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY'] as const;
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -66,7 +66,7 @@ export default function OrderDetailScreen() {
   const sellerSlots = usePickupSlots(isSeller ? o?.market_id : undefined);
 
   // Local reminder for the buyer's confirmed order (best-effort, this device).
-  useLocalPickupReminder(isBuyer ? o : null, o?.market?.name ?? undefined);
+  useLocalPickupReminder(isBuyer && !isDelivery ? o : null, o?.market?.name ?? undefined);
 
   // Arrival buttons: disable each after sending this session.
   const [onWaySent, setOnWaySent] = useState(false);
@@ -109,12 +109,13 @@ export default function OrderDetailScreen() {
   }
 
   const win = orderWindow(o);
+  const winWord = isDelivery ? 'delivery' : 'pickup';
   const winLabel =
     win.kind === 'confirmed'
-      ? 'Confirmed pickup'
+      ? `Confirmed ${winWord}`
       : win.kind === 'proposed'
-        ? 'Suggested pickup'
-        : 'Requested pickup';
+        ? `Suggested ${winWord}`
+        : `Requested ${winWord}`;
 
   const runAction = async (action: Parameters<typeof act.mutateAsync>[0]['action'], after?: () => void) => {
     try {
@@ -369,6 +370,18 @@ export default function OrderDetailScreen() {
 
             <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Pay seller</Text>
             <PayMethodsList marketId={o.market_id} amountCents={o.subtotal_cents} />
+          </>
+        ) : null}
+
+        {/* Buyer, delivery: pay card with the true total (items + delivery). */}
+        {isBuyer && isDelivery &&
+         (o.status === 'CONFIRMED' || o.status === 'READY' || o.status === 'OUT_FOR_DELIVERY') ? (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Pay seller</Text>
+            <PayMethodsList
+              marketId={o.market_id}
+              amountCents={o.subtotal_cents + (o.delivery_fee_cents ?? 0)}
+            />
           </>
         ) : null}
 

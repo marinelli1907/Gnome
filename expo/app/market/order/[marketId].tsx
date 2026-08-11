@@ -57,12 +57,15 @@ export default function MarketOrderScreen() {
   const [slot, setSlot] = useState<PickupSlot | null>(null);
   const [note, setNote] = useState('');
 
+  const offersSettled = !slots.isLoading && !delivery.isLoading;
   const pickupOffered = (slots.data?.length ?? 0) > 0;
   const deliveryOffered = !!delivery.data?.enabled;
   const [fulfillment, setFulfillment] = useState<'pickup' | 'delivery' | null>(null);
-  // Only one method → no chooser.
+  // Only one method → no chooser. Auto-resolve only once BOTH queries settled,
+  // or the selector flashes resolved → chooser as the second answer lands.
   const effectiveFulfillment: 'pickup' | 'delivery' | null =
-    fulfillment ?? (pickupOffered && !deliveryOffered ? 'pickup'
+    fulfillment ?? (!offersSettled ? null
+      : pickupOffered && !deliveryOffered ? 'pickup'
       : deliveryOffered && !pickupOffered ? 'delivery'
       : null);
 
@@ -303,7 +306,7 @@ export default function MarketOrderScreen() {
             </View>
           </>
         )}
-        {!pickupOffered && !deliveryOffered && !slots.isLoading && (
+        {!pickupOffered && !deliveryOffered && offersSettled && (
           <Text style={[styles.noneText, { marginTop: 16 }]}>
             This Market hasn’t set up ordering yet — message the seller from a listing instead.
           </Text>
