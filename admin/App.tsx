@@ -360,33 +360,179 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
 }
 
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
+type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'support' | 'stripe';
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
-  const [view, setView] = useState<'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons'>('menu');
+  const [view, setView] = useState<MoreView>('menu');
   if (view === 'users') return <Users back={() => setView('menu')} can={can} />;
   if (view === 'team') return <Team back={() => setView('menu')} />;
   if (view === 'audit') return <Audit back={() => setView('menu')} />;
   if (view === 'inventory') return <Inventory back={() => setView('menu')} can={can} />;
   if (view === 'commercial') return <Commercial back={() => setView('menu')} can={can} />;
   if (view === 'seasons') return <Seasons back={() => setView('menu')} can={can} />;
+  if (view === 'listings') return <Listings back={() => setView('menu')} can={can} />;
+  if (view === 'markets') return <Markets back={() => setView('menu')} />;
+  if (view === 'support') return <Support back={() => setView('menu')} can={can} />;
+  if (view === 'stripe') return <StripeChecklist back={() => setView('menu')} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       {can('subscriptions.view') && <MenuRow label="💰 Revenue & Promotions" onPress={() => setView('commercial')} />}
       {can('seed_drop.view') && <MenuRow label="🌦 Seed Drop Seasons" onPress={() => setView('seasons')} />}
-      {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
       {can('inventory.view') && <MenuRow label="🌱 Inventory" onPress={() => setView('inventory')} />}
+      {can('listings.view') && <MenuRow label="🏷 Listings" onPress={() => setView('listings')} />}
+      {can('markets.view') && <MenuRow label="🏡 Markets" onPress={() => setView('markets')} />}
+      {can('support.view') && <MenuRow label="🚩 Support & Reports" onPress={() => setView('support')} />}
+      {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
+      {isOwner && <MenuRow label="💳 Stripe setup checklist" onPress={() => setView('stripe')} />}
       {can('admins.view') && <MenuRow label="🛡 Admin Team" onPress={() => setView('team')} />}
       <MenuRow label="📜 Audit Log" onPress={() => setView('audit')} />
       <Card>
         <Text style={s.cardSub}>
-          Seed Drop fulfillment lives in the 📦 Fulfill tab. Markets, Listings, Orders,
-          Compliance detail, Plots, Support, Taxonomy — next build; their
-          backend permissions are already live.
+          Seed Drop fulfillment lives in the 📦 Fulfill tab. AI agents can propose
+          actions in the Boardroom — they land in AI HQ for your one-tap approval.
         </Text>
       </Card>
       <Pressable style={[s.btn, { marginTop: 20 }]} onPress={() => supabase.auth.signOut()}>
         <Text style={s.btnText}>Sign out</Text>
       </Pressable>
       {isOwner && <Text style={s.stamp}>Signed in as OWNER — the highest-risk actions require this role.</Text>}
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------- Listings moderation
+function Listings({ back, can }: { back: () => void; can: (p: string) => boolean }) {
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<any[]>([]);
+  const [filter, setFilter] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    const { data } = await supabase.rpc('admin_listings_search', { p_q: q || null, p_status: filter });
+    setRows((data as any[]) ?? []);
+  }, [q, filter]);
+  useEffect(() => { void load(); }, [load]);
+  const moderate = (l: any, status: 'paused' | 'active') => {
+    Alert.alert(status === 'paused' ? 'Pause this listing?' : 'Restore this listing?', l.title, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: status === 'paused' ? 'Pause' : 'Restore', style: status === 'paused' ? 'destructive' : 'default', onPress: async () => {
+        const { error } = await supabase.rpc('admin_set_listing_status', { p_listing: l.id, p_status: status, p_reason: 'Moderated from Gnome Admin' });
+        if (error) Alert.alert('Failed', error.message); else void load();
+      } },
+    ]);
+  };
+  return (
+    <View style={{ flex: 1, padding: 16 }}>
+      <BackRow label="← More" onPress={back} />
+      <TextInput style={s.input} placeholder="Search listings by title…" value={q} onChangeText={setQ}
+        onSubmitEditing={load} returnKeyType="search" placeholderTextColor={C.muted} autoCapitalize="none" />
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+        {([['All', null], ['Active', 'active'], ['Paused', 'paused']] as [string, string | null][]).map(([label, v]) => (
+          <Pressable key={label} onPress={() => setFilter(v)} style={[s.chip, filter === v && s.chipActive]}>
+            <Text style={[s.chipText, filter === v && s.chipTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <FlatList
+        data={rows}
+        keyExtractor={(r) => r.id}
+        renderItem={({ item }) => (
+          <Card>
+            <Text style={s.cardTitle}>{item.title}{item.is_featured ? ' ✨' : ''}{item.open_reports > 0 ? `  🚩${item.open_reports}` : ''}</Text>
+            <Text style={s.cardSub}>{item.market ?? item.owner} · {item.listing_type} · {item.status} · {String(item.created_at).slice(0, 10)}</Text>
+            {can('listings.pause') && item.status === 'active' && <SmallBtn label="Pause" danger onPress={() => moderate(item, 'paused')} />}
+            {can('listings.restore') && item.status === 'paused' && <SmallBtn label="Restore" onPress={() => moderate(item, 'active')} />}
+          </Card>
+        )}
+        ListEmptyComponent={<Text style={s.cardSub}>No listings match.</Text>}
+      />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------- Markets
+function Markets({ back }: { back: () => void }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const { data } = await supabase.rpc('admin_markets_overview');
+    setRows((data as any[]) ?? []); setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Markets ({rows.length})</Text>
+      {rows.map((m) => (
+        <Card key={m.id}>
+          <Text style={s.cardTitle}>{m.name}</Text>
+          <Text style={s.cardSub}>{m.owner ?? ''} · {m.plan} ({m.source}) · {m.active_listings} active · {m.status}</Text>
+        </Card>
+      ))}
+      {rows.length === 0 && <Card><Text style={s.cardSub}>No markets yet.</Text></Card>}
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------- Support & Reports
+function Support({ back, can }: { back: () => void; can: (p: string) => boolean }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const { data } = await supabase.from('reports').select('*').is('resolved_at', null).order('created_at', { ascending: false }).limit(50);
+    setRows((data as any[]) ?? []); setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const resolve = (r: any) => {
+    Alert.alert('Resolve this report?', r.reason ?? r.target_type, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Resolve', onPress: async () => {
+        const { error } = await supabase.rpc('admin_resolve_report', { p_report: r.id, p_note: 'Resolved from Gnome Admin' });
+        if (error) Alert.alert('Failed', error.message); else void load();
+      } },
+    ]);
+  };
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Open reports ({rows.length})</Text>
+      {rows.map((r) => (
+        <Card key={r.id}>
+          <Text style={s.cardTitle}>{r.target_type} report</Text>
+          <Text style={s.cardSub}>{r.reason ?? '—'} · {String(r.created_at).slice(0, 16).replace('T', ' ')}</Text>
+          {can('support.resolve') && <SmallBtn label="Resolve" onPress={() => resolve(r)} />}
+        </Card>
+      ))}
+      {rows.length === 0 && <Card><Text style={s.cardBig}>All clear 🎉</Text><Text style={s.cardSub}>No open reports.</Text></Card>}
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------- Stripe setup checklist
+function StripeChecklist({ back }: { back: () => void }) {
+  const [rows, setRows] = useState<any[]>([]);
+  useEffect(() => {
+    supabase.from('billing_products').select('key,description,unit_amount_cents,stripe_price_id,active').order('key')
+      .then(({ data }) => setRows((data as any[]) ?? []));
+  }, []);
+  const needed = rows.filter((r) => r.active && !r.stripe_price_id);
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Stripe setup</Text>
+      <Card>
+        <Text style={s.cardBig}>{needed.length === 0 ? 'All set 💳' : `${needed.length} price${needed.length === 1 ? '' : 's'} to configure`}</Text>
+        <Text style={s.cardSub}>
+          Everything in Gnome is billing-ready — checkout turns on the moment each active product below has a Stripe price ID.
+          Create the price in the Stripe dashboard, then set its id on the matching product key.
+        </Text>
+      </Card>
+      {rows.map((r) => (
+        <Card key={r.key}>
+          <Text style={s.cardTitle}>{r.stripe_price_id ? '✅' : r.active ? '⬜️' : '💤'} {r.key}</Text>
+          <Text style={s.cardSub}>{r.description} · {r.unit_amount_cents ? money(r.unit_amount_cents) : 'variable'}{!r.active ? ' · inactive' : ''}</Text>
+          <Text style={s.mono}>price id: {r.stripe_price_id ?? 'not set'}</Text>
+        </Card>
+      ))}
     </ScrollView>
   );
 }
@@ -1304,6 +1450,10 @@ const s = StyleSheet.create({
     backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: C.border,
   },
   menuText: { fontSize: 15, fontWeight: '700', color: C.green },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  chipActive: { backgroundColor: C.green, borderColor: C.green },
+  chipText: { fontSize: 13, fontWeight: '700', color: C.muted },
+  chipTextActive: { color: '#fff' },
   signTitle: { fontSize: 26, fontWeight: '800', color: C.green },
   lane: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   laneActive: { backgroundColor: C.green, borderColor: C.green },
