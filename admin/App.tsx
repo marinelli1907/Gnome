@@ -372,7 +372,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
   if (view === 'listings') return <Listings back={() => setView('menu')} can={can} />;
   if (view === 'markets') return <Markets back={() => setView('menu')} />;
   if (view === 'support') return <Support back={() => setView('menu')} can={can} />;
-  if (view === 'stripe') return <StripeChecklist back={() => setView('menu')} />;
+  if (view === 'stripe') return <BillingHealth back={() => setView('menu')} isOwner={isOwner} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       {can('subscriptions.view') && <MenuRow label="💰 Revenue & Promotions" onPress={() => setView('commercial')} />}
@@ -382,7 +382,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
       {can('markets.view') && <MenuRow label="🏡 Markets" onPress={() => setView('markets')} />}
       {can('support.view') && <MenuRow label="🚩 Support & Reports" onPress={() => setView('support')} />}
       {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
-      {isOwner && <MenuRow label="💳 Stripe setup checklist" onPress={() => setView('stripe')} />}
+      {can('subscriptions.view') && <MenuRow label="💳 Billing Health" onPress={() => setView('stripe')} />}
       {can('admins.view') && <MenuRow label="🛡 Admin Team" onPress={() => setView('team')} />}
       <MenuRow label="📜 Audit Log" onPress={() => setView('audit')} />
       <Card>
@@ -507,32 +507,73 @@ function Support({ back, can }: { back: () => void; can: (p: string) => boolean 
   );
 }
 
-// ---------------------------------------------------------------- Stripe setup checklist
-function StripeChecklist({ back }: { back: () => void }) {
-  const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => {
-    supabase.from('billing_products').select('key,description,unit_amount_cents,stripe_price_id,active').order('key')
-      .then(({ data }) => setRows((data as any[]) ?? []));
+// ---------------------------------------------------------------- Billing Health
+function BillingHealth({ back, isOwner }: { back: () => void; isOwner: boolean }) {
+  const [h, setH] = useState<any | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const { data } = await supabase.rpc('admin_billing_health');
+    setH(data as any); setRefreshing(false);
   }, []);
-  const needed = rows.filter((r) => r.active && !r.stripe_price_id);
+  useEffect(() => { void load(); }, [load]);
+
+  const live = h?.payments_live_enabled === true;
+  const products: any[] = h?.products ?? [];
+  const testMissing = products.filter((p) => p.active && !p.test_ready);
+  const toggleLive = (v: boolean) => {
+    Alert.alert(
+      v ? 'Enable LIVE payments?' : 'Disable live payments',
+      v ? 'This lets Gnome create REAL Stripe charges. Only do this after reviewing test-mode QA and confirming live prices + webhook are set. Owner action, audited.'
+        : 'Gnome returns to test mode. No live charges will be created.',
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: v ? 'Enable live' : 'Disable', style: v ? 'destructive' : 'default', onPress: async () => {
+         const { error } = await supabase.rpc('admin_set_payments_live', { p_enabled: v });
+         if (error) Alert.alert('Failed', error.message); else void load();
+       } }]);
+  };
+
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
       <BackRow label="← More" onPress={back} />
-      <Text style={s.h2}>Stripe setup</Text>
       <Card>
-        <Text style={s.cardBig}>{needed.length === 0 ? 'All set 💳' : `${needed.length} price${needed.length === 1 ? '' : 's'} to configure`}</Text>
+        <Text style={s.cardBig}>{live ? 'LIVE payments ON 🔴' : 'Test mode 🧪'}</Text>
         <Text style={s.cardSub}>
-          Everything in Gnome is billing-ready — checkout turns on the moment each active product below has a Stripe price ID.
-          Create the price in the Stripe dashboard, then set its id on the matching product key.
+          {live ? 'Gnome is creating real Stripe charges.' : 'Gnome creates Stripe TEST charges only — no real money moves. Live payments stay OFF until you enable them.'}
         </Text>
+        {isOwner && h?.payments_live_enabled != null && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+            <Text style={s.cardTitle}>Payments Live</Text>
+            <Switch value={live} onValueChange={toggleLive} trackColor={{ true: C.red }} />
+          </View>
+        )}
       </Card>
-      {rows.map((r) => (
-        <Card key={r.key}>
-          <Text style={s.cardTitle}>{r.stripe_price_id ? '✅' : r.active ? '⬜️' : '💤'} {r.key}</Text>
-          <Text style={s.cardSub}>{r.description} · {r.unit_amount_cents ? money(r.unit_amount_cents) : 'variable'}{!r.active ? ' · inactive' : ''}</Text>
-          <Text style={s.mono}>price id: {r.stripe_price_id ?? 'not set'}</Text>
+
+      <Text style={s.h2}>Product mapping</Text>
+      {products.map((p) => (
+        <Card key={p.key}>
+          <Text style={s.cardTitle}>{p.test_ready ? '🧪✅' : p.active ? '🧪⬜️' : '💤'} {p.key}</Text>
+          <Text style={s.cardSub}>
+            {p.description} · {p.unit_amount_cents ? money(p.unit_amount_cents) : 'variable'}
+            {'  ·  '}test: {p.test_ready ? 'READY' : 'MISSING PRICE'} · live: {p.live_ready ? 'READY' : 'not set'}
+          </Text>
         </Card>
       ))}
+      <Card>
+        <Text style={s.cardSub}>
+          {testMissing.length === 0
+            ? 'All active products have a test price — run the test-mode QA matrix.'
+            : `${testMissing.length} active product${testMissing.length === 1 ? '' : 's'} need a TEST price before test checkout works.`}
+        </Text>
+      </Card>
+
+      <Text style={s.h2}>Events</Text>
+      <Card>
+        <Text style={s.cardSub}>Last Stripe event: {h?.last_event ? `${h.last_event.type} · ${h.last_event.livemode ? 'live' : 'test'} · ${String(h.last_event.at).slice(0, 16).replace('T', ' ')}` : '— none yet'}</Text>
+        <Text style={s.cardSub}>Last test payment: {h?.last_test_payment ? `${money(h.last_test_payment.amount_cents)} · ${String(h.last_test_payment.at).slice(0, 16).replace('T', ' ')}` : '— none'}</Text>
+        <Text style={s.cardSub}>Last live payment: {h?.last_live_payment ? `${money(h.last_live_payment.amount_cents)} · ${String(h.last_live_payment.at).slice(0, 16).replace('T', ' ')}` : '— none (good, pre-launch)'}</Text>
+        <Text style={s.cardSub}>Events 30d: {h?.events_test_30d ?? 0} test · {h?.events_live_30d ?? 0} live</Text>
+      </Card>
     </ScrollView>
   );
 }
@@ -1258,8 +1299,15 @@ function Commercial({ back, can }: { back: () => void; can: (p: string) => boole
         <Text style={s.cardSub}>Effective plan mix</Text><Text style={s.cardText}>{mix('plan_mix')}</Text>
         <Text style={[s.cardSub, { marginTop: 6 }]}>Entitlement sources</Text><Text style={s.cardText}>{mix('source_mix')}</Text>
       </Card>
-      <Row2 items={[['MRR', n('mrr_cents') / 100], ['Comp grants', n('active_comp_grants')], ['Pickup add-ons', n('pickup_addons')]]} money0 />
-      <Row2 items={[['Seed subs', n('seed_subscribers_active')], ['Seed rev 90d', Math.round(n('seed_revenue_cents_90d') / 100)], ['Growers near cap', n('growers_near_cap')]]} />
+      <Row2 items={[['MRR (live)', n('mrr_cents') / 100], ['Comp grants', n('active_comp_grants')], ['Pickup add-ons', n('pickup_addons')]]} money0 />
+      <Row2 items={[['Seed subs', n('seed_subscribers_active')], ['Seed rev 90d (live)', Math.round(n('seed_revenue_cents_90d') / 100)], ['Growers near cap', n('growers_near_cap')]]} />
+      {ov?.test && (
+        <Card>
+          <Text style={s.cardSub}>
+            🧪 Test mode (excluded from revenue above): {ov.test.plan_subs} plan sub{ov.test.plan_subs === 1 ? '' : 's'} · {money(Number(ov.test.seed_revenue_cents ?? 0))} seed · {ov.test.promo_purchases} promo purchase{ov.test.promo_purchases === 1 ? '' : 's'}
+          </Text>
+        </Card>
+      )}
 
       <Text style={s.h2}>Promotions</Text>
       <Row2 items={[['Active', n('promotions_active')], ['Last 30d', n('promotions_30d')], ['Sales 30d $', Math.round(n('promo_purchases_cents_30d') / 100)]]} />
