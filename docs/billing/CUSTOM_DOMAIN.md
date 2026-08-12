@@ -15,6 +15,17 @@ Supabase custom domains use Cloudflare SSL-for-SaaS and require:
 
 Both are owner actions; until they're done, the domain cannot be initiated.
 
+## Verified current DNS state (checked 2026-08-12)
+Facts observed, not assumed:
+- `api.gnomefarmersmarket.com` — **does not resolve** (no CNAME, no A record).
+  Nothing to break; the subdomain is free to claim.
+- `gnomefarmersmarket.com` (apex) — `A 147.79.75.242` (the Hostinger VPS).
+- Authoritative nameservers — `apollo.dns-parking.com`, `athena.dns-parking.com`
+  → **DNS is managed at Hostinger**, so that is where the CNAME/TXT records go.
+- Supabase CLI 2.98.2 is installed but **not authenticated**
+  (`supabase projects list` → "Access token not provided"), and
+  `SUPABASE_ACCESS_TOKEN` is unset.
+
 ## Why the DNS records are not listed here
 The exact records (a CNAME target + one or more TXT verification values) are
 **generated per-project by Supabase/Cloudflare at initiation time** — they are

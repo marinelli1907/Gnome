@@ -1,10 +1,9 @@
 # Stripe Test-Mode QA
 
-## What was proven (deterministic, 2026-08-11)
+## Part 1 — Deterministic lifecycle QA (2026-08-11)
 The whole entitlement/order/credit lifecycle was driven through the exact RPCs
 and DB effects the webhook performs, using throwaway users tagged
-`stripe_livemode=false`, then cleaned. This proves **Gnome's handling logic**;
-the Stripe API round-trip itself is a separate owner step (below). Results:
+`stripe_livemode=false`, then cleaned. This proves **Gnome's handling logic**.
 
 | Area | Result |
 |---|---|
@@ -26,40 +25,77 @@ the Stripe API round-trip itself is a separate owner step (below). Results:
 | Bundle → seller plan + seed sub both active | PASS |
 | Webhook event id idempotent (replay refused) | PASS |
 
-All QA data removed; real MRR $0; live gate OFF confirmed after cleanup.
+## Part 2 — REAL Stripe API round-trip (2026-08-12)
+Executed against the **Gnome / Boone Systems LLC** Stripe account
+`acct_1U0DgIAGtpm0Et4C`, **test mode only** (`livemode:false` verified before
+any write). The Boon Rideshare account and its CLI profile were never touched.
 
-## To run the REAL Stripe test round-trip (owner setup, then automated)
-The Mac's only authenticated Stripe CLI belongs to **Boon Rideshare** (a
-different business) and there is **no Gnome test key** in the environment, so
-the real Stripe API leg is intentionally NOT executed. The owner does ONE
-thing; product/price creation and identity confirmation are then automated by
-the `billing-admin` edge function (owner-only, test-only, guarded).
+### Proven
+| Step | Result |
+|---|---|
+| `billing-admin identity` → correct account, livemode:false | PASS |
+| 7 canonical TEST products + prices created (`ensure_products`) | PASS |
+| Billing Health shows all 7 `test: READY`, `live: NOT READY` | PASS |
+| Real `cs_test_` Checkout Session for all 8 SKU variants | PASS |
+| Session amounts exactly match the commercial model | PASS |
+| Every session carries server-authored ownership metadata | PASS |
+| Every session `livemode:false`, `mode:test` | PASS |
+| Promote **another user's** listing → `NOT_YOUR_LISTING` | PASS |
+| Pay **another user's** seed subscription → `NOT_YOUR_SUBSCRIPTION` | PASS |
+| Nonexistent listing / unknown / inactive product refused | PASS |
+| Unauthenticated `billing-checkout` → 401 | PASS |
+| **Real test payment** (card 4242…) → `status: complete`, `payment_status: paid` | PASS |
+| Stripe Tax applied correctly (NC 6.75%: $9.99 → $10.66) | PASS |
+| Stripe subscription + customer created in test mode | PASS |
+| Stripe delivered the events to the webhook endpoint | PASS |
+| Webhook **refused** events it could not verify (HTTP 400) | PASS |
+| DB left untouched by unverifiable events (no plan/sub/event rows) | PASS |
+| `payments_live_enabled` = **false** throughout | PASS |
+| Live MRR / promotion / seed revenue = **$0** | PASS |
 
-**Owner (one step, Supabase → Project → Edge Functions → Secrets):**
-1. In the **Gnome** Stripe account, switch to **Test mode** → Developers →
-   API keys → copy the **test** secret key (`sk_test_…`), or make a restricted
-   test key with write access to Products/Prices + Checkout + Subscriptions.
-2. Set secret `STRIPE_SECRET_KEY_TEST` = that key.
-3. Create a **test** webhook endpoint →
-   `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
-   (events: checkout.session.completed, customer.subscription.updated,
-   customer.subscription.deleted, invoice.paid, invoice.payment_failed,
-   charge.refunded) and set its signing secret as `STRIPE_WEBHOOK_SECRET_TEST` (v16 resolves test/live signing secrets independently; the legacy `STRIPE_WEBHOOK_SECRET` is still accepted during transition).
-   (Local alternative: `stripe listen --forward-to <url>` from the **Gnome**
-   CLI profile — never the Boon profile.)
+### Account-config blocker found and fixed
+The account has Stripe Tax / managed payments enabled, which **requires a
+`tax_code` on every product**. The first real session attempt failed with
+`Invalid line_items[0]: the product tax code is missing`. `ensure_products` now
+sets `tax_code: txcd_10000000` ("General — Electronically Supplied Services")
+on create *and* patches existing products. Refine per-product tax codes before
+going live.
 
-**Then automated (next session):**
-4. `billing-admin {action:"identity"}` → confirms the key resolves to the
-   **Gnome** account id + `livemode:false`. If it's the wrong account or a live
-   key, it refuses. (Nothing is created at this step.)
-5. `billing-admin {action:"ensure_products", confirm_account_id:"acct_…"}` →
-   creates/reuses the 7 test Products/Prices (metadata gnome_product_key,
-   environment=test) and writes the test price ids into `billing_products`.
-   Guarded: refuses on a live account or if the live gate is on. Admin →
-   Billing Health then shows all seven `test: READY`.
-6. From a QA account, `billing-checkout` (Upgrade / Promote / Seed Drop) → pay
-   with test card **4242 4242 4242 4242** (decline: **4000 0000 0000 0002**).
-7. Admin → Billing Health shows the test payment; **live revenue stays $0**.
+### The one remaining step (owner)
+`STRIPE_WEBHOOK_SECRET_TEST` is **not set**, so the webhook cannot verify
+signatures and therefore does not mutate anything. Everything else is done —
+the test webhook endpoint already exists with the correct URL and event set:
+
+- Endpoint: `we_1U3VaFAGtpm0Et4CIvWhv1R4`
+- URL: `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
+- Events: checkout.session.completed, customer.subscription.updated,
+  customer.subscription.deleted, invoice.paid, invoice.payment_failed,
+  charge.refunded
+
+To finish:
+1. Stripe → Developers → Webhooks → `we_1U3VaFAGtpm0Et4CIvWhv1R4` → reveal the
+   **signing secret** (`whsec_…`).
+2. Supabase → Project Settings → Edge Functions → Secrets → add
+   `STRIPE_WEBHOOK_SECRET_TEST` = that value.
+3. In Stripe, **Resend** the pending `checkout.session.completed` for session
+   `cs_test_a1T9GRod…` (Stripe also retries automatically for a while).
+4. Expected result: market `f2072502-f275-4037-a166-213ee4362049` flips to
+   `plan = grower`, a `market_subscriptions` row appears, `stripe_events` and
+   `billing_events` each gain a row, and Admin → Billing Health shows the test
+   payment while **live revenue stays $0**.
+
+Verify with `billing-admin {"action":"webhook_status"}` — it reports which
+signing secrets are configured (booleans only, never the values).
+
+### QA state deliberately left in place
+So the round-trip completes itself once the secret lands:
+- QA user `gnome-qa-checkout` (`3bac0b6a-…`), its market `f2072502-…`, one
+  listing `aaaa1111-…-01`, one seed subscription `bbbb2222-…-01`.
+- One paid **test-mode** Stripe subscription `sub_1U3VkrAGtpm0Et4CzkVgbOq7`
+  (customer `cus_V3d0rWs8tOhzm5`) — test mode, no real money.
+
+Remove them after the webhook leg is confirmed. The ownership-spoof fixtures
+and the temporary QA super-admin were already removed.
 
 Use only official Stripe test cards. Never a real card. Never the live key.
 Never the Boon account.

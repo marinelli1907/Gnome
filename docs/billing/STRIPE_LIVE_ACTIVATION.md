@@ -4,10 +4,17 @@
 Gnome will not create a single real charge until every step below is done and
 an owner flips the switch. Do this only AFTER reviewing the test-mode QA.
 
+The Gnome Stripe account is **Boone Systems LLC** `acct_1U0DgIAGtpm0Et4C`.
+(The Boon Rideshare account is a different business — never use it here.)
+
 ## Prerequisites (all owner actions in the Stripe dashboard)
 1. **Complete test-mode QA first** (docs/billing/STRIPE_TEST_MODE_QA.md). Do not
-   skip to live.
-2. In the **Gnome** Stripe account (Live mode), create Products/Prices:
+   skip to live. As of 2026-08-12 that QA is done except the webhook signing
+   secret — finish that step before considering live.
+2. In the **Gnome** Stripe account (Live mode), create Products/Prices.
+   **Every product needs a `tax_code`** — this account has Stripe Tax/managed
+   payments on, and Checkout rejects sessions for products without one (test
+   mode uses `txcd_10000000`; pick the right code per product for live):
    - GNOME_GROWER_MONTHLY — $9.99/mo recurring
    - GNOME_FARM_MONTHLY — $29.99/mo recurring
    - GNOME_PICKUP_LOCATION_ADDON — $5.00/mo recurring, quantity-adjustable
