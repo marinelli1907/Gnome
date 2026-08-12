@@ -21,7 +21,7 @@ an owner flips the switch. Do this only AFTER reviewing the test-mode QA.
    `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`,
    events: checkout.session.completed, customer.subscription.updated,
    customer.subscription.deleted, invoice.paid, invoice.payment_failed,
-   charge.refunded. Set its signing secret as `STRIPE_WEBHOOK_SECRET`.
+   charge.refunded. Set its signing secret as `STRIPE_WEBHOOK_SECRET_LIVE` (kept separate from the test secret; the webhook verifies each independently).
 6. Confirm return/cancel URLs resolve (`GNOME_PUBLIC_URL`, default
    https://gnomefarmersmarket.com → /account?checkout=success|cancelled).
 

@@ -44,7 +44,7 @@ the `billing-admin` edge function (owner-only, test-only, guarded).
    `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
    (events: checkout.session.completed, customer.subscription.updated,
    customer.subscription.deleted, invoice.paid, invoice.payment_failed,
-   charge.refunded) and set its signing secret as `STRIPE_WEBHOOK_SECRET`.
+   charge.refunded) and set its signing secret as `STRIPE_WEBHOOK_SECRET_TEST` (v16 resolves test/live signing secrets independently; the legacy `STRIPE_WEBHOOK_SECRET` is still accepted during transition).
    (Local alternative: `stripe listen --forward-to <url>` from the **Gnome**
    CLI profile — never the Boon profile.)
 

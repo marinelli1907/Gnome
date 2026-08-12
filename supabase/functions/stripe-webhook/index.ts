@@ -15,7 +15,9 @@
 //  * Price→product resolution reads billing_products test/live columns.
 //
 // Secrets: STRIPE_SECRET_KEY_TEST / STRIPE_SECRET_KEY_LIVE (mode-specific;
-//   STRIPE_SECRET_KEY legacy still honored), STRIPE_WEBHOOK_SECRET.
+//   STRIPE_SECRET_KEY legacy still honored). Signing: STRIPE_WEBHOOK_SECRET_TEST
+//   / STRIPE_WEBHOOK_SECRET_LIVE (each verified independently; legacy
+//   STRIPE_WEBHOOK_SECRET still accepted for transition).
 // verify_jwt OFF — Stripe authenticates via the signature header.
 
 import Stripe from 'npm:stripe';
@@ -28,21 +30,33 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('STRIPE_SECRET_KEY_TEST') ?? Deno.env.get('STRIPE_SECRET_KEY_LIVE') ??
     Deno.env.get('STRIPE_SECRET_KEY') ?? Deno.env.get('Stripe_Secret_Key')
   )?.trim();
-  const webhookSecret = (Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? Deno.env.get('Stripe_Webhook_Secret'))?.trim();
-  if (!secretKey || !webhookSecret) return new Response('Stripe not configured', { status: 503 });
+  // Test/live signing secrets are distinct (Parts 4/32). A test endpoint sends
+  // events signed with the TEST secret and a live endpoint with the LIVE secret;
+  // we try each CONFIGURED candidate and only the matching one verifies — so a
+  // test event never validates against the live secret or vice-versa. The legacy
+  // single STRIPE_WEBHOOK_SECRET stays honored for a zero-downtime transition.
+  const webhookSecrets = [
+    ['test', Deno.env.get('STRIPE_WEBHOOK_SECRET_TEST')],
+    ['live', Deno.env.get('STRIPE_WEBHOOK_SECRET_LIVE')],
+    ['legacy', Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? Deno.env.get('Stripe_Webhook_Secret')],
+  ].map(([k, v]) => [k, v?.trim()] as const).filter(([, v]) => !!v) as [string, string][];
+  if (!secretKey || webhookSecrets.length === 0) return new Response('Stripe not configured', { status: 503 });
 
   const stripe = new Stripe(secretKey);
   const signature = req.headers.get('stripe-signature');
   if (!signature) return new Response('Missing signature', { status: 400 });
 
-  let event: Stripe.Event;
-  try {
-    event = await stripe.webhooks.constructEventAsync(
-      await req.text(), signature, webhookSecret, undefined, Stripe.createSubtleCryptoProvider(),
-    );
-  } catch (e) {
-    const shape = /^whsec_[A-Za-z0-9]+$/.test(webhookSecret) ? `format ok, length ${webhookSecret.length}` : `UNEXPECTED FORMAT, length ${webhookSecret.length}`;
-    console.error(`signature verification failed (secret ${shape}):`, e instanceof Error ? e.message : e);
+  const rawBody = await req.text();
+  let event: Stripe.Event | null = null;
+  let lastErr: unknown = null;
+  for (const [, whsec] of webhookSecrets) {
+    try {
+      event = await stripe.webhooks.constructEventAsync(rawBody, signature, whsec, undefined, Stripe.createSubtleCryptoProvider());
+      break;
+    } catch (e) { lastErr = e; }
+  }
+  if (!event) {
+    console.error(`signature verification failed against ${webhookSecrets.length} configured secret(s):`, lastErr instanceof Error ? lastErr.message : lastErr);
     return new Response('Bad signature', { status: 400 });
   }
 
