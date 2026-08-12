@@ -9,8 +9,10 @@ The Gnome Stripe account is **Boone Systems LLC** `acct_1U0DgIAGtpm0Et4C`.
 
 ## Prerequisites (all owner actions in the Stripe dashboard)
 1. **Complete test-mode QA first** (docs/billing/STRIPE_TEST_MODE_QA.md). Do not
-   skip to live. As of 2026-08-12 that QA is done except the webhook signing
-   secret — finish that step before considering live.
+   skip to live. As of 2026-08-12 the FULL test round-trip is **DONE** — real
+   test payments through a real signed webhook to real Gnome mutations, for
+   plans, plan change, add-on, promotion, seed drop, refund and cancellation,
+   with real revenue provably $0.
 2. In the **Gnome** Stripe account (Live mode), create Products/Prices.
    **Every product needs a `tax_code`** — this account has Stripe Tax/managed
    payments on, and Checkout rejects sessions for products without one (test

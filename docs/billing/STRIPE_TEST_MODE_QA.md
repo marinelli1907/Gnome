@@ -61,41 +61,51 @@ sets `tax_code: txcd_10000000` ("General — Electronically Supplied Services")
 on create *and* patches existing products. Refine per-product tax codes before
 going live.
 
-### The one remaining step (owner)
-`STRIPE_WEBHOOK_SECRET_TEST` is **not set**, so the webhook cannot verify
-signatures and therefore does not mutate anything. Everything else is done —
-the test webhook endpoint already exists with the correct URL and event set:
+## Part 3 — FULL round-trip COMPLETE (2026-08-12)
+`STRIPE_WEBHOOK_SECRET_TEST` was set by the owner, and the whole loop was then
+driven for real: **Gnome checkout → Stripe Test Checkout → official test card
+payment → real signed Stripe webhook → Gnome mutation → Admin reflects it.**
 
-- Endpoint: `we_1U3VaFAGtpm0Et4CIvWhv1R4`
-- URL: `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
-- Events: checkout.session.completed, customer.subscription.updated,
-  customer.subscription.deleted, invoice.paid, invoice.payment_failed,
-  charge.refunded
+Test webhook endpoint `we_1U3VaFAGtpm0Et4CIvWhv1R4` →
+`https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
+(6 events). `webhook_status` reports `test: true`.
 
-To finish:
-1. Stripe → Developers → Webhooks → `we_1U3VaFAGtpm0Et4CIvWhv1R4` → reveal the
-   **signing secret** (`whsec_…`).
-2. Supabase → Project Settings → Edge Functions → Secrets → add
-   `STRIPE_WEBHOOK_SECRET_TEST` = that value.
-3. In Stripe, **Resend** the pending `checkout.session.completed` for session
-   `cs_test_a1T9GRod…` (Stripe also retries automatically for a while).
-4. Expected result: market `f2072502-f275-4037-a166-213ee4362049` flips to
-   `plan = grower`, a `market_subscriptions` row appears, `stripe_events` and
-   `billing_events` each gain a row, and Admin → Billing Health shows the test
-   payment while **live revenue stays $0**.
+| Real payment / event | Gnome result | Verdict |
+|---|---|---|
+| Grower $9.99 (+NC tax = $10.66) | market `free` → **grower**, plan sub active | PASS |
+| Farm $29.99 (+tax = $32.01) | **grower → farm**, prior Grower sub auto-cancelled in Stripe + DB, exactly 1 active plan | PASS |
+| Stale grower-cancel event arrives after Farm | ignored — Farm survived | PASS |
+| Listing promotion $3.99 (+tax = $4.26) | credit ledger +1 then −1 (**net 0**), listing featured `active` | PASS |
+| Seed Drop seasonal $24.99 (+tax = $26.68) | sub `active` + linked to Stripe, seed order `paid` | PASS |
+| Pickup add-on qty 3 ($15 +tax = $16.01) | `extra_pickup_locations` = **3**, plan untouched, addon sub separate | PASS |
+| Refund of the promotion charge | event processed; credit already consumed → **history preserved**, no bogus clawback | PASS |
+| Cancel add-on subscription | extras → **0**, plan stayed `farm` (non-destructive) | PASS |
+| Cancel plan subscription | plan → **free**, extras 0, all 3 subscription history rows kept | PASS |
+| Every record | `livemode = false` | PASS |
+| Admin → Billing Health | 7/7 test READY, 0 live READY, `stripe_mode: test`, 9 test events, **0 live events**, last test payment shown | PASS |
+| Admin → Commercial overview | REAL MRR **$0**, REAL promo **$0**, REAL seed **$0**, while the separate `test` block shows the activity | PASS |
+| `payments_live_enabled` | **false** throughout | PASS |
 
-Verify with `billing-admin {"action":"webhook_status"}` — it reports which
-signing secrets are configured (booleans only, never the values).
+Real Stripe event ids were recorded in `stripe_events` (e.g.
+`evt_1U3bWtAGtpm0Et4Crf1liPRv` checkout.session.completed,
+`evt_1U3bWtAGtpm0Et4CYZ6oP7gN` invoice.paid), all `livemode=false`.
 
-### QA state deliberately left in place
-So the round-trip completes itself once the secret lands:
-- QA user `gnome-qa-checkout` (`3bac0b6a-…`), its market `f2072502-…`, one
-  listing `aaaa1111-…-01`, one seed subscription `bbbb2222-…-01`.
-- One paid **test-mode** Stripe subscription `sub_1U3VkrAGtpm0Et4CzkVgbOq7`
-  (customer `cus_V3d0rWs8tOhzm5`) — test mode, no real money.
+**Test money never touched business numbers** — that is the whole point of the
+livemode split, and it now holds against real Stripe traffic, not a simulation.
 
-Remove them after the webhook leg is confirmed. The ownership-spoof fixtures
-and the temporary QA super-admin were already removed.
+### Cleanup done
+All QA data removed (QA user, market, listing, seed sub/order, promotions,
+credits, subscriptions), every test Stripe subscription cancelled, the
+temporary QA super-admin deleted (`admin_users` = the two real OWNER accounts),
+and the two seed bundles restored to `active = false`. The 15 test
+`stripe_events` rows are intentionally kept as the audit trail; they are all
+`livemode=false` and excluded from revenue.
+
+### Note for going live
+`billing-admin` also has QA-only `cancel_subscription` and `refund_payment`
+actions. Both refuse unless the live gate is OFF, the key is a test key, the
+Stripe object is `livemode:false`, and `confirm_account_id` matches — verified
+by an explicit negative test (`ACCOUNT_UNCONFIRMED` without confirmation).
 
 Use only official Stripe test cards. Never a real card. Never the live key.
 Never the Boon account.
