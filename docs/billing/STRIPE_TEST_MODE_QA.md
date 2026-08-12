@@ -28,25 +28,38 @@ the Stripe API round-trip itself is a separate owner step (below). Results:
 
 All QA data removed; real MRR $0; live gate OFF confirmed after cleanup.
 
-## To run the REAL Stripe test round-trip (owner, ~15 min)
-This machine's only authenticated Stripe CLI is a **different** business
-account, and there is no Gnome test key in the environment, so the end-to-end
-Stripe API leg is intentionally not executed here. To do it safely in TEST mode:
+## To run the REAL Stripe test round-trip (owner setup, then automated)
+The Mac's only authenticated Stripe CLI belongs to **Boon Rideshare** (a
+different business) and there is **no Gnome test key** in the environment, so
+the real Stripe API leg is intentionally NOT executed. The owner does ONE
+thing; product/price creation and identity confirmation are then automated by
+the `billing-admin` edge function (owner-only, test-only, guarded).
 
-1. In the **Gnome** Stripe account, switch to **Test mode**.
-2. Create test Products/Prices for each key (amounts in STRIPE_ARCHITECTURE.md),
-   then set `stripe_price_id_test` (+ `stripe_product_id_test`) on each
-   `billing_products` row. Admin → Billing Health flips each to `test: READY`.
-3. Set edge secrets `STRIPE_SECRET_KEY_TEST=sk_test_…` and
-   `STRIPE_WEBHOOK_SECRET` (test endpoint). Leave `payments_live_enabled` FALSE.
-4. Point a test webhook endpoint at
+**Owner (one step, Supabase → Project → Edge Functions → Secrets):**
+1. In the **Gnome** Stripe account, switch to **Test mode** → Developers →
+   API keys → copy the **test** secret key (`sk_test_…`), or make a restricted
+   test key with write access to Products/Prices + Checkout + Subscriptions.
+2. Set secret `STRIPE_SECRET_KEY_TEST` = that key.
+3. Create a **test** webhook endpoint →
    `https://fgybyghwcjlstqxkclch.supabase.co/functions/v1/stripe-webhook`
-   with events: checkout.session.completed, customer.subscription.updated,
+   (events: checkout.session.completed, customer.subscription.updated,
    customer.subscription.deleted, invoice.paid, invoice.payment_failed,
-   charge.refunded. Or locally: `stripe listen --forward-to <url>`.
-5. From a QA account, call `billing-checkout` (Upgrade / Promote / Seed Drop) →
-   pay with test card **4242 4242 4242 4242** (decline: 4000 0000 0000 0002).
-6. Watch Admin → Billing Health: the test payment appears, **live revenue stays
-   $0**, product mappings show READY.
+   charge.refunded) and set its signing secret as `STRIPE_WEBHOOK_SECRET`.
+   (Local alternative: `stripe listen --forward-to <url>` from the **Gnome**
+   CLI profile — never the Boon profile.)
+
+**Then automated (next session):**
+4. `billing-admin {action:"identity"}` → confirms the key resolves to the
+   **Gnome** account id + `livemode:false`. If it's the wrong account or a live
+   key, it refuses. (Nothing is created at this step.)
+5. `billing-admin {action:"ensure_products", confirm_account_id:"acct_…"}` →
+   creates/reuses the 7 test Products/Prices (metadata gnome_product_key,
+   environment=test) and writes the test price ids into `billing_products`.
+   Guarded: refuses on a live account or if the live gate is on. Admin →
+   Billing Health then shows all seven `test: READY`.
+6. From a QA account, `billing-checkout` (Upgrade / Promote / Seed Drop) → pay
+   with test card **4242 4242 4242 4242** (decline: **4000 0000 0000 0002**).
+7. Admin → Billing Health shows the test payment; **live revenue stays $0**.
 
 Use only official Stripe test cards. Never a real card. Never the live key.
+Never the Boon account.
