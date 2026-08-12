@@ -145,6 +145,10 @@ export interface Listing {
   taxonomy_node_id?: string | null;
   quantity: string | null;
   photos: string[];
+  /** Wanted: acceptable variants the poster will accept. Plot: grower-supported crops. null = none. */
+  request_options?: RequestOption[] | null;
+  /** Wanted/Plot: allow the responder to choose "Something else" + free text (default true). */
+  allow_custom_request?: boolean | null;
   status: ListingStatus;
   delivery_available?: boolean; // future (V2 delivery), dormant in V1
   is_demo?: boolean | null; // sample content — always labeled "Preview" in the UI
@@ -157,6 +161,13 @@ export interface Listing {
   claim_count?: number;
 }
 
+/** One acceptable variant (Wanted) or supported crop (Plot). node_id links to
+ *  a real taxonomy node when the option came from the tree; label is a snapshot. */
+export interface RequestOption {
+  node_id?: string | null;
+  label: string;
+}
+
 export interface Claim {
   id: string;
   listing_id: string;
@@ -165,6 +176,10 @@ export interface Claim {
   claim_type?: ClaimType;
   buyer_note?: string | null;
   trade_offer_text?: string | null;
+  /** Structured response: the option the responder picked (Wanted/Plot). */
+  selected_option_label?: string | null;
+  selected_taxonomy_node_id?: string | null;
+  is_custom_option?: boolean | null;
   agreed_price_cents?: number | null;
   quantity_requested?: number | null;
   payment_status?: string;

@@ -46,6 +46,7 @@ import type {
   Profile,
   ProfileStats,
   ReportTargetType,
+  RequestOption,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +80,8 @@ export const keys = {
 const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
   'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
-  'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at';
+  'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at,' +
+  'request_options,allow_custom_request';
 const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), market:markets(name), claims(count)`;
 
 function shapeListing(row: any): Listing {
@@ -272,6 +274,10 @@ export interface NewListing {
   inventoryCount?: number | null;
   tradeFor?: string | null;
   fulfilledByListingId?: string | null;
+  /** Wanted acceptable variants / Plot supported crops (optional). */
+  requestOptions?: RequestOption[] | null;
+  /** Wanted/Plot: allow the responder to request something else (default true). */
+  allowCustomRequest?: boolean;
 }
 
 export function useCreateListing(uid?: string) {
@@ -310,6 +316,10 @@ export function useCreateListing(uid?: string) {
           lat: input.coords?.lat ?? null,
           lng: input.coords?.lng ?? null,
           fulfilled_by_listing_id: input.fulfilledByListingId ?? null,
+          ...(input.requestOptions && input.requestOptions.length
+            ? { request_options: input.requestOptions } : {}),
+          ...(input.allowCustomRequest != null
+            ? { allow_custom_request: input.allowCustomRequest } : {}),
         })
         .select(LISTING_SELECT)
         .single();
@@ -348,6 +358,10 @@ export interface NewClaim {
   tradeOfferText?: string | null;
   agreedPriceCents?: number | null;
   paymentStatus?: 'none' | 'external';
+  /** Structured choice (Wanted/Plot). */
+  selectedOptionLabel?: string | null;
+  selectedTaxonomyNodeId?: string | null;
+  isCustomOption?: boolean;
 }
 
 export function useClaimListing(uid?: string) {
@@ -363,6 +377,9 @@ export function useClaimListing(uid?: string) {
         trade_offer_text: input.tradeOfferText || null,
         agreed_price_cents: input.agreedPriceCents ?? null,
         payment_status: input.paymentStatus ?? 'none',
+        selected_option_label: input.selectedOptionLabel || null,
+        selected_taxonomy_node_id: input.selectedTaxonomyNodeId || null,
+        is_custom_option: input.isCustomOption ?? false,
       };
       const { data, error } = await supabase.from('claims').insert(row).select('*').single();
       if (!error) return data as Claim;

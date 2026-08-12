@@ -55,6 +55,9 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   const [plotCount, setPlotCount] = useState('1'); // identical plots to post (plot type only)
   const [unit, setUnit] = useState('');
   const [tradeFor, setTradeFor] = useState('');
+  const [reqOptions, setReqOptions] = useState<{ label: string }[]>([]);
+  const [optionDraft, setOptionDraft] = useState('');
+  const [allowCustomRequest, setAllowCustomRequest] = useState(true);
   const [city, setCity] = useState('');
   const [state, setState] = useState('OH');
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -191,6 +194,10 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         city: city.trim(),
         state: state.trim().toUpperCase(),
         inventory_count: plotsAvailable,
+        ...((listingType === 'wanted' || listingType === 'plot') && reqOptions.length
+          ? { request_options: reqOptions } : {}),
+        ...(listingType === 'wanted' || listingType === 'plot'
+          ? { allow_custom_request: allowCustomRequest } : {}),
       };
       const { data: rows, error } = await supabase
         .from('listings')
@@ -242,6 +249,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
           <button className="btn btn-secondary btn-sm" onClick={() => {
             setDone(null); setTitle(''); setDescription(''); setQuantity('');
             setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]); setPlotCount('1');
+            setReqOptions([]); setOptionDraft(''); setAllowCustomRequest(true);
           }}>
             Post another
           </button>
@@ -372,6 +380,66 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         <div className="field">
           <label>Trade for</label>
           <input value={tradeFor} placeholder="Eggs, zucchini, garden help…" onChange={(e) => setTradeFor(e.target.value)} />
+        </div>
+      )}
+
+      {(listingType === 'wanted' || listingType === 'plot') && (
+        <div className="field">
+          <label>{listingType === 'plot' ? 'What can be grown here? (optional)' : 'What would you accept? (optional)'}</label>
+          <p className="hint" style={{ marginTop: -2 }}>
+            {listingType === 'plot'
+              ? 'List the crops you’re willing to grow — buyers pick from these.'
+              : 'List variants you’d accept (e.g. Pie pumpkins, Any variety).'}
+          </p>
+          {reqOptions.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              {reqOptions.map((o, i) => (
+                <button
+                  type="button"
+                  key={o.label}
+                  className="btn btn-secondary btn-sm"
+                  aria-label={`Remove ${o.label}`}
+                  onClick={() => setReqOptions((prev) => prev.filter((_, j) => j !== i))}
+                >
+                  {o.label} ✕
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={optionDraft}
+              placeholder={listingType === 'plot' ? 'Add a crop…' : 'Add an option…'}
+              onChange={(e) => setOptionDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const label = optionDraft.trim();
+                  if (label && reqOptions.length < 20 && !reqOptions.some((o) => o.label.toLowerCase() === label.toLowerCase())) {
+                    setReqOptions((prev) => [...prev, { label }]);
+                  }
+                  setOptionDraft('');
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                const label = optionDraft.trim();
+                if (label && reqOptions.length < 20 && !reqOptions.some((o) => o.label.toLowerCase() === label.toLowerCase())) {
+                  setReqOptions((prev) => [...prev, { label }]);
+                }
+                setOptionDraft('');
+              }}
+            >
+              + Add
+            </button>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontWeight: 400 }}>
+            <input type="checkbox" checked={allowCustomRequest} onChange={(e) => setAllowCustomRequest(e.target.checked)} />
+            Allow “Something else” requests
+          </label>
         </div>
       )}
 

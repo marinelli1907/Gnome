@@ -130,7 +130,12 @@ export default async function ListingPage({ params }: Params) {
 
           <div className="cta-stack">
             {l.listing_type === 'plot' ? (
-              <ReservePlot listingId={l.id} priceCents={l.price_cents} />
+              <ReservePlot
+                listingId={l.id}
+                priceCents={l.price_cents}
+                options={l.request_options ?? null}
+                allowCustom={l.allow_custom_request !== false}
+              />
             ) : l.market_id ? (
               <AppLink kind="listing" id={l.id} label={appCtaLabel(l.listing_type)} variant="primary" />
             ) : null}

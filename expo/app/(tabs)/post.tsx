@@ -6,7 +6,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -91,6 +93,10 @@ export default function PostScreen() {
   const [inventory, setInventory] = useState('');
   const [tradeFor, setTradeFor] = useState('');
   const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
+  // Optional structured options: Wanted acceptable variants / Plot supported crops.
+  const [reqOptions, setReqOptions] = useState<{ label: string; node_id?: string | null }[]>([]);
+  const [optionDraft, setOptionDraft] = useState('');
+  const [allowCustomRequest, setAllowCustomRequest] = useState(true);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
 
@@ -206,6 +212,18 @@ export default function PostScreen() {
     setInventory('');
     setTradeFor('');
     setFulfilledBy(null);
+    setReqOptions([]);
+    setOptionDraft('');
+    setAllowCustomRequest(true);
+  };
+
+  const addOption = () => {
+    const label = optionDraft.trim();
+    if (!label) return;
+    if (reqOptions.length >= 20) return;
+    if (reqOptions.some((o) => o.label.toLowerCase() === label.toLowerCase())) { setOptionDraft(''); return; }
+    setReqOptions((prev) => [...prev, { label }]);
+    setOptionDraft('');
   };
 
   const blocked = !isPlot && !!selectedNode && eligibility.data ? !eligibility.data.allowed : false;
@@ -280,6 +298,8 @@ export default function PostScreen() {
         inventoryCount,
         tradeFor: tradeFor.trim() || null,
         fulfilledByListingId: fulfilledBy,
+        requestOptions: (isWanted || isPlot) && reqOptions.length ? reqOptions : null,
+        allowCustomRequest: (isWanted || isPlot) ? allowCustomRequest : undefined,
       });
       reset();
       if (asDraft) {
@@ -466,6 +486,53 @@ export default function PostScreen() {
           </View>
         )}
 
+        {(isWanted || isPlot) && (
+          <View style={styles.typeFields}>
+            <Text style={styles.fieldLabel}>
+              {isPlot ? 'What can be grown here? (optional)' : 'What would you accept? (optional)'}
+            </Text>
+            <Text style={styles.hint}>
+              {isPlot
+                ? 'List the crops you’re willing to grow. Buyers pick from these when they reserve.'
+                : 'List the variants you’d accept (e.g. Pie pumpkins, Any variety). Responders pick from these.'}
+            </Text>
+            {reqOptions.length > 0 && (
+              <View style={styles.chips}>
+                {reqOptions.map((o, i) => (
+                  <Pressable
+                    key={o.label}
+                    onPress={() => setReqOptions((prev) => prev.filter((_, j) => j !== i))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove option ${o.label}`}
+                    style={styles.optChip}
+                  >
+                    <Text style={styles.optChipText}>{o.label}  ✕</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            <View style={styles.optRow}>
+              <TextInput
+                style={styles.optInput}
+                value={optionDraft}
+                onChangeText={setOptionDraft}
+                placeholder={isPlot ? 'Add a crop…' : 'Add an option…'}
+                placeholderTextColor={Colors.textTertiary}
+                onSubmitEditing={addOption}
+                returnKeyType="done"
+                accessibilityLabel="New option"
+              />
+              <Pressable onPress={addOption} accessibilityRole="button" accessibilityLabel="Add option" style={styles.optAdd}>
+                <Text style={styles.optAddText}>+ Add</Text>
+              </Pressable>
+            </View>
+            <View style={styles.optToggleRow}>
+              <Text style={styles.optToggleLabel}>Allow “Something else” requests</Text>
+              <Switch value={allowCustomRequest} onValueChange={setAllowCustomRequest} />
+            </View>
+          </View>
+        )}
+
         {!isPlot && (
           <>
             <Text style={styles.fieldLabel}>{isWanted ? 'What kind of item?' : 'What are you selling?'}</Text>
@@ -623,6 +690,15 @@ const styles = StyleSheet.create({
   aiBtnBusy: { opacity: 0.6 },
   aiBtnText: { fontSize: 14, color: Colors.primary, fontFamily: fonts.bold },
   typeFields: { gap: 0 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  optChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: Colors.primary + '14', borderWidth: 1, borderColor: Colors.primary },
+  optChipText: { fontSize: 13.5, color: Colors.primary, fontFamily: fonts.semibold },
+  optRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  optInput: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: Colors.text, fontFamily: fonts.regular },
+  optAdd: { backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  optAddText: { color: Colors.textInverse, fontFamily: fonts.bold, fontSize: 13.5 },
+  optToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+  optToggleLabel: { fontSize: 14, color: Colors.text, fontFamily: fonts.regular },
   rowFields: { flexDirection: 'row', gap: 12 },
   hint: { fontSize: 12, color: Colors.textTertiary, marginTop: -6, marginBottom: 8, fontFamily: fonts.regular },
   fieldLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8, fontFamily: fonts.semibold },

@@ -14,17 +14,25 @@ import { SignInCard, useSession } from './auth';
 export default function ReservePlot({
   listingId,
   priceCents,
+  options,
+  allowCustom = true,
 }: {
   listingId: string;
   priceCents: number | null;
+  options?: { node_id?: string | null; label: string }[] | null;
+  allowCustom?: boolean;
 }) {
   const { session, ready } = useSession();
   const [open, setOpen] = useState(false);
   const [crop, setCrop] = useState('');
+  const [picked, setPicked] = useState<{ label: string; node_id?: string | null } | null>(null);
+  const [pickedCustom, setPickedCustom] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  const opts = options ?? [];
+  const hasOptions = opts.length > 0;
   const price = priceCents != null ? formatPrice(priceCents) : null;
 
   if (done) {
@@ -62,14 +70,22 @@ export default function ReservePlot({
 
   async function submit() {
     if (busy) return;
-    if (!crop.trim()) return setError('Tell the grower what you’d like grown.');
+    if (hasOptions && !picked && !pickedCustom) return setError('Pick what you’d like grown.');
+    if (pickedCustom && !allowCustom) return setError('This grower only grows the listed crops.');
+    if (pickedCustom && !crop.trim()) return setError('Tell the grower what you have in mind.');
+    if (!hasOptions && !crop.trim()) return setError('Tell the grower what you’d like grown.');
     setBusy(true);
     setError(null);
     const { error } = await supabaseBrowser().from('claims').insert({
       listing_id: listingId,
       claimer_id: session!.user.id,
       claim_type: 'plot_reservation',
-      buyer_note: crop.trim(),
+      // Plot reservations require a non-empty note (DB constraint): fall back
+      // to the chosen crop label when the free-text detail is blank.
+      buyer_note: crop.trim() || picked?.label || null,
+      selected_option_label: picked?.label ?? null,
+      selected_taxonomy_node_id: picked?.node_id ?? null,
+      is_custom_option: pickedCustom,
       agreed_price_cents: priceCents ?? 0,
       payment_status: 'external',
     });
@@ -91,12 +107,43 @@ export default function ReservePlot({
         Tell the grower what you’d like them to grow. They approve your request,
         then you arrange payment and pickup together — Gnome takes no cut.
       </p>
+      {hasOptions && (
+        <div className="field">
+          <label>What would you like grown?</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+            {opts.map((o) => {
+              const on = !pickedCustom && picked?.label === o.label;
+              return (
+                <button
+                  type="button"
+                  key={o.label}
+                  aria-pressed={on}
+                  className={`btn btn-sm ${on ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => { setPicked(o); setPickedCustom(false); }}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+            {allowCustom && (
+              <button
+                type="button"
+                aria-pressed={pickedCustom}
+                className={`btn btn-sm ${pickedCustom ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setPickedCustom(true); setPicked(null); }}
+              >
+                Something else
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="field">
-        <label>What should they grow?</label>
+        <label>{hasOptions ? 'Additional details' : 'What should they grow?'}</label>
         <textarea
           rows={3}
           value={crop}
-          placeholder="San Marzano tomatoes and basil, please — enough for sauce season."
+          placeholder="Type what you’d like them to grow…"
           onChange={(e) => setCrop(e.target.value)}
         />
       </div>

@@ -4,6 +4,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,6 +31,9 @@ export default function RequestScreen() {
 
   const [tradeOffer, setTradeOffer] = useState('');
   const [note, setNote] = useState('');
+  // Structured choice for Wanted/Plot listings that define options.
+  const [picked, setPicked] = useState<{ label: string; node_id?: string | null } | null>(null);
+  const [pickedCustom, setPickedCustom] = useState(false);
 
   if (isLoading) {
     return (
@@ -81,12 +85,33 @@ export default function RequestScreen() {
   };
   const c = config[type];
 
+  const options = (listing.request_options ?? []) as { label: string; node_id?: string | null }[];
+  const hasOptions = (type === 'wanted' || type === 'plot') && options.length > 0;
+  const allowCustom = listing.allow_custom_request !== false;
+
   const submit = () => {
     if (type === 'trade' && !tradeOffer.trim()) {
       Alert.alert('What will you trade?', 'Tell the grower what you’re offering.');
       return;
     }
-    if (type === 'plot' && !note.trim()) {
+    // Structured selection rules.
+    if (hasOptions && !picked && !pickedCustom) {
+      Alert.alert(
+        type === 'plot' ? 'What would you like grown?' : 'What can you offer?',
+        'Pick one of the options first.',
+      );
+      return;
+    }
+    if (pickedCustom && !allowCustom) {
+      Alert.alert('Please choose an option', 'This grower only accepts the listed choices.');
+      return;
+    }
+    if (pickedCustom && !note.trim()) {
+      Alert.alert('Add a detail', 'Tell them what you have in mind.');
+      return;
+    }
+    // Plot with no structured options still requires a free-text request.
+    if (type === 'plot' && !hasOptions && !note.trim()) {
       Alert.alert('What should they grow?', 'Tell the grower what you’d like grown in your plot.');
       return;
     }
@@ -96,7 +121,12 @@ export default function RequestScreen() {
         title: listing.title,
         claimType: c.claimType,
         tradeOfferText: type === 'trade' ? tradeOffer.trim() : null,
-        buyerNote: note.trim() || null,
+        // Plot reservations require a non-empty note (DB constraint): fall back
+        // to the chosen crop label when the free-text detail is blank.
+        buyerNote: note.trim() || (type === 'plot' ? picked?.label ?? null : null),
+        selectedOptionLabel: picked?.label ?? null,
+        selectedTaxonomyNodeId: picked?.node_id ?? null,
+        isCustomOption: pickedCustom,
         agreedPriceCents:
           type === 'sale' ? listing.price_cents ?? null
           : type === 'plot' ? listing.price_cents ?? 0
@@ -157,21 +187,57 @@ export default function RequestScreen() {
           />
         )}
 
+        {hasOptions && (
+          <View style={styles.optionsBlock}>
+            <Text style={styles.fieldLabel}>
+              {type === 'plot' ? 'What would you like grown?' : 'What can you offer?'}
+            </Text>
+            <View style={styles.chips}>
+              {options.map((o) => {
+                const on = !pickedCustom && picked?.label === o.label;
+                return (
+                  <Pressable
+                    key={o.label}
+                    onPress={() => { setPicked(o); setPickedCustom(false); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={o.label}
+                    accessibilityState={{ selected: on }}
+                    style={[styles.chip, on && styles.chipOn]}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{o.label}</Text>
+                  </Pressable>
+                );
+              })}
+              {allowCustom && (
+                <Pressable
+                  onPress={() => { setPickedCustom(true); setPicked(null); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Something else"
+                  accessibilityState={{ selected: pickedCustom }}
+                  style={[styles.chip, pickedCustom && styles.chipOn]}
+                >
+                  <Text style={[styles.chipText, pickedCustom && styles.chipTextOn]}>Something else</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
         <Field
           label={
             type === 'wanted'
-              ? 'What do you have? (optional)'
+              ? hasOptions ? 'Additional details (optional)' : 'What do you have? (optional)'
               : type === 'plot'
-                ? 'What should they grow?'
+                ? hasOptions ? 'Additional details (optional)' : 'What should they grow?'
                 : 'Add a note for the grower (optional)'
           }
           value={note}
           onChangeText={setNote}
           placeholder={
             type === 'wanted'
-              ? 'I have a big bunch of fresh basil ready now.'
+              ? 'Describe what you have…'
               : type === 'plot'
-                ? 'San Marzano tomatoes and basil, please — enough for sauce season.'
+                ? 'Type what you’d like them to grow…'
                 : 'When could I pick up? Anything else to know?'
           }
           multiline
@@ -203,4 +269,11 @@ const styles = StyleSheet.create({
   price: { fontSize: 26, color: Colors.sell, marginTop: 2, fontFamily: fonts.bold },
   priceNote: { fontSize: 12, color: Colors.textTertiary, marginTop: 6, lineHeight: 17, fontFamily: fonts.regular },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
+  optionsBlock: { marginBottom: 14 },
+  fieldLabel: { fontSize: 14, color: Colors.text, fontFamily: fonts.semibold, marginBottom: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border },
+  chipOn: { backgroundColor: Colors.primary + '18', borderColor: Colors.primary },
+  chipText: { fontSize: 14, color: Colors.text, fontFamily: fonts.semibold },
+  chipTextOn: { color: Colors.primary },
 });

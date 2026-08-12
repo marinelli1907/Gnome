@@ -158,6 +158,24 @@ export default function PickupChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={90}
     >
+      {(claim.selected_option_label || claim.is_custom_option || claim.buyer_note) ? (
+        <View style={styles.requestSummary}>
+          {(claim.selected_option_label || claim.is_custom_option) ? (
+            <Text style={styles.requestLine}>
+              <Text style={styles.requestKey}>
+                {claim.listing?.listing_type === 'plot' ? 'Requested crop: ' : 'Offering: '}
+              </Text>
+              {claim.is_custom_option ? 'Something else' : claim.selected_option_label}
+            </Text>
+          ) : null}
+          {claim.buyer_note ? (
+            <Text style={styles.requestLine}>
+              <Text style={styles.requestKey}>Note: </Text>“{claim.buyer_note}”
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <FlatList
         data={messages.data ?? []}
         keyExtractor={(m) => m.id}
@@ -243,6 +261,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   list: { padding: 14, paddingBottom: 20, gap: 8 },
+  requestSummary: { backgroundColor: Colors.surface, borderBottomWidth: 1, borderColor: Colors.borderLight, paddingHorizontal: 16, paddingVertical: 10, gap: 3 },
+  requestLine: { fontSize: 13.5, color: Colors.text, fontFamily: fonts.regular },
+  requestKey: { color: Colors.textSecondary, fontFamily: fonts.semibold },
   emptyHint: { textAlign: 'center', color: Colors.textSecondary, marginTop: 40, paddingHorizontal: 24 },
   bubbleRow: { flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
