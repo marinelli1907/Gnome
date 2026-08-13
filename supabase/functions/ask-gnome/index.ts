@@ -96,7 +96,9 @@ async function userContext(userId: string): Promise<string> {
         .filter(Boolean)
         .join('; ');
       parts.push(
-        `Latest Seed Drop order: status "${order.status}"${order.tracking ? `, tracking ${order.tracking}` : ''}, placed ${String(order.created_at).slice(0, 10)}.` +
+        // No tracking number: it is a shipping-address proxy, and the system
+        // prompt already forbids discussing shipping dates, so it buys nothing.
+        `Latest Seed Drop order: status "${order.status}"${order.tracking ? ', tracking available in the app' : ''}, placed ${String(order.created_at).slice(0, 10)}.` +
         (seeds ? ` Seeds in this order: ${seeds}.` : ' Selection not generated yet.'),
       );
     }
