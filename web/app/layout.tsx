@@ -19,7 +19,7 @@ const fraunces = Fraunces({
 const SITE = 'Gnome';
 const BASE = 'https://gnomefarmersmarket.com';
 const DESC =
-  'A farmers market in your pocket. Share, trade, buy, and sell homegrown produce, plants, eggs and farm goods from Markets near you — plus the Seed Drop, seeds picked for your zone and shipped to your door.';
+  'A farmers market in your pocket. Share, trade, buy, and sell homegrown produce, plants, eggs and farm goods from Markets near you.';
 const IOS = process.env.NEXT_PUBLIC_IOS_APP_URL || 'https://apps.apple.com/';
 
 export const metadata: Metadata = {
@@ -81,7 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </Link>
                     <Link href="/seeds" role="menuitem">
                       <span className="ngm-title">🌱 Seed Drop</span>
-                      <span className="ngm-desc">Seeds picked for your season</span>
+                      <span className="ngm-desc">Coming soon</span>
                     </Link>
                     <Link href="/plots" role="menuitem">
                       <span className="ngm-title">🧑‍🌾 Reserve a Plot</span>

@@ -33,7 +33,6 @@ interface Action {
 type Tab = 'dashboard' | 'reports' | 'listings' | 'users' | 'seeds' | 'drops' | 'compliance' | 'taxonomy' | 'audit';
 
 const LOW_STOCK_THRESHOLD = 5; // packets — surfaced on the dashboard
-const STARTER_LINK_SET = !!process.env.NEXT_PUBLIC_SEED_LINK_STARTER;
 
 interface SeedLot {
   id: string; internal_lot_number: string; current_qty: number; unit: string;
@@ -565,8 +564,9 @@ export default function AdminClient() {
                 <li>✅ Database, engine, and fulfillment tooling — live (engine test suite 7/7)</li>
                 <li>✅ Ask Gnome seed integration — live</li>
                 <li>{hasInventory ? '✅' : '⬜'} Real seed inventory received {hasInventory ? '' : '— receive your first lot in the Seeds tab'}</li>
-                <li>{STARTER_LINK_SET ? '✅' : '⬜'} Stripe Starter link configured {STARTER_LINK_SET ? '' : '— create the $12 Payment Link, set NEXT_PUBLIC_SEED_LINK_STARTER, redeploy'}</li>
+                <li>⬜ Selling is intentionally OFF — Seed Drop ships as Coming Soon. Re-arming it is not a Payment Link: apply migration 0089, activate the seed billing_products rows with a live price, flip SEED_DROP_COMING_SOON in billing-checkout and stripe-webhook, and clear the destination states first.</li>
                 <li>⬜ Seed-label compliance review — external legal check before Gnome-branded repackaging (never auto-checked)</li>
+                <li>⬜ Destination-state clearance — see docs/seed-drop/24-launch-verdict.md; no state is cleared today</li>
               </ul>
             </section>
           </div>

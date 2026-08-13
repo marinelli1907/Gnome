@@ -153,24 +153,18 @@ export default async function PricingPage() {
         ))}
       </div>
 
-      <section className="hero" style={{ paddingTop: 36, paddingBottom: 12 }}>
-        <span className="kicker">Grow with Gnome</span>
-        <h2 style={{ fontSize: 28 }}>Seasonal Seed Drop — $24.99 per season</h2>
+      {/* Seed Drop has no prices and no date. It is described here as a preview
+          only — the seller plans above are the only things this page sells. */}
+      <section className="hero" style={{ paddingTop: 36, paddingBottom: 24 }}>
+        <span className="kicker">Coming soon</span>
+        <h2 style={{ fontSize: 28 }}>Seed Drop is growing 🌱</h2>
         <p>
-          One personalized Seed Drop each growing season — up to four a year. Gnome sends
-          seeds when it&rsquo;s time to plant, not every month: each Drop is picked for your
-          ZIP and hardiness zone, your garden setup, sun, experience, likes and exclusions,
-          what you&rsquo;ve already received, and real germination-tested inventory. Join late
-          in a season and your first Drop simply starts with the next useful season. Skip or
-          cancel anytime. <a href="/seeds">Build your garden profile →</a>
-        </p>
-      </section>
-
-      <section className="hero" style={{ paddingTop: 8, paddingBottom: 24 }}>
-        <span className="kicker">Grow + Sell</span>
-        <p>
-          <strong>Grower + Seed Drop</strong> (~$199/yr) and <strong>Farm + Seed Drop</strong>{' '}
-          (~$429/yr) bundles are coming — full seller plan plus every seasonal Drop, one bill.
+          Personalized seed selections based on your location, growing space and season
+          are coming soon. You&rsquo;ll choose your Drop size and how often one arrives, and
+          Gnome will explain what every packet can grow — with recommendations shaped by
+          your ZIP and hardiness zone, sunlight, space and the season you&rsquo;re in. What
+          Gnome can send will vary by location. No opening date has been set, but you can{' '}
+          <a href="/seeds">tell Gnome about your garden →</a> so the first suggestions fit.
         </p>
       </section>
 

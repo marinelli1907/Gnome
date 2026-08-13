@@ -13,7 +13,7 @@ import { useSession } from './auth';
 
 const GROW = [
   { href: '/garden', emoji: '✨', title: 'Garden Planner', desc: 'Know what to plant, and when' },
-  { href: '/seeds', emoji: '🌱', title: 'Seed Drop', desc: 'Seeds picked for your season' },
+  { href: '/seeds', emoji: '🌱', title: 'Seed Drop', desc: 'Coming soon' },
   { href: '/plots', emoji: '🧑‍🌾', title: 'Reserve a Plot', desc: 'Grow without the space' },
 ];
 

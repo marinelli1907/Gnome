@@ -1,6 +1,6 @@
 // Gnome — server-side Stripe Checkout Session creator (replaces generic
 // Payment Links). SECURITY: the caller's identity comes from the JWT; the
-// Market/listing/subscription is resolved from the DB as OWNED BY that user.
+// Market/listing is resolved from the DB as OWNED BY that user.
 // A client can never say "credit this to Market B" — ownership is bound
 // server-side into session metadata that the webhook re-validates (Parts 5,21).
 //
@@ -8,6 +8,13 @@
 // STRIPE_SECRET_KEY_TEST; live mode uses STRIPE_SECRET_KEY_LIVE and is only
 // reachable when the owner has flipped payments_live_enabled=true. Default is
 // TEST — Gnome will not create a live session otherwise, even with a live key.
+//
+// SEED DROP IS OFF. The Seed Drop ships as an announcement only — no price, no
+// date, no purchase. Every seed key is refused here before anything is read
+// from billing_products and long before Stripe is called, so an active product
+// row, a configured test price, or a hand-rolled request cannot reach checkout.
+// Mirrors supabase/functions/_shared/seed_drop_gate.ts; that file explains why
+// this copy is inline, and the regression suite fails if the two disagree.
 //
 // Secrets (server-side only; never shipped to any client):
 //   STRIPE_SECRET_KEY_TEST   sk_test_...
@@ -18,15 +25,38 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 type Body = {
   product_key: string;
-  listing_id?: string;      // GNOME_LISTING_PROMOTION
-  subscription_id?: string; // GNOME_SEED_DROP_SEASONAL (seed_drop_subscriptions row)
-  quantity?: number;        // GNOME_PICKUP_LOCATION_ADDON
+  listing_id?: string; // GNOME_LISTING_PROMOTION
+  quantity?: number;   // GNOME_PICKUP_LOCATION_ADDON
 };
+
+// Deny-by-default. Only these four keys may reach Stripe; anything else is
+// refused whatever billing_products says, so a renamed or newly added seed key
+// opens nothing by accident.
+const CHECKOUT_ALLOWED_KEYS = new Set([
+  'GNOME_GROWER_MONTHLY', 'GNOME_FARM_MONTHLY',
+  'GNOME_LISTING_PROMOTION', 'GNOME_PICKUP_LOCATION_ADDON',
+]);
 
 const SUBSCRIPTION_KEYS = new Set([
   'GNOME_GROWER_MONTHLY', 'GNOME_FARM_MONTHLY', 'GNOME_PICKUP_LOCATION_ADDON',
-  'GNOME_SEED_DROP_SEASONAL', 'GNOME_GROWER_SEED_BUNDLE', 'GNOME_FARM_SEED_BUNDLE',
 ]);
+
+const SEED_DROP_KEYS = new Set([
+  'GNOME_SEED_DROP_SEASONAL', 'GNOME_SEED_DROP_ONE_TIME', 'GNOME_SEED_DROP_SUBSCRIPTION',
+  'GNOME_GROWER_SEED_BUNDLE', 'GNOME_FARM_SEED_BUNDLE',
+]);
+
+// Flip to false only together with: 0089 applied, a live price configured, and
+// the state/supplier clearances the compliance memos require.
+const SEED_DROP_COMING_SOON = true;
+const SEED_DROP_COMING_SOON_MESSAGE =
+  'The Gnome Seed Drop is Coming Soon. It cannot be purchased yet — no price, no date, no checkout. Nothing has been charged.';
+
+// Matched on the upper-cased key and on a SEED substring, so casing, padding,
+// and any future GNOME_*_SEED_* key land on the explicit refusal rather than a
+// generic error. Deny-by-default catches whatever this misses.
+const isSeedDropKey = (key: string) =>
+  SEED_DROP_KEYS.has(key) || key.includes('SEED');
 
 Deno.serve(async (req: Request) => {
   const json = (status: number, body: unknown) =>
@@ -38,8 +68,17 @@ Deno.serve(async (req: Request) => {
     const uid = u?.user?.id;
     if (!uid) return json(401, { error: 'UNAUTHENTICATED' });
 
+    // Normalize before deciding anything: String() collapses arrays/objects to
+    // something the checks can reason about, and the case/padding fold means a
+    // request cannot dodge the gate by reshaping the key.
     const body = (await req.json().catch(() => ({}))) as Body;
-    const key = String(body.product_key ?? '');
+    const key = String(body.product_key ?? '').trim().toUpperCase();
+
+    if (SEED_DROP_COMING_SOON && isSeedDropKey(key)) {
+      return json(403, { error: 'SEED_DROP_COMING_SOON', message: SEED_DROP_COMING_SOON_MESSAGE, product_key: key });
+    }
+    if (!CHECKOUT_ALLOWED_KEYS.has(key)) return json(400, { error: 'UNKNOWN_PRODUCT' });
+
     const { data: product } = await admin.from('billing_products').select('*').eq('key', key).maybeSingle();
     if (!product || !product.active) return json(400, { error: 'UNKNOWN_PRODUCT' });
 
@@ -58,7 +97,7 @@ Deno.serve(async (req: Request) => {
     const base = (Deno.env.get('GNOME_PUBLIC_URL') ?? 'https://gnomefarmersmarket.com').replace(/\/$/, '');
     const meta: Record<string, string> = { gnome_user_id: uid, product_key: key, mode };
     let clientRef = '';
-    let checkoutMode: 'subscription' | 'payment' = SUBSCRIPTION_KEYS.has(key) ? 'subscription' : 'payment';
+    const checkoutMode: 'subscription' | 'payment' = SUBSCRIPTION_KEYS.has(key) ? 'subscription' : 'payment';
     const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = { price: priceId, quantity: 1 };
 
     if (key === 'GNOME_LISTING_PROMOTION') {
@@ -67,14 +106,8 @@ Deno.serve(async (req: Request) => {
       if (!listing || listing.owner_id !== uid) return json(403, { error: 'NOT_YOUR_LISTING' });
       meta.listing_id = listing.id; meta.market_id = listing.market_id;
       clientRef = `promo_${listing.id}`;
-    } else if (key === 'GNOME_SEED_DROP_SEASONAL') {
-      const subId = String(body.subscription_id ?? '');
-      const { data: sub } = await admin.from('seed_drop_subscriptions').select('id,user_id').eq('id', subId).maybeSingle();
-      if (!sub || sub.user_id !== uid) return json(403, { error: 'NOT_YOUR_SUBSCRIPTION' });
-      meta.subscription_id = sub.id;
-      clientRef = `seedseason_${sub.id}`;
     } else {
-      // plan / addon / bundle — must own a Market.
+      // plan / addon — must own a Market.
       if (!market) return json(403, { error: 'NO_MARKET', message: 'Post once to create your Market first.' });
       meta.market_id = market.id;
       clientRef = market.id;

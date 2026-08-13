@@ -25,6 +25,31 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const BOOST_DAYS = 7;
 
+// Seed Drop ships as Coming Soon: no purchase surface exists in either client and
+// billing-checkout refuses every seed product key. This is the last line of that
+// same fence — it stops a seed event that reached Stripe by some other route (a
+// hand-made session, a resurrected Payment Link, a replay of an old event) from
+// mutating anything. It matters most for the legacy `seed_` branch, which would
+// otherwise call generate_seed_drop and RESERVE REAL INVENTORY.
+//
+// Attempts are logged rather than dropped silently, so one shows up in
+// billing_events instead of vanishing. Flip this to false only in the same
+// change that re-opens the client purchase paths.
+const SEED_DROP_COMING_SOON = true;
+
+// Every client_reference_id prefix and product key that means "this is Seed Drop".
+const SEED_REF_PREFIXES = ['seed_', 'seedseason_', 'seedsub_'];
+const SEED_PRODUCT_KEYS = [
+  'GNOME_SEED_DROP_SEASONAL', 'GNOME_SEED_DROP_ONE_TIME', 'GNOME_SEED_DROP_SUBSCRIPTION',
+  'GNOME_GROWER_SEED_BUNDLE', 'GNOME_FARM_SEED_BUNDLE',
+];
+
+function isSeedDropEvent(ref: string, meta: Record<string, string>): boolean {
+  return SEED_REF_PREFIXES.some((p) => ref.startsWith(p))
+    || SEED_PRODUCT_KEYS.includes(meta.product_key ?? '')
+    || Boolean(meta.subscription_id);   // only the Seed Drop paths set this key
+}
+
 Deno.serve(async (req: Request) => {
   const secretKey = (
     Deno.env.get('STRIPE_SECRET_KEY_TEST') ?? Deno.env.get('STRIPE_SECRET_KEY_LIVE') ??
@@ -102,6 +127,14 @@ Deno.serve(async (req: Request) => {
         const ref = session.client_reference_id ?? '';
         const amount = session.amount_total ?? null;
 
+        // Coming Soon: refuse before any seed branch can run. Checked here rather
+        // than inside each branch so a future branch cannot forget the guard.
+        if (SEED_DROP_COMING_SOON && isSeedDropEvent(ref, meta)) {
+          await log(event.type, null, meta.gnome_user_id || null,
+                    meta.product_key || 'SEED_DROP', amount, 'refused:coming_soon');
+          break;
+        }
+
         // ---- Listing promotion purchase (server checkout: metadata.product_key)
         if (session.mode === 'payment' && (meta.product_key === 'GNOME_LISTING_PROMOTION' || ref.startsWith('promo_'))) {
           const listingId = meta.listing_id || ref.replace(/^promo_/, '');
@@ -165,6 +198,14 @@ Deno.serve(async (req: Request) => {
           const keys = items.data.map((i) => keyForPrice(i.price?.id)).filter(Boolean) as string[];
           const market = meta.market_id || ref;
           const userId = meta.gnome_user_id || null;
+
+          // The guard above reads metadata, which a legacy Payment Link does not
+          // carry. Bundles resolve from line items instead, so re-check here.
+          if (SEED_DROP_COMING_SOON && keys.some((k) => SEED_PRODUCT_KEYS.includes(k))) {
+            await log(event.type, market, userId, keys.find((k) => SEED_PRODUCT_KEYS.includes(k)) ?? 'SEED_DROP',
+                      session.amount_total ?? null, 'refused:coming_soon');
+            break;
+          }
 
           // Bundle: resolves to seller plan + seed access, atomically.
           const bKey = keys.find((k) => bundlePlan(k));
@@ -259,6 +300,19 @@ Deno.serve(async (req: Request) => {
         const invoice = event.data.object as unknown as { subscription?: string | { id: string }; lines?: { data?: { price?: { id?: string } }[] } };
         const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
         if (!subId) break;
+        // A renewal is the one seed path that needs no checkout at all — an old
+        // subscription invoicing again would generate a box. Refuse it too, and
+        // do NOT throw: throwing asks Stripe to retry forever.
+        if (SEED_DROP_COMING_SOON) {
+          const seedInvoice = invoice.lines?.data?.some(
+            (l) => SEED_PRODUCT_KEYS.includes(keyForPrice(l.price?.id) ?? ''));
+          const { data: seedSub } = await admin.from('seed_drop_subscriptions')
+            .select('id').eq('stripe_subscription_id', subId).maybeSingle();
+          if (seedInvoice || seedSub) {
+            await log(event.type, null, null, 'GNOME_SEED_DROP_SEASONAL', null, 'refused:coming_soon');
+            break;
+          }
+        }
         const { data: seedRow } = await admin.from('seed_drop_subscriptions').select('id,status').eq('stripe_subscription_id', subId).maybeSingle();
         if (!seedRow) {
           const isSeedInvoice = invoice.lines?.data?.some((l) => keyForPrice(l.price?.id) === 'GNOME_SEED_DROP_SEASONAL');

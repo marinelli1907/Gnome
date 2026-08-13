@@ -19,6 +19,7 @@ import ListingCard from '@/components/ListingCard';
 import DistancePicker from '@/components/DistancePicker';
 import FeaturedRail from '@/components/FeaturedRail';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
+import SeedDropComingSoon from '@/components/SeedDropComingSoon';
 import { EmptyState, ErrorState, Button } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
 import { fonts } from '@/constants/theme';
@@ -54,6 +55,7 @@ export default function BrowseScreen() {
   const [typeFilter, setTypeFilter] = useState<'all' | ListingType>('all');
   const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [seedDropOpen, setSeedDropOpen] = useState(false);
   const [search, setSearch] = useState('');
 
   const setRadius = (r: BrowseRadius) => {
@@ -291,21 +293,29 @@ export default function BrowseScreen() {
 
       {!filtering && <FeaturedRail filters={filters} />}
 
-      {/* Seed Drop — first-party seed shop. Web-only by design (keeps the app
-          payment-free); physical goods, so linking out is App Store-safe. */}
+      {/* Seed Drop — announced, not sold. The banner used to open the web shop;
+          nothing may be bought or subscribed to until the product actually
+          ships, so it now opens an in-app preview with no purchase path. */}
       {!filtering && (
         <Pressable
           style={styles.seedDrop}
+          accessibilityRole="button"
+          accessibilityLabel="Seed Drop, coming soon — see a preview"
           onPress={() => {
-            void logEvent('seed_drop_tapped', {});
-            void Linking.openURL('https://gnomefarmersmarket.com/seeds');
+            void logEvent('seed_drop_coming_soon_viewed', {});
+            setSeedDropOpen(true);
           }}
         >
           <Text style={styles.seedDropEmoji}>🌱</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.seedDropTitle}>The Gnome Seed Drop</Text>
+            <View style={styles.seedDropTitleRow}>
+              <Text style={styles.seedDropTitle}>The Gnome Seed Drop</Text>
+              <View style={styles.seedDropPill}>
+                <Text style={styles.seedDropPillText}>Coming soon</Text>
+              </View>
+            </View>
             <Text style={styles.seedDropSub}>
-              Seeds picked for your zone & season, shipped to your door
+              Seed selections for your location, growing space & season
             </Text>
           </View>
           <Text style={styles.seedDropGo}>›</Text>
@@ -408,6 +418,7 @@ export default function BrowseScreen() {
           onClose={() => setPickerOpen(false)}
         />
       ) : null}
+      <SeedDropComingSoon visible={seedDropOpen} onClose={() => setSeedDropOpen(false)} />
     </View>
   );
 }
@@ -515,7 +526,15 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + '30',
   },
   seedDropEmoji: { fontSize: 24, fontFamily: fonts.regular },
+  seedDropTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   seedDropTitle: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
+  seedDropPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: Colors.gold + '26',
+  },
+  seedDropPillText: { fontSize: 11, fontFamily: fonts.bold, color: Colors.text },
   seedDropSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
   seedDropGo: { fontSize: 22, color: Colors.primary, fontFamily: fonts.bold },
   cardWrap: { paddingHorizontal: 16 },

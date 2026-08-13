@@ -17,7 +17,7 @@ const AREAS = [
 
 const STEPS = [
   { n: '🍅', t: 'Find what’s fresh nearby', d: 'Browse produce, eggs, honey, plants and handmade goods from neighbors and small growers around you.' },
-  { n: '🌱', t: 'Grow your own, with help', d: 'The AI Garden Planner knows your zone and the calendar; the Seed Drop sends the right seeds. No land? Reserve a plot in a neighbor’s garden.' },
+  { n: '🌱', t: 'Grow your own, with help', d: 'The AI Garden Planner knows your zone and the calendar; the Seed Drop is coming soon. No land? Reserve a plot in a neighbor’s garden.' },
   { n: '🤝', t: 'Share or sell the extra', d: 'Claim a free share, offer a trade, or request to buy — pickup is arranged neighbor to neighbor, no fees between you.' },
   { n: '🏡', t: 'Build your neighborhood market', d: 'Every grower gets a storefront with real trust stats. Repeat buyers, plot reservations, a stronger local food network.' },
 ];
@@ -89,7 +89,7 @@ export default async function HomePage() {
           <Link href="/garden" className="pillar">
             <span className="pillar-emoji">🌱</span>
             <h3>Grow with Gnome</h3>
-            <p>The Garden Planner tells you what to plant; the Seed Drop sends the seeds; no yard? Reserve a plot nearby.</p>
+            <p>The Garden Planner tells you what to plant; the Seed Drop is coming soon; no yard? Reserve a plot nearby.</p>
             <span className="pillar-cta">Start growing →</span>
           </Link>
           <Link href="/my" className="pillar">
@@ -241,8 +241,8 @@ export default async function HomePage() {
             <Link href="/seeds" className="grow-card">
               <span className="pillar-emoji">📦</span>
               <h3>Seed Drop</h3>
-              <p>Seeds picked for your season and growing zone, packed by hand, shipped with a growing tip for every packet.</p>
-              <span className="pillar-cta">See the drops →</span>
+              <p>Personalized seed selections based on your location, growing space and season. Coming soon.</p>
+              <span className="pillar-cta">Coming soon →</span>
             </Link>
             <Link href="/plots" className="grow-card">
               <span className="pillar-emoji">🧑‍🌾</span>
@@ -295,7 +295,7 @@ export default async function HomePage() {
             <a className="btn btn-light" href={process.env.NEXT_PUBLIC_IOS_APP_URL || 'https://apps.apple.com/'}>
               Get the free app
             </a>
-            <Link className="btn btn-ghost" href="/seeds">Shop the Seed Drop</Link>
+            <Link className="btn btn-ghost" href="/seeds">Seed Drop — coming soon</Link>
           </div>
         </div>
       </section>
