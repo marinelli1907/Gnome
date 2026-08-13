@@ -45,6 +45,7 @@ import type {
   PlanLimit,
   Profile,
   ProfileStats,
+  PublicMarket,
   PublicProfile,
   ReportTargetType,
   RequestOption,
@@ -91,6 +92,14 @@ const LISTING_FIELDS =
 // The owner reads their own full row via the my_profile() RPC.
 const PUBLIC_PROFILE_FIELDS =
   'id,name,avatar_url,city,county,state,user_type,business_account,business_category,created_at';
+
+// The only Market shape another user ever receives. 0093 revoked lat, lng, zip,
+// contact_email, contact_phone and pickup_instructions from every client role —
+// a seller's coordinates and personal phone are not public data. The owner reads
+// their own full row through the my_market() RPC.
+const PUBLIC_MARKET_FIELDS =
+  'id,owner_id,name,slug,market_type,plan,avatar_url,banner_url,tagline,theme,' +
+  'description,city,county,state,approximate_location,verified,status,created_at';
 
 const LISTING_SELECT = `${LISTING_FIELDS}, owner:public_profiles(${PUBLIC_PROFILE_FIELDS}), market:markets(name), claims(count)`;
 
@@ -595,15 +604,14 @@ export function useMyMarket(uid?: string) {
     queryKey: keys.myMarket(uid),
     enabled: isSupabaseConfigured && !!uid,
     queryFn: async (): Promise<Market | null> => {
-      const { data, error } = await supabase
-        .from('markets')
-        .select('*')
-        .eq('owner_id', uid as string)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      // The owner's OWN row, including the private columns 0093 revoked from
+      // every client role. Grants are role-wide, so the owner cannot be excepted
+      // by privilege — a definer RPC pinned to auth.uid() is how they get it
+      // back, the same shape as my_profile().
+      const { data, error } = await supabase.rpc('my_market');
       if (error) throw error;
-      return data as Market | null;
+      const rows = (data ?? []) as Market[];
+      return rows[0] ?? null;
     },
   });
 }
@@ -613,14 +621,17 @@ export function useMarket(id?: string) {
   return useQuery({
     queryKey: keys.market(id ?? ''),
     enabled: isSupabaseConfigured && !!id,
-    queryFn: async (): Promise<Market | null> => {
+    queryFn: async (): Promise<PublicMarket | null> => {
+      // Explicit columns, never `*`: markets carries per-column grants after
+      // 0093, and `*` asks for lat/lng/zip/contact_* too, which would fail the
+      // whole query with 42501 — exactly how LISTING_FIELDS broke Browse.
       const { data, error } = await supabase
         .from('markets')
-        .select('*')
+        .select(PUBLIC_MARKET_FIELDS)
         .eq('id', id as string)
         .maybeSingle();
       if (error) throw error;
-      return data as Market | null;
+      return data as PublicMarket | null;
     },
   });
 }

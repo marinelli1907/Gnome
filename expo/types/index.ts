@@ -132,6 +132,13 @@ export interface Market {
   created_at: string;
 }
 
+/**
+ * The Market shape another user receives. `zip` is deliberately absent: 0093
+ * made it private along with lat/lng and the seller's contact details. The owner
+ * gets the full `Market` back from the my_market() RPC.
+ */
+export type PublicMarket = Omit<Market, 'zip'>;
+
 export interface Listing {
   id: string;
   owner_id: string;

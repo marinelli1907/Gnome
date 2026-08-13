@@ -27,8 +27,8 @@
 # 0092 is the exception — it fixed two live blockers and IS applied, so it lives
 # in APPLIED.tsv instead.
 # ---------------------------------------------------------------------------
-0090_phone_validation_fix.sql  optional-phone validation; 33/33 local, awaiting approval to apply
-0090_down_phone_validation_fix.sql  rollback for 0090 (restores the 0086 defect deliberately)
+0090_down_phone_validation_fix.sql  rollback for the APPLIED 0090 (restores the 0086 defect deliberately)
+0093_down_market_privacy.sql  rollback for the APPLIED 0093 (republishes seller contact data — incident use only)
 0091_founding_members.sql  Founding Member program; 92/92 local, ships behind a flag, awaiting approval
 0091_down_founding_members.sql  rollback for 0091
 0092_down_launch_grant_repairs.sql  rollback for the applied 0092; restores the broken state on purpose
