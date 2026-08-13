@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0685B158EFE137849DE0DE4D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5DA0D9EA3970A9F766AD857B /* PrivacyInfo.xcprivacy */; };
-		0B8312EDB97DA42147327B14 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47306F258A3E0C2F6D5236F1 /* ExpoModulesProvider.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		72B063BCFCD628BC1EC0495C /* libPods-GnomeAdmin.a in Frameworks */ = {isa = PBXBuildFile; fileRef = ED4856BE37BBD16D25459DFC /* libPods-GnomeAdmin.a */; };
+		88D2C874245CA2D6668E5E69 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7B52146CEC868F282C6BACBA /* PrivacyInfo.xcprivacy */; };
+		8D711210207ACCCAD7B3A00A /* libPods-GnomeAdmin.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 37B38F1251B4E69B323B6211 /* libPods-GnomeAdmin.a */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		CBD9304C2693665B5A3D342D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E905EB61840B7358A7DA1905 /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -20,14 +20,14 @@
 		13B07F961A680F5B00A75B9A /* GnomeAdmin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GnomeAdmin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = GnomeAdmin/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = GnomeAdmin/Info.plist; sourceTree = "<group>"; };
-		47306F258A3E0C2F6D5236F1 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-GnomeAdmin/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		5DA0D9EA3970A9F766AD857B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = GnomeAdmin/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		72D9C627A9ECCB5108559962 /* Pods-GnomeAdmin.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GnomeAdmin.debug.xcconfig"; path = "Target Support Files/Pods-GnomeAdmin/Pods-GnomeAdmin.debug.xcconfig"; sourceTree = "<group>"; };
-		7B4347941D32A92DD81CFFA6 /* Pods-GnomeAdmin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GnomeAdmin.release.xcconfig"; path = "Target Support Files/Pods-GnomeAdmin/Pods-GnomeAdmin.release.xcconfig"; sourceTree = "<group>"; };
+		37B38F1251B4E69B323B6211 /* libPods-GnomeAdmin.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-GnomeAdmin.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		59D911BA96B5C6943A8D9EEC /* Pods-GnomeAdmin.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GnomeAdmin.release.xcconfig"; path = "Target Support Files/Pods-GnomeAdmin/Pods-GnomeAdmin.release.xcconfig"; sourceTree = "<group>"; };
+		7052629DD3A06EE10C305D5E /* Pods-GnomeAdmin.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GnomeAdmin.debug.xcconfig"; path = "Target Support Files/Pods-GnomeAdmin/Pods-GnomeAdmin.debug.xcconfig"; sourceTree = "<group>"; };
+		7B52146CEC868F282C6BACBA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = GnomeAdmin/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = GnomeAdmin/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		E905EB61840B7358A7DA1905 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-GnomeAdmin/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		ED4856BE37BBD16D25459DFC /* libPods-GnomeAdmin.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-GnomeAdmin.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = GnomeAdmin/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* GnomeAdmin-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "GnomeAdmin-Bridging-Header.h"; path = "GnomeAdmin/GnomeAdmin-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -37,7 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				72B063BCFCD628BC1EC0495C /* libPods-GnomeAdmin.a in Frameworks */,
+				8D711210207ACCCAD7B3A00A /* libPods-GnomeAdmin.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				5DA0D9EA3970A9F766AD857B /* PrivacyInfo.xcprivacy */,
+				7B52146CEC868F282C6BACBA /* PrivacyInfo.xcprivacy */,
 			);
 			name = GnomeAdmin;
 			sourceTree = "<group>";
@@ -62,25 +62,17 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				ED4856BE37BBD16D25459DFC /* libPods-GnomeAdmin.a */,
+				37B38F1251B4E69B323B6211 /* libPods-GnomeAdmin.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		438717C639E3B5FFACBE72D2 /* GnomeAdmin */ = {
+		5B6258D1B8FA4BE0526E9A2E /* GnomeAdmin */ = {
 			isa = PBXGroup;
 			children = (
-				47306F258A3E0C2F6D5236F1 /* ExpoModulesProvider.swift */,
+				E905EB61840B7358A7DA1905 /* ExpoModulesProvider.swift */,
 			);
 			name = GnomeAdmin;
-			sourceTree = "<group>";
-		};
-		513FB6E91DF09E272DAAD946 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				438717C639E3B5FFACBE72D2 /* GnomeAdmin */,
-			);
-			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -97,8 +89,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				9A22AA303208321300CE7B73 /* Pods */,
-				513FB6E91DF09E272DAAD946 /* ExpoModulesProviders */,
+				E1AE9D16B5BA66B627A7C9D1 /* Pods */,
+				8CCF4929652583DE5EB67041 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -113,14 +105,12 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		9A22AA303208321300CE7B73 /* Pods */ = {
+		8CCF4929652583DE5EB67041 /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				72D9C627A9ECCB5108559962 /* Pods-GnomeAdmin.debug.xcconfig */,
-				7B4347941D32A92DD81CFFA6 /* Pods-GnomeAdmin.release.xcconfig */,
+				5B6258D1B8FA4BE0526E9A2E /* GnomeAdmin */,
 			);
-			name = Pods;
-			path = Pods;
+			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
@@ -132,6 +122,16 @@
 			path = GnomeAdmin/Supporting;
 			sourceTree = "<group>";
 		};
+		E1AE9D16B5BA66B627A7C9D1 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				7052629DD3A06EE10C305D5E /* Pods-GnomeAdmin.debug.xcconfig */,
+				59D911BA96B5C6943A8D9EEC /* Pods-GnomeAdmin.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "GnomeAdmin" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				343378FA9A439DFD4D9B111F /* [Expo] Configure project */,
+				C8EB4AA88D3067A33382F94F /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				88ACE726F4E2992E610DE262 /* [CP] Embed Pods Frameworks */,
+				9522CBF888AC76902278E5AD /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -167,6 +167,8 @@
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
+						DevelopmentTeam = "V39TS929QA";
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -196,7 +198,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				0685B158EFE137849DE0DE4D /* PrivacyInfo.xcprivacy in Resources */,
+				88D2C874245CA2D6668E5E69 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,30 +244,6 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		343378FA9A439DFD4D9B111F /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/GnomeAdmin/GnomeAdmin.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-GnomeAdmin/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-GnomeAdmin/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-GnomeAdmin/expo-configure-project.sh\"\n";
-		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -296,7 +274,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-GnomeAdmin/Pods-GnomeAdmin-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		88ACE726F4E2992E610DE262 /* [CP] Embed Pods Frameworks */ = {
+		9522CBF888AC76902278E5AD /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -328,6 +306,30 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-GnomeAdmin/Pods-GnomeAdmin-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		C8EB4AA88D3067A33382F94F /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/GnomeAdmin/GnomeAdmin.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-GnomeAdmin/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-GnomeAdmin/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-GnomeAdmin/expo-configure-project.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -336,7 +338,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				0B8312EDB97DA42147327B14 /* ExpoModulesProvider.swift in Sources */,
+				CBD9304C2693665B5A3D342D /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,7 +347,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 72D9C627A9ECCB5108559962 /* Pods-GnomeAdmin.debug.xcconfig */;
+			baseConfigurationReference = 7052629DD3A06EE10C305D5E /* Pods-GnomeAdmin.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -371,19 +373,21 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = app.boonesystems.gnome.admin;
-				DEVELOPMENT_TEAM = V39TS929QA;
 				PRODUCT_NAME = GnomeAdmin;
 				SWIFT_OBJC_BRIDGING_HEADER = "GnomeAdmin/GnomeAdmin-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 				VERSIONING_SYSTEM = "apple-generic";
+				DEVELOPMENT_TEAM = "V39TS929QA";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Debug;
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 7B4347941D32A92DD81CFFA6 /* Pods-GnomeAdmin.release.xcconfig */;
+			baseConfigurationReference = 59D911BA96B5C6943A8D9EEC /* Pods-GnomeAdmin.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -404,12 +408,14 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = app.boonesystems.gnome.admin;
-				DEVELOPMENT_TEAM = V39TS929QA;
 				PRODUCT_NAME = GnomeAdmin;
 				SWIFT_OBJC_BRIDGING_HEADER = "GnomeAdmin/GnomeAdmin-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 				VERSIONING_SYSTEM = "apple-generic";
+				DEVELOPMENT_TEAM = "V39TS929QA";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Release;
 		};
