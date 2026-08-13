@@ -57,6 +57,21 @@ export interface Profile {
   created_at: string;
 }
 
+/**
+ * What you get back about SOMEONE ELSE. Mirrors the `public_profiles` view
+ * (migration 0087) exactly: no capability flags, no `suspended`, no
+ * `zip_code`, no onboarding state, and nothing from `user_private_contact`.
+ *
+ * Use this for any profile that is not the signed-in user. The full `Profile`
+ * is only available for your own row (via the `my_profile()` RPC), so the type
+ * system stops administrative state leaking onto a public surface.
+ */
+export type PublicProfile = Pick<
+  Profile,
+  | 'id' | 'name' | 'avatar_url' | 'city' | 'county' | 'state'
+  | 'user_type' | 'business_account' | 'business_category' | 'created_at'
+>;
+
 export type MarketPlan = 'free' | 'grower' | 'farm' | 'sponsor';
 
 export interface PlanLimit {
@@ -155,7 +170,7 @@ export interface Listing {
   created_at: string;
   expires_at: string;
   // Joined / derived (not columns):
-  owner?: Profile | null;
+  owner?: PublicProfile | null;
   market?: { name: string } | null;
   distance_miles?: number | null;
   claim_count?: number;
@@ -188,7 +203,7 @@ export interface Claim {
   created_at: string;
   // Joined:
   listing?: Listing | null;
-  claimer?: Profile | null;
+  claimer?: PublicProfile | null;
 }
 
 export interface ClaimMessage {

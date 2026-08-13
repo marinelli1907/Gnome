@@ -45,6 +45,7 @@ import type {
   PlanLimit,
   Profile,
   ProfileStats,
+  PublicProfile,
   ReportTargetType,
   RequestOption,
 } from '@/types';
@@ -82,7 +83,16 @@ const LISTING_FIELDS =
   'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
   'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at,' +
   'request_options,allow_custom_request';
-const LISTING_SELECT = `${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), market:markets(name), claims(count)`;
+// The ONLY profile shape other users ever receive. Reads go through the
+// `public_profiles` view (0087), which enumerates its columns server-side, so a
+// column added to `profiles` cannot leak here. Administrative flags (can_*,
+// suspended) are deliberately absent — nothing in the UI used them for other
+// users, and they are entitlement/moderation state, not profile content.
+// The owner reads their own full row via the my_profile() RPC.
+const PUBLIC_PROFILE_FIELDS =
+  'id,name,avatar_url,city,county,state,user_type,business_account,business_category,created_at';
+
+const LISTING_SELECT = `${LISTING_FIELDS}, owner:public_profiles(${PUBLIC_PROFILE_FIELDS}), market:markets(name), claims(count)`;
 
 function shapeListing(row: any): Listing {
   const claim_count = Array.isArray(row.claims) ? row.claims[0]?.count ?? 0 : 0;
@@ -225,7 +235,7 @@ export function useIncomingClaims(uid?: string) {
         // so disambiguate the claimer embed by FK constraint name. The listing embed
         // must name its columns too: `listings(*)` expands to every column including
         // lat/lng, whose SELECT is revoked → 42501 kills the whole query.
-        .select(`*, claimer:profiles!claims_claimer_id_fkey(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), listing:listings!inner(${LISTING_FIELDS})`)
+        .select(`*, claimer:public_profiles!claims_claimer_id_fkey(${PUBLIC_PROFILE_FIELDS}), listing:listings!inner(${LISTING_FIELDS})`)
         .eq('listing.owner_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -242,7 +252,7 @@ export function useMyClaims(uid?: string) {
     queryFn: async (): Promise<Claim[]> => {
       const { data, error } = await supabase
         .from('claims')
-        .select(`*, listing:listings(${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended))`)
+        .select(`*, listing:listings(${LISTING_FIELDS}, owner:public_profiles(${PUBLIC_PROFILE_FIELDS}))`)
         .eq('claimer_id', uid as string)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -538,16 +548,16 @@ export function useProfile(id?: string) {
   return useQuery({
     queryKey: keys.profile(id ?? ''),
     enabled: isSupabaseConfigured && !!id,
-    queryFn: async (): Promise<Profile | null> => {
+    queryFn: async (): Promise<PublicProfile | null> => {
       // Explicit public columns only — never select('*') here, so a private
       // column (zip_code) can be revoked without breaking cross-user reads.
       const { data, error } = await supabase
-        .from('profiles')
-        .select('id,name,avatar_url,city,county,state,user_type,business_account,business_category,created_at')
+        .from('public_profiles')
+        .select(PUBLIC_PROFILE_FIELDS)
         .eq('id', id as string)
         .maybeSingle();
       if (error) throw error;
-      return data as Profile | null;
+      return data as PublicProfile | null;
     },
   });
 }
@@ -558,7 +568,7 @@ export function useProfileStats(id?: string) {
     enabled: isSupabaseConfigured && !!id,
     queryFn: async (): Promise<ProfileStats> => {
       const [profileRes, postsRes, claimsRes] = await Promise.all([
-        supabase.from('profiles').select('created_at').eq('id', id as string).maybeSingle(),
+        supabase.from('public_profiles').select('created_at').eq('id', id as string).maybeSingle(),
         supabase.from('listings').select('id', { count: 'exact', head: true }).eq('owner_id', id as string),
         supabase
           .from('claims')
@@ -805,7 +815,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
     queryFn: async (): Promise<Listing[]> => {
       const { data, error } = await supabase
         .from('listing_promotions')
-        .select(`id, ends_at, listing:listings(${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), market:markets(name), claims(count))`)
+        .select(`id, ends_at, listing:listings(${LISTING_FIELDS}, owner:public_profiles(${PUBLIC_PROFILE_FIELDS}), market:markets(name), claims(count))`)
         .eq('status', 'active')
         .gt('ends_at', new Date().toISOString())
         .order('ends_at', { ascending: true })
@@ -952,7 +962,7 @@ export function useClaimThread(claimId?: string) {
     queryFn: async (): Promise<Claim | null> => {
       const { data, error } = await supabase
         .from('claims')
-        .select(`*, claimer:profiles!claims_claimer_id_fkey(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended), listing:listings(${LISTING_FIELDS}, owner:profiles(id,name,avatar_url,city,county,state,user_type,business_account,business_category,can_post,can_claim,can_sponsor,can_create_promotions,can_offer_delivery,created_at,suspended))`)
+        .select(`*, claimer:public_profiles!claims_claimer_id_fkey(${PUBLIC_PROFILE_FIELDS}), listing:listings(${LISTING_FIELDS}, owner:public_profiles(${PUBLIC_PROFILE_FIELDS}))`)
         .eq('id', claimId as string)
         .maybeSingle();
       if (error) throw error;
@@ -1069,12 +1079,12 @@ export function useMyChats(uid?: string) {
       const [mineRes, inRes] = await Promise.all([
         supabase
           .from('claims')
-          .select('id, status, created_at, listing:listings(title, owner:profiles(name))')
+          .select('id, status, created_at, listing:listings(title, owner:public_profiles(name))')
           .eq('claimer_id', uid as string)
           .in('status', ACTIVE),
         supabase
           .from('claims')
-          .select('id, status, created_at, claimer:profiles!claims_claimer_id_fkey(name), listing:listings!inner(title, owner_id)')
+          .select('id, status, created_at, claimer:public_profiles!claims_claimer_id_fkey(name), listing:listings!inner(title, owner_id)')
           .eq('listing.owner_id', uid as string)
           .in('status', ACTIVE),
       ]);
@@ -1142,6 +1152,9 @@ export function useMyProfile(uid?: string) {
   return useQuery({
     queryKey: keys.myProfile(uid),
     enabled: isSupabaseConfigured && !!uid,
+    // Full Profile on purpose: this is the caller's OWN row, so zip_code and
+    // the capability flags are theirs to see. Every OTHER profile in the app
+    // comes back as PublicProfile.
     queryFn: async (): Promise<Profile | null> => {
       const { data, error } = await supabase.rpc('my_profile');
       if (error) throw error;

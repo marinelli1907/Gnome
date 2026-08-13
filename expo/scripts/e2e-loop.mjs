@@ -110,11 +110,11 @@ async function main() {
   const claimer2 = await makeUser('claimer2', 'Casey Second');
   check('owner profile auto-created by trigger', true);
   {
-    const { data, error } = await owner.client
-      .from('profiles')
-      .select('id, name, can_post, can_offer_delivery')
-      .eq('id', owner.id)
-      .single();
+    // can_post / can_offer_delivery are administrative flags: after 0087 they
+    // are no longer column-granted to `authenticated`. The owner reads their
+    // own full row through the SECURITY DEFINER my_profile() RPC.
+    const { data: rows, error } = await owner.client.rpc('my_profile');
+    const data = Array.isArray(rows) ? rows[0] : rows;
     check('owner profile readable', !error && !!data, error?.message);
     check('profile defaults (can_post true, can_offer_delivery false)',
       !!data && data.can_post === true && data.can_offer_delivery === false);
