@@ -54,6 +54,7 @@ export default function AiTab() {
   const [analyzing, setAnalyzing] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const drafts = useQuery({
     queryKey: ['listing-drafts', userId],
@@ -118,16 +119,20 @@ export default function AiTab() {
       const made = (data.drafts ?? []).length;
       const skipped = (data.skipped ?? []).length;
       await qc.invalidateQueries({ queryKey: ['listing-drafts', userId] });
+      // A skipped photo is never turned into a half-guessed listing, so say so
+      // plainly and leave an obvious way to try it again.
+      setRetryCount(skipped);
       setMessages((m) => [...m, {
         role: 'assistant',
         content: made
           ? `I drafted ${made} listing${made === 1 ? '' : 's'} from your photo${assets.length === 1 ? '' : 's'}.` +
-            (skipped ? ` ${skipped} photo${skipped === 1 ? '' : 's'} I couldn't identify — have a look and re-shoot if you like.` : '') +
+            (skipped ? ` ${skipped} photo${skipped === 1 ? '' : 's'} didn't come through cleanly — I left ${skipped === 1 ? 'it' : 'them'} out rather than guess.` : '') +
             ' Review them below, then publish the ones you want.'
-          : 'I couldn’t confidently identify anything in those photos. Try a closer, brighter shot of a single item.',
+          : 'I couldn’t read those photos cleanly, so I didn’t draft anything rather than guess. A closer, brighter shot of a single item usually does it.',
       }]);
     } catch (err: any) {
       const msg = String(err?.message ?? '');
+      setRetryCount(0);
       setError(
         /PLAN_REQUIRED/.test(msg) ? 'Drafting listings from photos is a Grower & Farm feature.'
         : /NO_MARKET/.test(msg) ? 'Post once from the Post tab to create your Market first.'
@@ -247,6 +252,14 @@ export default function AiTab() {
           )}
 
           {error && <Text style={styles.error}>{error}</Text>}
+
+          {retryCount > 0 && (
+            <Pressable style={styles.retry} onPress={() => { setRetryCount(0); void addPhotos(); }}>
+              <Text style={styles.retryText}>
+                Try {retryCount === 1 ? 'that photo' : `those ${retryCount} photos`} again
+              </Text>
+            </Pressable>
+          )}
 
           {pending.length > 0 && (
             <View style={styles.draftsWrap}>
@@ -440,6 +453,11 @@ const styles = StyleSheet.create({
   mineText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.textOnPrimary, lineHeight: 22 },
   thinking: { fontFamily: fonts.regular, fontSize: 14, color: Colors.textSecondary },
   error: { fontFamily: fonts.regular, fontSize: 14, color: Colors.error, paddingHorizontal: 4 },
+  retry: {
+    alignSelf: 'flex-start', backgroundColor: Colors.surface, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: Colors.primary,
+  },
+  retryText: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.primary },
 
   draftsWrap: { gap: 10, marginTop: 6 },
   draftsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

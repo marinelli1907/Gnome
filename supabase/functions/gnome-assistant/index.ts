@@ -29,6 +29,7 @@ import {
   MODELS, type ModelRef, type Turn as PTurn, providerKeys, callWithFallback,
   estCents, actualCents, RateLimitedError,
 } from './providers.ts';
+import { parseDraft, type DraftCandidate } from './listing_draft_schema.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -75,7 +76,15 @@ This photo is ONE listing. Reply with ONLY a JSON object (no markdown):
  "seller_questions": ["Are these fully ripe or a few days out?"]
 }
 compliance_attention_required is true for eggs, meat, dairy, or anything canned/preserved — things commonly regulated.
-If nothing sellable is visible, use confidence 0 and empty strings.`;
+If nothing sellable is visible, use confidence 0 and empty strings.
+Include every key shown above and no others.`;
+
+// Second and FINAL attempt. The first reply failed strict validation, almost
+// always because it ran past the token ceiling. Ask for the same contract in
+// less room rather than trying to salvage meaning from a damaged reply.
+const RETRY_PROMPT = `${VISION_PROMPT}
+
+IMPORTANT: your previous reply was invalid or was cut off. Reply again with the COMPLETE JSON object and nothing else. Keep suggested_description under 200 characters. Include every required key.`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -148,31 +157,53 @@ Deno.serve(async (req: Request) => {
         });
         if (!reserved) { skipped.push({ index: i, reason: 'DAILY_LIMIT' }); continue; }
 
-        let raw = ''; let provider = ''; let model = ''; let inTok = 0; let outTok = 0;
-        try {
-          const r = await callWithFallback(chain, {
-            system: 'You identify garden produce and homemade goods for a neighborly farmers-market app.',
-            turns: [{ role: 'user', parts: [
-              { imageB64: img.image_base64, mediaType: img.media_type || 'image/jpeg' },
-              { text: VISION_PROMPT },
-            ] }],
-            maxTokens: 1100, json: true,
-          });
-          raw = r.text; provider = r.provider; model = r.model; inTok = r.inTok; outTok = r.outTok;
-        } catch (e) {
-          skipped.push({ index: i, reason: e instanceof RateLimitedError ? 'AI_BUSY' : 'ANALYZE_FAILED' });
-          continue;
+        // Attempt 1 at full length; if the payload does not survive STRICT
+        // validation (usually because it was truncated), attempt 2 asks for a
+        // shorter reply with structured output still enforced. Two attempts,
+        // hard stop — then the image is skipped and reported so the person can
+        // retry it deliberately. Recovery never fabricates a field: see
+        // listing_draft_schema.ts.
+        //
+        // The retry deliberately reuses the slot already reserved for this
+        // image: the cap counts PHOTOS the user submitted, and charging them
+        // twice for our own truncated reply would silently halve their quota.
+        // Spend stays bounded at two calls per photo, and both are billed to
+        // the usage log below (tokens accumulate across attempts).
+        let provider = ''; let model = ''; let inTok = 0; let outTok = 0;
+        let candidate: DraftCandidate | null = null;
+        let lastReason = 'BAD_MODEL_OUTPUT';
+        let transportFailed: 'AI_BUSY' | 'ANALYZE_FAILED' | null = null;
+
+        for (const attempt of [0, 1] as const) {
+          try {
+            const r = await callWithFallback(chain, {
+              system: 'You identify garden produce and homemade goods for a neighborly farmers-market app.',
+              turns: [{ role: 'user', parts: [
+                { imageB64: img.image_base64, mediaType: img.media_type || 'image/jpeg' },
+                { text: attempt === 0 ? VISION_PROMPT : RETRY_PROMPT },
+              ] }],
+              maxTokens: attempt === 0 ? 1100 : 600, json: true,
+            });
+            provider = r.provider; model = r.model;
+            inTok += r.inTok; outTok += r.outTok;
+            const outcome = parseDraft(r.text);
+            if (outcome.ok) { candidate = outcome.value; break; }
+            lastReason = `INVALID_OUTPUT:${outcome.reason}${outcome.detail ? `:${outcome.detail}` : ''}`;
+          } catch (e) {
+            transportFailed = e instanceof RateLimitedError ? 'AI_BUSY' : 'ANALYZE_FAILED';
+            break;
+          }
         }
+        if (transportFailed) { skipped.push({ index: i, reason: transportFailed }); continue; }
+        if (!candidate) { skipped.push({ index: i, reason: lastReason }); continue; }
 
-        const p = parseLoose(raw);
-        if (!p) { skipped.push({ index: i, reason: 'BAD_MODEL_OUTPUT' }); continue; }
-
-        const confidence = num(p.confidence, 0, 1);
-        const title = str(p.suggested_title, 80) || str(p.candidate_name, 80);
-        if (!title || confidence === 0) { skipped.push({ index: i, reason: 'NOT_RECOGNIZED' }); continue; }
+        const p = candidate;
+        const confidence = p.confidence;
+        const title = p.suggested_title;
+        if (confidence === 0) { skipped.push({ index: i, reason: 'NOT_RECOGNIZED' }); continue; }
 
         // Taxonomy from the REAL tree — the model only supplies search terms.
-        const terms = [str(p.candidate_name, 80), ...arr(p.alternatives, 5, 60), ...arr(p.taxonomy_search_terms, 6, 40)]
+        const terms = [p.candidate_name, ...p.alternatives, ...p.taxonomy_search_terms]
           .filter(Boolean).map((s) => s.toLowerCase());
         const best = (nodes ?? []).map((n) => {
           const hay = [String(n.name).toLowerCase(), ...((n.search_synonyms ?? []) as string[]).map((s) => s.toLowerCase())];
@@ -183,25 +214,25 @@ Deno.serve(async (req: Request) => {
           return { id: n.id, path: n.path as string, score };
         }).filter((n) => n.score > 0).sort((a, b) => b.score - a.score)[0] ?? null;
 
-        const lt = ['sale', 'free', 'trade'].includes(String(p.suggested_listing_type))
-          ? String(p.suggested_listing_type) : 'sale';
+        // Every field below is already validated and clamped by validateDraft.
+        const lt = p.suggested_listing_type;
 
         const { data: draft, error: derr } = await admin.from('listing_drafts').insert({
           owner_id: uid, market_id: mkt.id, batch_id: batchId, source: 'ai_photo',
           title,
-          description: str(p.suggested_description, 600),
+          description: p.suggested_description,
           category: best ? String(best.path).split('/')[0] : 'produce',
           taxonomy_node_id: best?.id ?? null,
           listing_type: lt,
-          price_cents: lt === 'sale' ? Math.round(num(p.suggested_price_cents, 0, 100000)) : null,
-          unit: str(p.suggested_unit, 20),
-          quantity: str(p.possible_quantity, 60),
+          price_cents: lt === 'sale' ? p.suggested_price_cents : null,
+          unit: p.suggested_unit,
+          quantity: p.possible_quantity,
           photos: img.photo_url ? [String(img.photo_url).slice(0, 500)] : [],
           ai_confidence: confidence,
-          ai_candidate_name: str(p.candidate_name, 80),
-          ai_alternatives: arr(p.alternatives, 5, 60),
-          ai_seller_questions: arr(p.seller_questions, 3, 120),
-          compliance_attention: p.compliance_attention_required === true,
+          ai_candidate_name: p.candidate_name,
+          ai_alternatives: p.alternatives.slice(0, 5),
+          ai_seller_questions: p.seller_questions.slice(0, 3),
+          compliance_attention: p.compliance_attention_required,
         }).select('*').single();
         if (derr) { skipped.push({ index: i, reason: 'SAVE_FAILED' }); continue; }
         created.push(draft);
@@ -345,59 +376,4 @@ async function marketIntel(
     return 'No market intel available right now — answer from general knowledge and say the local data is unavailable.';
   }
   return lines.join('\n');
-}
-
-// Tolerant JSON extraction. Vision replies occasionally arrive fenced, with a
-// stray preamble, or truncated at the token ceiling mid-string. Take the widest
-// {...} span; if that still fails, close any unterminated string/braces so a
-// long description doesn't cost the whole photo. Returns null only when there
-// is genuinely nothing parseable — the caller then skips that image rather than
-// inventing a listing.
-function parseLoose(raw: string): Record<string, unknown> | null {
-  const cleaned = String(raw ?? '').replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  const start = cleaned.indexOf('{');
-  if (start < 0) return null;
-  const end = cleaned.lastIndexOf('}');
-  const span = end > start ? cleaned.slice(start, end + 1) : null;
-  for (const attempt of [span, repairTruncated(cleaned.slice(start))]) {
-    if (!attempt) continue;
-    try {
-      const v = JSON.parse(attempt);
-      if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
-    } catch { /* try the next candidate */ }
-  }
-  return null;
-}
-
-function repairTruncated(s: string): string | null {
-  // Track the real delimiter stack so an array truncated mid-element is closed
-  // with ']' and an object with '}' — closing with the wrong one just fails.
-  const stack: string[] = [];
-  let inStr = false; let esc = false;
-  for (const ch of s) {
-    if (esc) { esc = false; continue; }
-    if (ch === '\\' && inStr) { esc = true; continue; }
-    if (ch === '"') { inStr = !inStr; continue; }
-    if (inStr) continue;
-    if (ch === '{') stack.push('}');
-    else if (ch === '[') stack.push(']');
-    else if (ch === '}' || ch === ']') stack.pop();
-  }
-  if (!stack.length && !inStr) return null;   // nothing to repair
-  let out = s;
-  if (inStr) out += '"';
-  // Drop a trailing comma or a dangling `"key":` so the close is valid JSON.
-  out = out.replace(/,\s*$/, '').replace(/,?\s*"[^"]*"\s*:\s*$/, '');
-  while (stack.length) out += stack.pop();
-  return out;
-}
-
-function str(v: unknown, max: number): string {
-  return typeof v === 'string' ? v.slice(0, max) : '';
-}
-function num(v: unknown, lo: number, hi: number): number {
-  const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
-}
-function arr(v: unknown, maxLen: number, maxStr: number): string[] {
-  return Array.isArray(v) ? v.slice(0, maxLen).map((x) => str(x, maxStr)).filter(Boolean) : [];
 }
