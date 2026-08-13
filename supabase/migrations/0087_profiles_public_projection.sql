@@ -57,8 +57,20 @@ select
 from public.profiles p;
 
 comment on view public.public_profiles is
-  'The ONLY profile projection other users and anonymous visitors may read. Columns are enumerated on purpose: never use select *, so a new column on profiles is not exposed automatically. Excludes administrative flags (can_*, suspended), onboarding state, and anything from user_private_contact.';
+  'The ONLY profile projection other users and anonymous visitors may read. Columns are enumerated on purpose: never use select *, so a new column on profiles is not exposed automatically. Excludes administrative flags (can_*, suspended), onboarding state, and anything from user_private_contact. Runs with the view owner''s rights (security_invoker=false) BY DESIGN — that is what lets it serve public fields while the base table stays owner/admin-only.';
 
+-- EXPLICIT, not inherited from a default. The safety of this projection rests
+-- on the view executing with its OWNER's rights rather than the caller's:
+--   * the view is owned by `postgres`, which also owns `profiles`;
+--   * `profiles` has RLS enabled but NOT forced (relforcerowsecurity = false),
+--     so the owner is not subject to the row policies;
+--   * therefore the view can return the ten public columns for every row even
+--     though the caller can read none of the base table.
+-- Setting this explicitly means a future change to the PostgreSQL default (or
+-- someone copying this file) cannot silently flip the behaviour. If the view
+-- ever became security_invoker=true, it would return zero rows for other users
+-- — a visible failure, not a silent leak.
+alter view public.public_profiles set (security_invoker = false);
 alter view public.public_profiles set (security_barrier = true);
 
 revoke all on public.public_profiles from public;

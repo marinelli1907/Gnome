@@ -116,6 +116,7 @@ create or replace view public.public_profiles as
 select p.id, p.name, p.avatar_url, p.city, p.county, p.state,
        p.user_type, p.business_account, p.business_category, p.created_at
 from public.profiles p;
+alter view public.public_profiles set (security_invoker = false);
 alter view public.public_profiles set (security_barrier = true);
 revoke all on public.public_profiles from public;
 grant select on public.public_profiles to anon, authenticated;
@@ -277,6 +278,29 @@ begin
   raise notice 'PASS  admin can still read id/name/suspended (moderation screens keep working)';
   perform set_config('request.jwt.claim.is_admin', 'false', true);
   reset role;
+end $$;
+
+-- The projection's safety rests on OWNER-rights execution. Assert the exact
+-- preconditions rather than trusting a default.
+do $$
+declare inv text; owner_ok boolean; forced boolean;
+begin
+  select coalesce((select option_value from pg_options_to_table(c.reloptions)
+                   where option_name = 'security_invoker'), 'false')
+    into inv from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname='public_profiles';
+  if inv <> 'false' then raise exception 'FAIL  public_profiles must be security_invoker=false, got %', inv; end if;
+  raise notice 'PASS  projection runs with OWNER rights (security_invoker=false, set explicitly)';
+
+  select (v.relowner = t.relowner) into owner_ok
+    from pg_class v, pg_class t
+   where v.relname='public_profiles' and t.relname='profiles';
+  if not owner_ok then raise exception 'FAIL  view owner differs from profiles owner; owner-rights read would fail'; end if;
+  raise notice 'PASS  view and base table share an owner';
+
+  select relforcerowsecurity into forced from pg_class where relname='profiles';
+  if forced then raise exception 'FAIL  profiles has FORCE RLS; the owner-rights projection would return 0 rows'; end if;
+  raise notice 'PASS  profiles RLS is enabled but not FORCED (owner-rights read works)';
 end $$;
 
 -- Admins keep the read their moderation surfaces need.
