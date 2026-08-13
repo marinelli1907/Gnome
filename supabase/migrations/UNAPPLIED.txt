@@ -1,0 +1,23 @@
+# Repository migration files that are deliberately NOT rows in APPLIED.tsv.
+# Every file listed here needs a reason. migration_audit.sh fails on any repo
+# migration that is neither applied nor declared here, which is what stops the
+# repo and production drifting apart again.
+#
+#   <file>  <reason>
+
+0087_down_profiles_public_projection.sql  rollback script for 0087; only ever run deliberately
+
+# Applied to production through the SQL editor before the ledger discipline
+# existed, so Supabase never recorded a schema_migrations row. The objects ARE
+# live (verified 2026-08-13: 3 handmade taxonomy nodes present). Left as-is
+# rather than back-dating a ledger row, per "do not alter production merely to
+# make migration bookkeeping look cleaner".
+0057_handmade_taxonomy.sql  applied via SQL editor; no schema_migrations row in production
+
+# ---------------------------------------------------------------------------
+# Seed Drop Phase 0 — written, tested locally, NOT applied to production.
+# These stay here until Daniel approves application (see
+# docs/seed-drop/23-implementation-sequence.md).
+# ---------------------------------------------------------------------------
+0089_seed_drop_compliance_foundation.sql  Seed Drop Phase 0 — awaiting Daniel's approval to apply
+0089_down_seed_drop_compliance_foundation.sql  rollback for 0089
