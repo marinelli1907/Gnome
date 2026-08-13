@@ -118,7 +118,7 @@ select p.id, p.name, p.avatar_url, p.city, p.county, p.state,
 from public.profiles p;
 alter view public.public_profiles set (security_invoker = false);
 alter view public.public_profiles set (security_barrier = true);
-revoke all on public.public_profiles from public;
+revoke all on public.public_profiles from public, anon, authenticated;
 grant select on public.public_profiles to anon, authenticated;
 
 drop policy if exists "profiles_select_all" on public.profiles;
@@ -277,6 +277,29 @@ begin
   if n <> 1 then raise exception 'FAIL  admin moderation read of suspended returned % row(s)', n; end if;
   raise notice 'PASS  admin can still read id/name/suspended (moderation screens keep working)';
   perform set_config('request.jwt.claim.is_admin', 'false', true);
+  reset role;
+end $$;
+
+-- The projection is auto-updatable AND runs with owner rights, so any write
+-- privilege on it would be a straight RLS bypass. Prove it is SELECT-only.
+do $$
+declare bad text;
+begin
+  select string_agg(distinct grantee||':'||privilege_type, ', ') into bad
+    from information_schema.role_table_grants
+   where table_schema='public' and table_name='public_profiles'
+     and grantee in ('anon','authenticated') and privilege_type <> 'SELECT';
+  if bad is not null then raise exception 'FAIL  public_profiles is writable: %', bad; end if;
+  raise notice 'PASS  projection is SELECT-only for anon/authenticated (no write-through RLS bypass)';
+end $$;
+
+do $$
+begin
+  set local role authenticated;
+  perform set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  perform pg_temp.expect_denied(
+    'update public.public_profiles set name = ''PWNED'' where id = ''11111111-1111-1111-1111-111111111111''',
+    'write through the projection to another user''s row');
   reset role;
 end $$;
 

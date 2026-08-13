@@ -73,8 +73,29 @@ comment on view public.public_profiles is
 alter view public.public_profiles set (security_invoker = false);
 alter view public.public_profiles set (security_barrier = true);
 
-revoke all on public.public_profiles from public;
+-- CRITICAL: revoke from the ROLES, not just the PUBLIC pseudo-role. Supabase
+-- ships default privileges that grant ALL on newly created objects in `public`
+-- to anon and authenticated, and `revoke all ... from public` does NOT remove
+-- those. This view is a simple single-table view, therefore AUTO-UPDATABLE, and
+-- it runs with owner rights — so leaving INSERT/UPDATE/DELETE in place would let
+-- any caller write through it as `postgres` and bypass every row policy below.
+-- SELECT is the only privilege this projection may ever hold.
+revoke all on public.public_profiles from public, anon, authenticated;
 grant select on public.public_profiles to anon, authenticated;
+
+-- Fail the migration rather than ship a writable public projection.
+do $$
+declare bad text;
+begin
+  select string_agg(distinct grantee || ':' || privilege_type, ', ')
+    into bad
+    from information_schema.role_table_grants
+   where table_schema = 'public' and table_name = 'public_profiles'
+     and grantee in ('anon', 'authenticated') and privilege_type <> 'SELECT';
+  if bad is not null then
+    raise exception 'public_profiles must be SELECT-only for anon/authenticated; found: %', bad;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- 2. Row policies: owner or admin. The blanket policy goes away.
