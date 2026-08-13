@@ -41,11 +41,24 @@ citations; verify with counsel and, where marked, with the agencies in writing.
 | 24 | [Final launch verdict](24-launch-verdict.md) | synthesis |
 
 Deliverable 25 (the verdict value itself) is stated in 01 and 24.
+| 24 | [Final launch verdict](24-launch-verdict.md) | synthesis |
+
+## Execution round — 2026-08-13 (Daniel's approved Phase 0 directive)
+
+| # | Document | What it is |
+|---|----------|------------|
+| 25 | [Phase 0 status](25-phase0-status.md) | What migration `0089` builds, what it deliberately refuses to do, and the 59/59 test result. **Unapplied; every gate closed.** |
+| 26 | [Roadmap: Bulbs and Planting Stock Compliance](26-roadmap-bulbs-planting-stock.md) | Why garlic, onion sets, shallots, seed potatoes and other planting stock stay out of V1, and what clearing them would take. |
+| 27 | [Final USDA + ODA inquiries](27-final-agency-inquiries.md) | Send-ready email and printable letter versions with verified recipients. **NOTHING SENT.** |
+| 28 | [Facility decision package](28-facility-decision.md) | Home vs storage-only vs flex space, Richmond Heights zoning findings, three checklists, and the questions for the City and the insurance broker. **Nothing rented or contacted.** |
+| 29 | [Supplier request package](29-supplier-request-package.md) | Shared questionnaire, three tailored outreach emails, weighted scorecard, credential checklist, quote-import template. **No supplier contacted.** |
 
 ## Locked decisions this pack is built around
 
 - Customer **chooses** the Drop size — Gnome recommends, never dictates.
-  Sizes: 4 (Patio) / 8 (Garden) / 12 (Harvest) / Build-Your-Drop 4–20.
+  Sizes: 4 (Patio) / 8 (Garden) / 12 (**Homestead**, renamed from "Harvest"
+  on 2026-08-13) / Build-Your-Drop 4–20. Frequencies: monthly, every other
+  month, seasonal, one-time.
 - Packets are **unopened, unaltered, original supplier-labeled**; the supplier
   packet remains the controlling label. Gnome never opens, divides, repackages,
   relabels, or covers packets and never claims to be grower/producer/labeler.

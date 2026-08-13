@@ -83,7 +83,7 @@ before any recommendation, so no promise is ever walked back.
 > **Gnome:** "Two 4×8 beds is about 64 square feet, plus your pots — full sun, two
 > people, and you want to plant *now*. My recommendation: a **Garden Drop — 8 packets**.
 > That fills both beds with fall crops without crowding, and mid-August is genuinely
-> one of the two best planting moments of the year here in zone 6b. A Harvest Drop (12)
+> one of the two best planting moments of the year here in zone 6b. A Homestead Drop (12)
 > would mean saving several packets for spring — happy to do that if you'd like more.
 > **Your garden, your call.**"
 

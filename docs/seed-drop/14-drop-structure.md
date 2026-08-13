@@ -13,7 +13,7 @@ or frequency comes from the economics lane (doc 16) and the owner's Stripe confi
 |---|---|---|
 | **Patio Drop** | 4 | pots, windowsills, a small corner |
 | **Garden Drop** | 8 | a bed or two — the recommended default for most |
-| **Harvest Drop** *(rename recommended, §4)* | 12 | big gardens, preservers, sharers |
+| **Homestead Drop** *(renamed from "Harvest Drop", decided 2026-08-13)* | 12 | big gardens, preservers, sharers |
 | **Build Your Drop** | custom **4–20** | people who know exactly what they want |
 
 Mechanics:
@@ -112,7 +112,7 @@ size progression. Against that bar:
 |---|---|---|
 | **Patio Drop (4)** | **Keep** | Concrete place word; instantly self-sizing; sits perfectly beside Neighbor/Grower/Farm. |
 | **Garden Drop (8)** | **Keep** | Same virtues; the obvious middle. |
-| **Harvest Drop (12)** | **Rename → "Homestead Drop"** | Two problems: (a) *Harvest* quietly promises an outcome, and doc 15's first commandment is that Gnome never promises harvest — the product's biggest box shouldn't have the word we refuse to guarantee; (b) Patio→Garden are *places you grow*, Harvest is a *result*, breaking the ladder. **Homestead** restores the place progression (patio → garden → homestead), matches the Neighbor/Grower/Farm register, and implies scale without promising outcomes. |
+| **Harvest Drop (12)** | **RENAMED to "Homestead Drop" — Daniel approved 2026-08-13** | Two problems: (a) *Harvest* quietly promises an outcome, and doc 15's first commandment is that Gnome never promises harvest — the product's biggest box shouldn't have the word we refuse to guarantee; (b) Patio→Garden are *places you grow*, Harvest is a *result*, breaking the ladder. **Homestead** restores the place progression (patio → garden → homestead), matches the Neighbor/Grower/Farm register, and implies scale without promising outcomes. |
 | **Build Your Drop (4–20)** | **Keep** | Plain-spoken, verb-first, says exactly what it is. Second choice "Your Drop, Your Way" is warmer but vaguer; not recommended. |
 
 The 4 / 8 / 12 / custom 4–20 **structure is locked and untouched** by any rename.

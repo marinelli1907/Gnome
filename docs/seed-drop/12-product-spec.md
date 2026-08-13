@@ -64,7 +64,7 @@ checkout reservation expiry, delivery confirmation, and the garden journal table
 ## 2. Product shape (summary — full detail in doc 14)
 
 - **Sizes (customer's choice):** Patio Drop **4** packets · Garden Drop **8** ·
-  Harvest Drop **12** · Build Your Drop **custom 4–20**. Names are provisional;
+  Homestead Drop **12** · Build Your Drop **custom 4–20**. Names are provisional;
   doc 14 §4 evaluates them against Gnome's voice and recommends one rename while
   preserving the locked 4/8/12/custom structure.
 - **Frequencies:** seasonal (**default**, matches `seed_season_windows`), every-other-month,
@@ -212,7 +212,7 @@ voice. The canonical example:
 
 > "You've got two 4×8 raised beds — about 64 square feet — full sun, and you're feeding
 > three people. A **Garden Drop (8 packets)** fills that nicely without crowding: roughly
-> 6 vegetables, an herb, and a flower for the pollinators. A Harvest Drop would mean
+> 6 vegetables, an herb, and a flower for the pollinators. A Homestead Drop would mean
 > either crowding the beds or saving several packets for later — fine if you want them,
 > but you don't need them."
 
@@ -405,16 +405,29 @@ table shape). All are evaluated inside the server-side checklist (§6, check 17)
 
 ---
 
-## 11. Decisions reserved for Daniel
+## 11. Decisions reserved for Daniel — **ALL FIVE DECIDED 2026-08-13**
 
-1. **First-Drop timing for new subscribers:** ship the first Drop promptly after
-   approval + payment (one-time engine path), or hold every Drop to the seasonal wave
-   (`0081` model). Doc 13 walks the prompt-ship variant and shows how the packet mix
-   changes under the wave variant. This changes warehouse rhythm; not a spec call.
-2. **Harvest Drop rename** (doc 14 §4 recommends "Homestead Drop"; structure unchanged).
-3. **Monthly cadence: offer at launch or defer** (doc 14 §3 specifies it fully either way).
-4. **Approval-hold semantics:** propose-without-reserving vs short-hold reservation
-   (inventory-fairness trade-off, doc 14 §2.3; database lane implements either).
-5. **Garlic:** October-planted, NE-Ohio-perfect, but ships as **bulbs, not sealed seed
-   packets** — outside the locked packet rules. Include as a special line (needs its own
-   compliance pass in 02/03) or leave out of V1. Doc 13 flags where it would shine.
+1. ~~First-Drop timing~~ → **DECIDED: ship promptly.** Match the subscriber
+   soon after signup and target shipment **3–5 business days after approval and
+   payment**; a first subscriber never waits for the next recurring wave. The
+   target is never promised when inventory or capacity cannot support it.
+2. ~~Harvest Drop rename~~ → **DECIDED: renamed "Homestead Drop."** Structure
+   unchanged. Implemented in `seed_drop_tier_label()` (migration 0089) and
+   applied across this pack.
+3. ~~Monthly cadence~~ → **DECIDED: offered at launch.** The four frequencies
+   are monthly, every other month, seasonal, and one-time
+   (`seed_drop_subscriptions.frequency`, migration 0089).
+4. ~~Approval-hold semantics~~ → **DECIDED: short-hold reservation, 48 hours.**
+   The exact proposed packets are reserved, the expiry is shown to the customer,
+   those units are offered to no one else, approval proceeds to payment, and
+   expiry releases stock atomically and idempotently. Payment failure gets a
+   defined short recovery window before release. Nothing approved is ever
+   silently substituted (`seed_packet_reservations`, migration 0089).
+5. ~~Garlic~~ → **DECIDED: excluded from V1**, along with all bulbs, onion sets,
+   shallots, seed potatoes and other planting stock. Enforced structurally by
+   `regulatory_class = 'BULB_OR_PLANTING_STOCK'`; unblocking conditions in
+   [26-roadmap-bulbs-planting-stock.md](26-roadmap-bulbs-planting-stock.md).
+
+Selection modes are likewise locked to four: **Surprise Me · Let Me Approve ·
+Build It With Me · Choose for Me, Then Add More**. Customer controls: pause,
+skip, change frequency, change Drop size, cancel.
