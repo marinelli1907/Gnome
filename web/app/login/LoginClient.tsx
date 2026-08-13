@@ -15,7 +15,11 @@ type Mode = 'signin' | 'signup' | 'forgot' | 'reset' | 'code';
 // profiles row (profiles_update_self RLS); avatar goes to the public
 // listing-images bucket under the user's own folder.
 function AccountView({ email, uid, onSetPassword }: { email: string; uid: string; onSetPassword: () => void }) {
-  const [name, setName] = useState('');
+  const [name, setName] = useState('');          // derived public display name
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('OH');
   const [zip, setZip] = useState('');
@@ -36,19 +40,50 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
         setZip(row.zip_code ?? '');
         setAvatarUrl(row.avatar_url ?? null);
       });
+    // Private contact details live in user_private_contact, never on profiles.
+    supabaseBrowser().rpc('my_onboarding_state')
+      .then(({ data }) => {
+        if (!data) return;
+        setFirstName(data.first_name ?? '');
+        setLastName(data.last_name ?? '');
+        setContactEmail(data.contact_email ?? '');
+        setPhone(data.phone ?? '');
+      });
   }, [uid]);
 
   async function saveProfile() {
     if (busy) return;
     setBusy(true); setMsg(null);
+    // `name` is derived from first/last by save_onboarding_contact — writing it
+    // here would let a full legal name onto a world-readable field.
     const { error } = await supabaseBrowser().from('profiles').update({
-      name: name.trim() || null,
       city: city.trim() || null,
       state: state.trim().toUpperCase() || null,
       zip_code: zip.trim() || null,
     }).eq('id', uid);
     setBusy(false);
     setMsg(error ? error.message : 'Profile saved.');
+  }
+
+  // Identical validated path to the mobile welcome chat: the RPC re-checks
+  // every value and derives the public "First L." display name itself.
+  async function saveDetails() {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    const { data, error } = await supabaseBrowser().rpc('save_onboarding_contact', {
+      p_first_name: firstName, p_last_name: lastName,
+      p_email: contactEmail, p_phone: phone || null,
+      p_complete: !!(firstName.trim() && lastName.trim() && contactEmail.trim()),
+    });
+    setBusy(false);
+    if (error) {
+      setMsg(/INVALID_EMAIL/.test(error.message) ? 'That email doesn’t look right.'
+        : /INVALID_PHONE/.test(error.message) ? 'That phone number doesn’t look right.'
+        : error.message);
+      return;
+    }
+    if (data?.display_name) setName(data.display_name);
+    setMsg('Details saved.');
   }
 
   async function uploadAvatar(file: File) {
@@ -97,8 +132,30 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
         </label>
       </div>
 
-      <div className="field"><label>Display name</label>
-        <input maxLength={40} value={name} placeholder="Your name" onChange={(e) => setName(e.target.value)} /></div>
+      <div className="field-row">
+        <div className="field"><label>First name</label>
+          <input maxLength={60} value={firstName} placeholder="First"
+            onChange={(e) => setFirstName(e.target.value)} /></div>
+        <div className="field"><label>Last name</label>
+          <input maxLength={60} value={lastName} placeholder="Last"
+            onChange={(e) => setLastName(e.target.value)} /></div>
+      </div>
+      <div className="field" style={{ marginTop: 8 }}><label>Email for notifications</label>
+        <input type="email" value={contactEmail} placeholder="you@example.com"
+          onChange={(e) => setContactEmail(e.target.value)} /></div>
+      <div className="field" style={{ marginTop: 8 }}><label>Mobile (optional)</label>
+        <input inputMode="tel" value={phone} placeholder="For pickup and delivery coordination"
+          onChange={(e) => setPhone(e.target.value)} /></div>
+      <p className="authhint" style={{ marginTop: 6 }}>
+        Neighbors only ever see <strong>{name || 'your first name and last initial'}</strong>.
+        Your full last name, email and phone stay private — neighbors reach you
+        through Gnome messaging.
+      </p>
+      <div style={{ marginTop: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void saveDetails()}>
+          Save details
+        </button>
+      </div>
       <div className="field-row" style={{ marginTop: 8 }}>
         <div className="field"><label>City</label>
           <input value={city} placeholder="City" onChange={(e) => setCity(e.target.value)} /></div>
@@ -108,8 +165,8 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
           <input inputMode="numeric" maxLength={5} value={zip} onChange={(e) => setZip(e.target.value.replace(/[^0-9]/g, ''))} /></div>
       </div>
       <p className="authhint" style={{ marginTop: 6 }}>
-        Your name and photo show on your Market and listings. Your town powers
-        nearby search — your exact address is never shown.
+        Your photo and display name show on your Market and listings. Your town
+        powers nearby search — your exact address is never shown.
       </p>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>

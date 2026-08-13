@@ -18,14 +18,20 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyProfile, useUpdateProfile } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { currentLocationFields } from '@/lib/location';
 import { hardinessZoneForZip } from '@/lib/zone';
 
 /**
- * Profile editor — parity with the web account view (name, photo, city, state,
- * ZIP). ZIP is private: it is never shown to other neighbours and is only used
- * to derive a growing zone and to centre nearby search.
+ * Profile editor — parity with the web account view (photo, city, state, ZIP)
+ * plus the private contact details.
+ *
+ * The public display name is DERIVED ("First L.") by save_onboarding_contact
+ * from a first and last name that live in user_private_contact, so a full legal
+ * name can never reach the world-readable profiles row. This screen is also the
+ * place someone who skipped the welcome chat fills those details in later —
+ * skipping is always recoverable.
  */
 export default function EditProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -34,7 +40,12 @@ export default function EditProfileScreen() {
   const profile = useMyProfile(userId ?? undefined);
   const update = useUpdateProfile(userId ?? undefined);
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState('');          // derived, read-only preview
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [savingDetails, setSavingDetails] = useState(false);
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zip, setZip] = useState('');
@@ -46,6 +57,13 @@ export default function EditProfileScreen() {
   useEffect(() => {
     if (profile.data && !seeded) {
       setName(profile.data.name ?? '');
+      void supabase.rpc('my_onboarding_state').then(({ data }) => {
+        if (!data) return;
+        setFirstName(data.first_name ?? '');
+        setLastName(data.last_name ?? '');
+        setContactEmail(data.contact_email ?? '');
+        setPhone(data.phone ?? '');
+      });
       setCity(profile.data.city ?? '');
       setState(profile.data.state ?? '');
       setZip(profile.data.zip_code ?? '');
@@ -53,6 +71,31 @@ export default function EditProfileScreen() {
       setSeeded(true);
     }
   }, [profile.data, seeded]);
+
+  const saveDetails = async () => {
+    if (savingDetails) return;
+    setSavingDetails(true);
+    try {
+      const { data, error } = await supabase.rpc('save_onboarding_contact', {
+        p_first_name: firstName, p_last_name: lastName,
+        p_email: contactEmail, p_phone: phone || null,
+        p_complete: !!(firstName.trim() && lastName.trim() && contactEmail.trim()),
+      });
+      if (error) throw error;
+      if (data?.display_name) setName(data.display_name);
+      Alert.alert('Saved', 'Your details are up to date.');
+    } catch (e: any) {
+      const m = String(e?.message ?? '');
+      Alert.alert(
+        'Couldn’t save',
+        /INVALID_EMAIL/.test(m) ? 'That email doesn’t look right.'
+        : /INVALID_PHONE/.test(m) ? 'That phone number doesn’t look right.'
+        : 'Please try again.',
+      );
+    } finally {
+      setSavingDetails(false);
+    }
+  };
 
   if (!userId) {
     return (
@@ -114,7 +157,7 @@ export default function EditProfileScreen() {
 
   const save = () => {
     if (!name.trim()) {
-      Alert.alert('Add your name', 'Neighbours see this name on your listings.');
+      Alert.alert('Add your name', 'Save your first and last name above first.');
       return;
     }
     const cleanZip = zip.trim();
@@ -124,7 +167,6 @@ export default function EditProfileScreen() {
     }
     update.mutate(
       {
-        name: name.trim(),
         city: city.trim() || null,
         state: state.trim().toUpperCase() || null,
         zip_code: cleanZip || null,
@@ -156,7 +198,23 @@ export default function EditProfileScreen() {
           </View>
         </Pressable>
 
-        <Field label="Display name" value={name} onChangeText={setName} placeholder="Your name" autoCapitalize="words" />
+        <Field label="First name" value={firstName} onChangeText={setFirstName}
+          placeholder="First" autoCapitalize="words" />
+        <Field label="Last name" value={lastName} onChangeText={setLastName}
+          placeholder="Last" autoCapitalize="words" />
+        <Field label="Email for notifications" value={contactEmail} onChangeText={setContactEmail}
+          placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
+        <Field label="Mobile (optional)" value={phone} onChangeText={setPhone}
+          placeholder="For pickup and delivery coordination" keyboardType="phone-pad" />
+        <Text style={styles.hint}>
+          Neighbours only ever see {name || 'your first name and last initial'}. Your full last
+          name, email, and phone stay private — neighbours reach you through Gnome messaging.
+        </Text>
+        <Button
+          label={savingDetails ? 'Saving…' : 'Save details'}
+          onPress={saveDetails}
+          disabled={savingDetails}
+        />
 
         <Pressable
           onPress={() => void fillFromCurrentLocation()}
@@ -233,4 +291,5 @@ const styles = StyleSheet.create({
   privacyTitle: { fontSize: 13, color: Colors.text, fontFamily: fonts.bold },
   privacyText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, fontFamily: fonts.regular },
   zoneText: { fontSize: 13, color: Colors.primary, fontFamily: fonts.semibold, marginTop: 2 },
+  hint: { fontSize: 13, lineHeight: 19, color: Colors.textSecondary, fontFamily: fonts.regular, marginBottom: 10 },
 });
