@@ -70,6 +70,10 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerBackTitle: 'Back' }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen
+                name="onboarding"
+                options={{ headerShown: false, gestureEnabled: false }}
+              />
+              <Stack.Screen
                 name="sign-in"
                 options={{ presentation: 'modal', title: 'Sign In', ...headerStyle }}
               />
