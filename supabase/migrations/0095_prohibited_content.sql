@@ -362,6 +362,44 @@ comment on table public.seller_compliance_clearances is
   'listings of that class clear automatically until the credential expires, the '
   'seller moves state, the class changes, or the rule version is bumped.';
 
+-- State is the axis a clearance is granted on, so it has to mean exactly one
+-- thing. Production has no constraint on listings.state today: the values happen
+-- to be clean ("OH"), but "Ohio", " oh " and "" would all be accepted, and a
+-- clearance keyed on one spelling would silently miss another.
+--
+-- Resolution is server-side and total: trim, fold case, and map full names to
+-- the USPS code. Anything unrecognised returns NULL rather than a guess, and a
+-- NULL state can never satisfy a clearance — so an unknown location fails
+-- closed into review instead of quietly publishing.
+create or replace function public.normalize_state(p_state text)
+returns text language sql immutable set search_path = pg_catalog, public as $fn$
+  select case
+    when coalesce(btrim(p_state),'') = '' then null
+    when upper(btrim(p_state)) ~ '^[A-Z]{2}$'
+      and upper(btrim(p_state)) in (
+        'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA',
+        'ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK',
+        'OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC')
+      then upper(btrim(p_state))
+    else (select code from (values
+      ('alabama','AL'),('alaska','AK'),('arizona','AZ'),('arkansas','AR'),('california','CA'),
+      ('colorado','CO'),('connecticut','CT'),('delaware','DE'),('florida','FL'),('georgia','GA'),
+      ('hawaii','HI'),('idaho','ID'),('illinois','IL'),('indiana','IN'),('iowa','IA'),
+      ('kansas','KS'),('kentucky','KY'),('louisiana','LA'),('maine','ME'),('maryland','MD'),
+      ('massachusetts','MA'),('michigan','MI'),('minnesota','MN'),('mississippi','MS'),
+      ('missouri','MO'),('montana','MT'),('nebraska','NE'),('nevada','NV'),('new hampshire','NH'),
+      ('new jersey','NJ'),('new mexico','NM'),('new york','NY'),('north carolina','NC'),
+      ('north dakota','ND'),('ohio','OH'),('oklahoma','OK'),('oregon','OR'),('pennsylvania','PA'),
+      ('rhode island','RI'),('south carolina','SC'),('south dakota','SD'),('tennessee','TN'),
+      ('texas','TX'),('utah','UT'),('vermont','VT'),('virginia','VA'),('washington','WA'),
+      ('west virginia','WV'),('wisconsin','WI'),('wyoming','WY'),('district of columbia','DC')
+    ) as m(name, code)
+    where m.name = lower(regexp_replace(btrim(p_state), '\s+', ' ', 'g')))
+  end;
+$fn$;
+revoke all on function public.normalize_state(text) from public, anon;
+grant execute on function public.normalize_state(text) to authenticated, service_role;
+
 -- Is this seller cleared to list this class in this state, right now?
 create or replace function public.seller_is_cleared(
   p_seller uuid, p_class text, p_state text
@@ -374,13 +412,17 @@ language sql stable security definer set search_path = pg_catalog, public as $fn
       left join public.seller_credentials sc on sc.id = c.credential_id
      where c.seller_id = p_seller
        and c.compliance_class = p_class
-       and upper(coalesce(c.state,'')) = upper(coalesce(p_state,''))
+       -- Both sides normalized, and a NULL never matches: an unknown location
+       -- must fail closed into review, not inherit somebody's clearance.
+       and public.normalize_state(c.state) is not null
+       and public.normalize_state(c.state) = public.normalize_state(p_state)
        and c.status = 'ACTIVE'
        -- the rule has not been rewritten since the decision
        and c.rule_version = k.rule_version
        -- and any credential it rested on is still good
        and (c.credential_id is null
-            or (sc.status = 'approved'
+            -- credential_status is an enum with UPPERCASE labels
+            or (sc.status = 'APPROVED'
                 and (sc.expiration_date is null or sc.expiration_date >= current_date)))
   );
 $fn$;
@@ -398,7 +440,7 @@ update public.marketplace_taxonomy_nodes set compliance_class = 'food-safety'
 create or replace function public.listings_screen_content() returns trigger
 language plpgsql security definer set search_path = pg_catalog, public as $$
 declare hit record; blob text; cfg public.content_screening_config; made int;
-        v_class text; cls public.compliance_classes;
+        v_class text; cls public.compliance_classes; v_state text;
 begin
   select * into cfg from public.content_screening_config where id;
 
@@ -439,6 +481,17 @@ begin
   select * into hit from public.screen_listing_text(blob)
    where action = 'BLOCK' limit 1;
 
+  -- Authoritative state: the listing's own, else the seller's profile. Resolved
+  -- once, server-side, so no client spelling reaches the clearance comparison.
+  v_state := public.normalize_state(new.state);
+  if v_state is null then
+    select public.normalize_state(pr.state) into v_state
+      from public.profiles pr where pr.id = new.owner_id;
+  end if;
+  if new.state is not null and public.normalize_state(new.state) is not null then
+    new.state := public.normalize_state(new.state);   -- store it normalized
+  end if;
+
   if hit.term is null and coalesce(new.kind,'offer') <> 'wanted' then
     -- TAXONOMY FIRST. The category the seller picked is a stronger signal than
     -- any word, and it is what lets an egg seller be cleared once rather than
@@ -474,7 +527,7 @@ begin
     -- the difference between reviewing a seller once and reviewing their eggs
     -- every week forever.
     if cls.compliance_class is null or not cls.requires_clearance
-       or public.seller_is_cleared(new.owner_id, v_class, new.state) then
+       or public.seller_is_cleared(new.owner_id, v_class, v_state) then
       new.screening_status   := 'CLEAR';
       new.screening_term     := null;
       new.screening_category := v_class;
@@ -670,16 +723,21 @@ begin
   end if;
 
   -- Supersede rather than stack, so "is this seller cleared" has one answer.
+  if public.normalize_state(p_state) is null then
+    raise exception 'UNKNOWN_STATE: %', p_state using errcode = 'P0001';
+  end if;
+
   update public.seller_compliance_clearances
      set status = 'REVOKED', revoked_by = auth.uid(), revoked_at = now(),
          notes = coalesce(notes,'') || ' superseded'
    where seller_id = p_seller and compliance_class = p_class
-     and upper(state) = upper(p_state) and status = 'ACTIVE';
+     and public.normalize_state(state) = public.normalize_state(p_state)
+     and status = 'ACTIVE';
 
   insert into public.seller_compliance_clearances
     (seller_id, compliance_class, state, rule_version, credential_id,
      source_listing_id, granted_by, reason)
-  values (p_seller, p_class, upper(p_state), v_ver, p_credential,
+  values (p_seller, p_class, public.normalize_state(p_state), v_ver, p_credential,
           p_listing, auth.uid(), p_reason)
   returning * into v_row;
 

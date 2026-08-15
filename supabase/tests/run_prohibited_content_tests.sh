@@ -30,12 +30,16 @@ create or replace function auth.uid() returns uuid language sql stable as $$ sel
 
 do $$ begin create type listing_status as enum ('active','claimed','completed','expired','removed','paused');
 exception when duplicate_object then null; end $$;
-create table public.profiles (id uuid primary key, name text, suspended boolean default false);
+create table public.profiles (id uuid primary key, name text, suspended boolean default false, state text);
 create table public.marketplace_taxonomy_nodes (
   id uuid primary key default gen_random_uuid(), slug text, prohibited boolean default false);
+-- Mirrors production: status is the credential_status enum, UPPERCASE labels.
+do $$ begin create type credential_status as enum
+  ('NOT_SUBMITTED','PENDING','APPROVED','DENIED','EXPIRED','RENEWAL_REQUIRED','REVOKED');
+exception when duplicate_object then null; end $$;
 create table public.seller_credentials (
   id uuid primary key default gen_random_uuid(), seller_id uuid, state text,
-  credential_type text, expiration_date date, status text default 'approved');
+  credential_type text, expiration_date date, status credential_status default 'APPROVED');
 create table public.listings (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid, title text, description text, trade_for text, category text,
@@ -251,6 +255,37 @@ r="$(try "Eggs after the rule change" "same hens" "" offer "$S" OH eggs)"
 
 n=$(psql -h "$HOST" -d "$DB" -Atq -c "select count(*)::text from public.admin_audit_log where action like 'compliance.%'" | tail -1)
 [ "$n" -ge 2 ] 2>/dev/null && say PASS "clearance decisions are audited ($n rows)" || say FAIL "$n audit rows"
+
+psql -h "$HOST" -d "$DB" -Atq -c "select set_config('test.owner','true',false);
+  select public.admin_grant_compliance_clearance('cccccccc-0000-0000-0000-00000000000c'::uuid,'eggs','OH','re-granted under current rule');" >/dev/null
+echo
+echo "K. state cannot be bypassed by spelling"
+S=cccccccc-0000-0000-0000-00000000000c
+for v in OH Ohio ohio "  oh  " "OHIO"; do
+  n=$(psql -h "$HOST" -d "$DB" -Atq -c "select coalesce(public.normalize_state('$v'),'NULL')" | tail -1)
+  [ "$n" = "OH" ] && say PASS "'$v' normalizes to OH" || say FAIL "'$v' -> $n"
+done
+for v in "" "  " "Freedonia" "O" "XX"; do
+  n=$(psql -h "$HOST" -d "$DB" -Atq -c "select coalesce(public.normalize_state('$v'),'NULL')" | tail -1)
+  [ "$n" = "NULL" ] && say PASS "'$v' resolves to NULL (fails closed)" || say FAIL "'$v' -> $n"
+done
+
+# The seller is cleared in OH. Every spelling of Ohio must clear; nothing else may.
+r="$(try "Eggs, spelled-out state" "same hens" "" offer "$S" "Ohio" eggs)"
+[ "$r" = "CLEAR" ] && say PASS "a clearance granted for OH honours 'Ohio'" || say FAIL "-> $r"
+r="$(try "Eggs, lowercase state" "same hens" "" offer "$S" "  oh " eggs)"
+[ "$r" = "CLEAR" ] && say PASS "whitespace and case do not defeat the clearance" || say FAIL "-> $r"
+r="$(try "Eggs, unknown state" "same hens" "" offer "$S" "Freedonia" eggs)"
+[ "$r" = "REVIEW" ] && say PASS "an unresolvable state fails closed into review" || say FAIL "-> $r"
+r="$(try "Eggs, no state at all" "same hens" "" offer "$S" "" eggs)"
+[ "$r" = "REVIEW" ] && say PASS "a NULL state fails closed into review" || say FAIL "-> $r"
+
+st=$(psql -h "$HOST" -d "$DB" -Atq -c "select state from public.listings where title='Eggs, lowercase state'" | tail -1)
+[ "$st" = "OH" ] && say PASS "the listing's state is stored normalized ('$st')" || say FAIL "stored as '$st'"
+
+r=$(psql -h "$HOST" -d "$DB" -Atq -c "select set_config('test.owner','true',false);
+  select public.admin_grant_compliance_clearance('$S'::uuid,'eggs','Freedonia','x');" 2>&1 | grep -c UNKNOWN_STATE || true)
+[ "$r" -ge 1 ] && say PASS "a clearance cannot be granted for an unknown state" || say FAIL "granted anyway"
 
 echo
 [ $fail -eq 0 ] && echo "PROHIBITED CONTENT (0095): ALL TESTS PASSED" || echo "PROHIBITED CONTENT (0095): FAILURES PRESENT"
