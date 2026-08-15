@@ -28,20 +28,27 @@ grant anon, authenticated to current_user;
 create schema if not exists auth;
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 
+do $$ begin create type listing_status as enum ('active','claimed','completed','expired','removed','paused');
+exception when duplicate_object then null; end $$;
 create table public.profiles (id uuid primary key, name text, suspended boolean default false);
 create table public.marketplace_taxonomy_nodes (
   id uuid primary key default gen_random_uuid(), slug text, prohibited boolean default false);
+create table public.seller_credentials (
+  id uuid primary key default gen_random_uuid(), seller_id uuid, state text,
+  credential_type text, expiration_date date, status text default 'approved');
 create table public.listings (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid, title text, description text, trade_for text, category text,
   kind text default 'offer',
   taxonomy_node_id uuid references public.marketplace_taxonomy_nodes(id),
-  status text default 'active', city text, state text,
+  status listing_status default 'active', city text, state text,
   created_at timestamptz default now());
+-- Mirrors production exactly (introspected 2026-08-13). An invented column here
+-- is how a migration passes its tests and still fails to apply.
 create table public.admin_audit_log (
-  id uuid primary key default gen_random_uuid(), action text, resource_type text,
-  resource_id text, old_value jsonb, new_value jsonb, reason text, actor uuid,
-  actor_type text, approval uuid, created_at timestamptz default now());
+  id bigserial primary key, actor_id uuid, actor_type text, action text,
+  resource_type text, resource_id text, old_state jsonb, new_state jsonb,
+  reason text, approval_request_id uuid, created_at timestamptz default now());
 create or replace function public.is_admin() returns boolean
   language sql stable as $$ select coalesce(current_setting('test.owner',true),'false')::boolean $$;
 create or replace function public.admin_is_owner() returns boolean
@@ -54,12 +61,15 @@ create or replace function public.admin_audit(
   p_action text, p_resource_type text, p_resource_id text, p_old jsonb,
   p_new jsonb, p_reason text, p_actor_type text, p_approval uuid)
 returns void language sql as $$
-  insert into public.admin_audit_log(action,resource_type,resource_id,old_value,new_value,reason,actor_type,approval)
+  insert into public.admin_audit_log(action,resource_type,resource_id,old_state,new_state,reason,actor_type,approval_request_id)
   values (p_action,p_resource_type,p_resource_id,p_old,p_new,p_reason,p_actor_type,p_approval); $$;
 SQL
 
 psql -h "$HOST" -d "$DB" -v ON_ERROR_STOP=1 -q -f "$MIG/0095_prohibited_content.sql" 2>&1 | grep -v NOTICE || true
 psql -h "$HOST" -d "$DB" -Atq -c "update public.content_screening_config set max_listings_per_hour = 500;" >/dev/null
+psql -h "$HOST" -d "$DB" -Atq -c "
+  insert into public.profiles (id,name) values ('cccccccc-0000-0000-0000-00000000000c','Egg Seller') on conflict do nothing;
+  insert into public.marketplace_taxonomy_nodes (slug, compliance_class) values ('eggs','eggs');" >/dev/null
 
 fail=0
 say() { printf '   %-6s %s\n' "$1" "$2"; [ "$1" = FAIL ] && fail=1; return 0; }
@@ -76,8 +86,9 @@ try() {
   declare r text;
   begin
     begin
-      insert into public.listings (title, description, trade_for, kind)
-        values ('$t', '$d', '$f', '$k');
+      insert into public.listings (title, description, trade_for, kind, owner_id, state, taxonomy_node_id)
+        values ('$t', '$d', '$f', '$k', nullif('${5:-}','')::uuid, nullif('${6:-}',''),
+                (select id from public.marketplace_taxonomy_nodes where slug = nullif('${7:-}','')));
       select screening_status into r from public.listings order by created_at desc limit 1;
     exception when others then
       r := case when sqlerrm like 'PROHIBITED%' then 'BLOCKED'
@@ -207,6 +218,39 @@ select set_config('test.owner','true',false);
 set role authenticated;
 select count(*)::text from public.admin_screening_queue();" 2>&1 | tail -1)
 [ "$r" -ge 1 ] 2>/dev/null && say PASS "owner sees the queue ($r held)" || say FAIL "owner queue empty: $r"
+
+echo
+echo "I. offering versus wanting — the last false positive"
+r="$(try "Trade fresh basil for eggs" "swap a big bunch for a dozen eggs")"
+[ "$r" = "CLEAR" ] && say PASS "'Trade X for eggs' is a basil listing, not an egg listing" \
+                   || say FAIL "basil-for-eggs still queued -> $r"
+r="$(try "Trade fresh eggs for basil" "half dozen going spare")"
+[ "$r" = "REVIEW" ] && say PASS "'Trade eggs for X' IS an egg listing" || say FAIL "-> $r"
+r="$(try "Fresh eggs for \$5" "half dozen")"
+[ "$r" = "REVIEW" ] && say PASS "'eggs for \$5' is still an egg listing" || say FAIL "-> $r"
+
+echo
+echo "J. taxonomy beats keywords, and a cleared seller stops being reviewed"
+S=cccccccc-0000-0000-0000-00000000000c
+r="$(try "Half dozen from the girls" "no egg word anywhere" "" offer "$S" OH eggs)"
+[ "$r" = "REVIEW" ] && say PASS "taxonomy catches an egg listing with no egg word" || say FAIL "-> $r"
+
+psql -h "$HOST" -d "$DB" -Atq -c "
+  select set_config('test.owner','true',false);
+  select public.admin_grant_compliance_clearance('$S'::uuid,'eggs','OH','ODA egg handler on file');" >/dev/null
+r="$(try "More eggs this week" "same hens" "" offer "$S" OH eggs)"
+[ "$r" = "CLEAR" ] && say PASS "a cleared seller publishes future egg listings automatically" || say FAIL "-> $r"
+
+r="$(try "Eggs from the new place" "we moved" "" offer "$S" PA eggs)"
+[ "$r" = "REVIEW" ] && say PASS "moving state sends them back to review" || say FAIL "-> $r"
+
+psql -h "$HOST" -d "$DB" -Atq -c "select set_config('test.owner','true',false);
+  select public.admin_bump_compliance_rule('eggs','ODA changed the rule');" >/dev/null
+r="$(try "Eggs after the rule change" "same hens" "" offer "$S" OH eggs)"
+[ "$r" = "REVIEW" ] && say PASS "bumping the rule invalidates existing clearances" || say FAIL "-> $r"
+
+n=$(psql -h "$HOST" -d "$DB" -Atq -c "select count(*)::text from public.admin_audit_log where action like 'compliance.%'" | tail -1)
+[ "$n" -ge 2 ] 2>/dev/null && say PASS "clearance decisions are audited ($n rows)" || say FAIL "$n audit rows"
 
 echo
 [ $fail -eq 0 ] && echo "PROHIBITED CONTENT (0095): ALL TESTS PASSED" || echo "PROHIBITED CONTENT (0095): FAILURES PRESENT"

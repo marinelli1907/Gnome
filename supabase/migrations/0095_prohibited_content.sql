@@ -235,6 +235,27 @@ returns text language sql immutable set search_path = pg_catalog, public as $$
            ' ', 'gi');
 $$;
 
+-- In a trade clause, what follows "for" is what the person WANTS, not what they
+-- are offering. "Trade fresh basil for eggs" is a basil listing. Only applied to
+-- the REVIEW pass: BLOCK still reads the whole text, because asking to buy a
+-- handgun is not better than selling one.
+--
+-- Anchored on a trade verb so it stays narrow — "Fresh eggs for $5" keeps its
+-- eggs, because "eggs" sits before the "for" and nothing is stripped ahead of it.
+create or replace function public.strip_want_clauses(p_text text)
+returns text language sql immutable set search_path = pg_catalog, public as $fn$
+  -- In a trade clause, what follows "for" is what the person WANTS. So when the
+  -- text reads like a trade at all, drop every "for ..." span and keep the rest:
+  -- "Trade fresh basil for eggs" keeps only the basil, and "Trade fresh eggs for
+  -- basil" keeps the eggs. Without a trade verb nothing is touched, so
+  -- "Fresh eggs for $5" is untouched and still reads as eggs.
+  select case
+    when coalesce(p_text,'') ~* '\m(trade|trading|swap|swapping|exchange|barter|bartering)\M'
+      then regexp_replace(p_text, '\mfor\M[^.!?;]*', ' ', 'gi')
+    else coalesce(p_text,'')
+  end;
+$fn$;
+
 create or replace function public.screen_listing_text(p_text text)
 returns table(action text, term text, category text, rationale text)
 language sql stable security definer set search_path = pg_catalog, public as $$
@@ -278,9 +299,106 @@ exception when duplicate_object then null; end $$;
 -- The control itself. A trigger, not application code: a listing can be written
 -- from the mobile app, the web app, the REST API, an AI draft, an edit, a
 -- relist or a bulk publish, and every one of those paths must meet this rule.
+-- ===========================================================================
+-- Seller-level clearance: approve the SELLER once, not every listing forever
+-- ===========================================================================
+-- Eggs are the most common backyard listing there is. Reviewing each one
+-- individually would mean approving the same person weekly for years. Instead a
+-- review approves a seller for a (class, state) pair, and their later listings
+-- of that class clear automatically until something material changes.
+
+create table if not exists public.compliance_classes (
+  compliance_class text primary key,
+  label            text not null,
+  -- Bumping this invalidates every clearance in the class at once: the admin
+  -- changed the rule, so prior approvals no longer describe current policy.
+  rule_version     int  not null default 1,
+  requires_clearance boolean not null default true,
+  -- Shown to the seller. Their words, not a database error.
+  customer_message text not null,
+  active           boolean not null default true,
+  updated_at       timestamptz not null default now()
+);
+
+insert into public.compliance_classes (compliance_class, label, customer_message) values
+  ('eggs','Eggs','Egg sales require a quick compliance review in your area. Your listing has been saved but is not public yet.'),
+  ('food-safety','Temperature-controlled or preserved food','This kind of food needs a quick compliance review in your area. Your listing has been saved but is not public yet.'),
+  ('regulated','Hemp / CBD','This product needs a quick compliance review in your area. Your listing has been saved but is not public yet.'),
+  ('age-restricted','Alcohol','Alcohol sales need a quick compliance review in your area. Your listing has been saved but is not public yet.'),
+  ('animal','Live animals','Live animal listings need a quick review. Your listing has been saved but is not public yet.'),
+  ('agchem','Agricultural chemicals','This product needs a quick compliance review. Your listing has been saved but is not public yet.'),
+  ('health-claim','Health claims','A listing that mentions treating or curing something needs a quick review. Your listing has been saved but is not public yet.'),
+  ('ip','Brand names','A listing using a protected brand name needs a quick review. Your listing has been saved but is not public yet.')
+on conflict (compliance_class) do update set label = excluded.label,
+  customer_message = excluded.customer_message, updated_at = now();
+
+create table if not exists public.seller_compliance_clearances (
+  id                uuid primary key default gen_random_uuid(),
+  seller_id         uuid not null references public.profiles(id) on delete cascade,
+  compliance_class  text not null references public.compliance_classes(compliance_class),
+  -- Clearance is per STATE: the rule that made it lawful is a state rule, so
+  -- moving states means the question has not been answered yet.
+  state             text not null,
+  -- The rule this decision was made under. A bump means re-review.
+  rule_version      int  not null,
+  -- Optional: some states require a permit, some do not. When present, its
+  -- expiry ends the clearance.
+  credential_id     uuid references public.seller_credentials(id) on delete set null,
+  status            text not null default 'ACTIVE' check (status in ('ACTIVE','REVOKED')),
+  source_listing_id uuid,
+  granted_by        uuid references public.profiles(id),
+  granted_at        timestamptz not null default now(),
+  reason            text,
+  revoked_by        uuid references public.profiles(id),
+  revoked_at        timestamptz,
+  notes             text
+);
+create unique index if not exists scc_one_active
+  on public.seller_compliance_clearances (seller_id, compliance_class, state)
+  where status = 'ACTIVE';
+
+comment on table public.seller_compliance_clearances is
+  'A review approves a SELLER for a class in a state under a rule version. Later '
+  'listings of that class clear automatically until the credential expires, the '
+  'seller moves state, the class changes, or the rule version is bumped.';
+
+-- Is this seller cleared to list this class in this state, right now?
+create or replace function public.seller_is_cleared(
+  p_seller uuid, p_class text, p_state text
+) returns boolean
+language sql stable security definer set search_path = pg_catalog, public as $fn$
+  select exists (
+    select 1
+      from public.seller_compliance_clearances c
+      join public.compliance_classes k on k.compliance_class = c.compliance_class
+      left join public.seller_credentials sc on sc.id = c.credential_id
+     where c.seller_id = p_seller
+       and c.compliance_class = p_class
+       and upper(coalesce(c.state,'')) = upper(coalesce(p_state,''))
+       and c.status = 'ACTIVE'
+       -- the rule has not been rewritten since the decision
+       and c.rule_version = k.rule_version
+       -- and any credential it rested on is still good
+       and (c.credential_id is null
+            or (sc.status = 'approved'
+                and (sc.expiration_date is null or sc.expiration_date >= current_date)))
+  );
+$fn$;
+revoke all on function public.seller_is_cleared(uuid,text,text) from public, anon;
+grant execute on function public.seller_is_cleared(uuid,text,text) to authenticated, service_role;
+
+-- Taxonomy is the primary signal; keywords are the backup for someone filing
+-- eggs under "Crafts". A node carries its class directly.
+alter table public.marketplace_taxonomy_nodes
+  add column if not exists compliance_class text references public.compliance_classes(compliance_class);
+update public.marketplace_taxonomy_nodes set compliance_class = 'eggs' where slug = 'eggs';
+update public.marketplace_taxonomy_nodes set compliance_class = 'food-safety'
+ where slug in ('meat','preserves-and-pantry','mushrooms') and compliance_class is null;
+
 create or replace function public.listings_screen_content() returns trigger
 language plpgsql security definer set search_path = pg_catalog, public as $$
 declare hit record; blob text; cfg public.content_screening_config; made int;
+        v_class text; cls public.compliance_classes;
 begin
   select * into cfg from public.content_screening_config where id;
 
@@ -317,13 +435,28 @@ begin
   blob := coalesce(new.title,'') || ' ' || coalesce(new.description,'') || ' '
        || coalesce(new.trade_for,'');
 
+  -- BLOCK reads everything, including trade_for and Wanted posts.
   select * into hit from public.screen_listing_text(blob)
    where action = 'BLOCK' limit 1;
 
   if hit.term is null and coalesce(new.kind,'offer') <> 'wanted' then
-    select * into hit from public.screen_listing_text(
-             coalesce(new.title,'') || ' ' || coalesce(new.description,''))
-     where action = 'REVIEW' limit 1;
+    -- TAXONOMY FIRST. The category the seller picked is a stronger signal than
+    -- any word, and it is what lets an egg seller be cleared once rather than
+    -- reviewed forever.
+    select n.compliance_class into v_class
+      from public.marketplace_taxonomy_nodes n
+     where n.id = new.taxonomy_node_id and n.compliance_class is not null;
+
+    -- KEYWORDS AS BACKUP, for eggs deliberately filed under "Crafts". Want
+    -- clauses are stripped first, so "Trade fresh basil for eggs" reads as the
+    -- basil listing it is.
+    if v_class is null then
+      select * into hit from public.screen_listing_text(
+               public.strip_want_clauses(
+                 coalesce(new.title,'') || ' ' || coalesce(new.description,'')))
+       where action = 'REVIEW' limit 1;
+      v_class := hit.category;
+    end if;
   end if;
 
   if hit.action = 'BLOCK' then
@@ -332,15 +465,31 @@ begin
     raise exception 'PROHIBITED_ITEM: Gnome can''t carry this one. "%" falls under % , which we don''t allow. If you think that''s wrong, edit the wording or contact support.',
       hit.term, replace(hit.category,'-',' ')
       using errcode = 'P0001';
-  elsif hit.action = 'REVIEW' then
-    new.screening_status   := 'REVIEW';
-    new.screening_term     := hit.term;
-    new.screening_category := hit.category;
-    new.screening_reason   := hit.rationale;
-    new.screened_at        := now();
-    -- Held, not published. `paused` already means "exists but not public"
-    -- (0045), so every browse feed respects this with no change.
-    if new.status = 'active' then new.status := 'paused'; end if;
+  elsif v_class is not null then
+    select * into cls from public.compliance_classes
+     where compliance_class = v_class and active;
+
+    -- Already cleared for this class, in this state, under the current rule,
+    -- with a credential that has not expired? Then it simply publishes. This is
+    -- the difference between reviewing a seller once and reviewing their eggs
+    -- every week forever.
+    if cls.compliance_class is null or not cls.requires_clearance
+       or public.seller_is_cleared(new.owner_id, v_class, new.state) then
+      new.screening_status   := 'CLEAR';
+      new.screening_term     := null;
+      new.screening_category := v_class;
+      new.screening_reason   := 'auto-cleared: seller holds a current clearance';
+      new.screened_at        := now();
+    else
+      new.screening_status   := 'REVIEW';
+      new.screening_term     := hit.term;
+      new.screening_category := v_class;
+      new.screening_reason   := coalesce(cls.customer_message, hit.rationale);
+      new.screened_at        := now();
+      -- Held, not published. `paused` already means "exists but not public"
+      -- (0045), so every browse feed respects this with no change.
+      if new.status = 'active' then new.status := 'paused'; end if;
+    end if;
   else
     new.screening_status   := 'CLEAR';
     new.screening_term     := null;
@@ -500,6 +649,93 @@ grant execute on function public.admin_set_screening_config(boolean,int,text) to
 -- ===========================================================================
 -- Grants — the 0087 lesson: revoke from the ROLES by name, then assert it.
 -- ===========================================================================
+
+-- Approving a listing can also clear the seller, which is the whole point: one
+-- review, then their later egg listings publish on their own.
+create or replace function public.admin_grant_compliance_clearance(
+  p_seller uuid, p_class text, p_state text, p_reason text,
+  p_credential uuid default null, p_listing uuid default null
+) returns public.seller_compliance_clearances
+language plpgsql security definer set search_path = pg_catalog, public as $fn$
+declare v_row public.seller_compliance_clearances; v_ver int;
+begin
+  if not (public.admin_has_perm('compliance.rules_manage')
+          or public.admin_has_perm('listings.moderate') or public.admin_is_owner()) then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+  select rule_version into v_ver from public.compliance_classes where compliance_class = p_class;
+  if v_ver is null then raise exception 'UNKNOWN_CLASS' using errcode = 'P0001'; end if;
+  if coalesce(btrim(p_reason),'') = '' then
+    raise exception 'REASON_REQUIRED' using errcode = 'P0001';
+  end if;
+
+  -- Supersede rather than stack, so "is this seller cleared" has one answer.
+  update public.seller_compliance_clearances
+     set status = 'REVOKED', revoked_by = auth.uid(), revoked_at = now(),
+         notes = coalesce(notes,'') || ' superseded'
+   where seller_id = p_seller and compliance_class = p_class
+     and upper(state) = upper(p_state) and status = 'ACTIVE';
+
+  insert into public.seller_compliance_clearances
+    (seller_id, compliance_class, state, rule_version, credential_id,
+     source_listing_id, granted_by, reason)
+  values (p_seller, p_class, upper(p_state), v_ver, p_credential,
+          p_listing, auth.uid(), p_reason)
+  returning * into v_row;
+
+  -- Seller, listing, state, rule version, reviewer, decision, reason, timestamp
+  -- all land in one audit row.
+  perform public.admin_audit('compliance.clearance.grant', 'seller_compliance_clearances',
+    v_row.id::text, null, to_jsonb(v_row), p_reason, 'admin', null);
+  return v_row;
+end $fn$;
+revoke all on function public.admin_grant_compliance_clearance(uuid,text,text,text,uuid,uuid) from public, anon;
+grant execute on function public.admin_grant_compliance_clearance(uuid,text,text,text,uuid,uuid) to authenticated;
+
+create or replace function public.admin_revoke_compliance_clearance(
+  p_clearance uuid, p_reason text
+) returns public.seller_compliance_clearances
+language plpgsql security definer set search_path = pg_catalog, public as $fn$
+declare v_old jsonb; v_row public.seller_compliance_clearances;
+begin
+  if not (public.admin_has_perm('compliance.rules_manage') or public.admin_is_owner()) then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+  select to_jsonb(t) into v_old from public.seller_compliance_clearances t where t.id = p_clearance;
+  update public.seller_compliance_clearances
+     set status = 'REVOKED', revoked_by = auth.uid(), revoked_at = now(), notes = p_reason
+   where id = p_clearance returning * into v_row;
+  perform public.admin_audit('compliance.clearance.revoke', 'seller_compliance_clearances',
+    p_clearance::text, v_old, to_jsonb(v_row), p_reason, 'admin', null);
+  return v_row;
+end $fn$;
+revoke all on function public.admin_revoke_compliance_clearance(uuid,text) from public, anon;
+grant execute on function public.admin_revoke_compliance_clearance(uuid,text) to authenticated;
+
+-- Bumping a class's rule version invalidates every clearance in it at once.
+create or replace function public.admin_bump_compliance_rule(p_class text, p_reason text)
+returns public.compliance_classes
+language plpgsql security definer set search_path = pg_catalog, public as $fn$
+declare v_old jsonb; v_row public.compliance_classes;
+begin
+  if not (public.admin_has_perm('compliance.rules_manage') or public.admin_is_owner()) then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+  select to_jsonb(t) into v_old from public.compliance_classes t where t.compliance_class = p_class;
+  update public.compliance_classes set rule_version = rule_version + 1, updated_at = now()
+   where compliance_class = p_class returning * into v_row;
+  perform public.admin_audit('compliance.rule.bump', 'compliance_classes', p_class,
+                             v_old, to_jsonb(v_row), p_reason, 'admin', null);
+  return v_row;
+end $fn$;
+revoke all on function public.admin_bump_compliance_rule(text,text) from public, anon;
+grant execute on function public.admin_bump_compliance_rule(text,text) to authenticated;
+
+alter table public.seller_compliance_clearances enable row level security;
+alter table public.compliance_classes enable row level security;
+revoke all on public.seller_compliance_clearances, public.compliance_classes
+  from public, anon, authenticated;
+
 alter table public.prohibited_terms enable row level security;
 alter table public.content_screening_config enable row level security;
 revoke all on public.prohibited_terms, public.content_screening_config
@@ -510,7 +746,7 @@ declare bad text;
 begin
   select string_agg(distinct table_name||':'||grantee||':'||privilege_type, ', ') into bad
     from information_schema.role_table_grants
-   where table_schema='public' and table_name in ('prohibited_terms','content_screening_config')
+   where table_schema='public' and table_name in ('prohibited_terms','content_screening_config','seller_compliance_clearances','compliance_classes')
      and grantee in ('anon','authenticated');
   if bad is not null then
     raise exception 'screening tables must not be client-readable: %', bad;
