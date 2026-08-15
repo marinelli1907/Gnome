@@ -370,11 +370,29 @@ async function marketIntel(
       }
 
       // DEMAND: open Wanted posts are the strongest "what to sell" signal.
+      //
+      // Aggregate by category, exactly like the supply tally above. An earlier
+      // pass moved these titles out of the system prompt into a labelled
+      // untrusted user turn, which stopped a stranger's listing title acting as
+      // an instruction — but the titles still travelled to the provider. They
+      // are free text written by other people, and the demand signal never
+      // needed the words: "6 people want herbs" is the same advice as reading
+      // six titles, without shipping anyone's prose to Google.
+      //
+      // `title` is not selected at all, so it cannot reach this process, let
+      // alone the provider. That is the version worth verifying.
       const { data: wanted } = await admin.from('listings')
-        .select('title,category').eq('status', 'active').eq('kind', 'wanted').eq('state', prof.state).limit(25);
+        .select('category').eq('status', 'active').eq('kind', 'wanted').eq('state', prof.state).limit(500);
       if (wanted?.length) {
-        const w = wanted.slice(0, 10).map((x) => String((x as { title: string }).title)).join('; ');
-        lines.push(`Open Wanted posts near them (${wanted.length} total) — real unmet demand: ${w}.`);
+        const wantTally = new Map<string, number>();
+        for (const r of wanted) {
+          const c = String((r as { category: string }).category || '').trim();
+          if (c) wantTally.set(c, (wantTally.get(c) ?? 0) + 1);
+        }
+        const topWant = [...wantTally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+        lines.push(topWant.length
+          ? `Open Wanted posts near them (${wanted.length} total) — real unmet demand by category: ${topWant.map(([c, n]) => `${c} ${n}`).join(', ')}.`
+          : `Open Wanted posts near them: ${wanted.length}, category not recorded.`);
       } else {
         lines.push('No open Wanted posts near them right now.');
       }
