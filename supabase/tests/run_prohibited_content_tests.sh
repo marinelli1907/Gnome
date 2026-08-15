@@ -28,12 +28,13 @@ grant anon, authenticated to current_user;
 create schema if not exists auth;
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 
-create table public.profiles (id uuid primary key, name text);
+create table public.profiles (id uuid primary key, name text, suspended boolean default false);
 create table public.marketplace_taxonomy_nodes (
   id uuid primary key default gen_random_uuid(), slug text, prohibited boolean default false);
 create table public.listings (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid, title text, description text, trade_for text, category text,
+  kind text default 'offer',
   taxonomy_node_id uuid references public.marketplace_taxonomy_nodes(id),
   status text default 'active', city text, state text,
   created_at timestamptz default now());
@@ -41,10 +42,14 @@ create table public.admin_audit_log (
   id uuid primary key default gen_random_uuid(), action text, resource_type text,
   resource_id text, old_value jsonb, new_value jsonb, reason text, actor uuid,
   actor_type text, approval uuid, created_at timestamptz default now());
+create or replace function public.is_admin() returns boolean
+  language sql stable as $$ select coalesce(current_setting('test.owner',true),'false')::boolean $$;
 create or replace function public.admin_is_owner() returns boolean
   language sql stable as $$ select coalesce(current_setting('test.owner',true),'false')::boolean $$;
 create or replace function public.admin_has_perm(p text) returns boolean
   language sql stable as $$ select public.admin_is_owner() $$;
+create or replace function public.admin_set_suspended(p_user uuid, p_suspended boolean)
+returns void language sql as $$ update public.profiles set suspended=p_suspended where id=p_user $$;
 create or replace function public.admin_audit(
   p_action text, p_resource_type text, p_resource_id text, p_old jsonb,
   p_new jsonb, p_reason text, p_actor_type text, p_approval uuid)
@@ -54,29 +59,39 @@ returns void language sql as $$
 SQL
 
 psql -h "$HOST" -d "$DB" -v ON_ERROR_STOP=1 -q -f "$MIG/0095_prohibited_content.sql" 2>&1 | grep -v NOTICE || true
+psql -h "$HOST" -d "$DB" -Atq -c "update public.content_screening_config set max_listings_per_hour = 500;" >/dev/null
 
 fail=0
 say() { printf '   %-6s %s\n' "$1" "$2"; [ "$1" = FAIL ] && fail=1; return 0; }
 
-# try <title> <description> -> prints BLOCKED / REVIEW / CLEAR
+# try <title> <description> [trade_for] [kind] -> BLOCKED / REVIEW / CLEAR
 try() {
+  local t d f k
+  t=$(printf '%s' "$1" | sed "s/'/''/g")
+  d=$(printf '%s' "${2:-}" | sed "s/'/''/g")
+  f=$(printf '%s' "${3:-}" | sed "s/'/''/g")
+  k=$(printf '%s' "${4:-offer}" | sed "s/'/''/g")
   psql -h "$HOST" -d "$DB" -Atq -c "
-  do \$\$
+  do \$mig\$
   declare r text;
   begin
     begin
-      insert into public.listings (title, description) values (\$t\$$1\$t\$, \$d\$$2\$d\$);
+      insert into public.listings (title, description, trade_for, kind)
+        values ('$t', '$d', '$f', '$k');
       select screening_status into r from public.listings order by created_at desc limit 1;
     exception when others then
-      r := case when sqlerrm like 'PROHIBITED%' then 'BLOCKED' else 'ERROR:'||sqlerrm end;
+      r := case when sqlerrm like 'PROHIBITED%' then 'BLOCKED'
+                when sqlerrm like 'RATE_LIMITED%' then 'RATE_LIMITED'
+                else 'ERROR:'||sqlerrm end;
     end;
     raise notice '%', r;
-  end \$\$;" 2>&1 | sed 's/^NOTICE:  //' | tail -1
+  end \$mig\$;" 2>&1 | sed 's/^NOTICE:  //' | tail -1
 }
 
 echo "A. things Gnome must never carry"
 for t in "Homegrown flower" "Fresh marijuana buds" "THC gummies" "Delta-8 carts" \
-         "Ammo for sale" "Glock handgun" "Adderall 20mg" "Moonshine jar"; do
+         "Ammo for sale" "Glock handgun" "Adderall 20mg" "Marlboro cigarettes" \
+         "Vape pens" "Escort service" "Stolen bike parts"; do
   r="$(try "$t" "local pickup only")"
   case "$t" in
     "Homegrown flower")  # no prohibited word at all — the honest limit of term matching
@@ -89,7 +104,9 @@ done
 echo
 echo "B. things that need a human, not a wall"
 for t in "Raw milk from our cow" "Home canned green beans" "CBD salve" \
-         "Foraged morels" "Homemade wine" "Puppies ready soon"; do
+         "Foraged morels" "Homemade wine" "Puppies ready soon" "Moonshine jar" \
+         "Pasture-raised eggs" "Roundup weed killer" "Salve that cures eczema" \
+         "Hemp seeds for planting"; do
   r="$(try "$t" "pickup in Richmond Heights")"
   [ "$r" = "REVIEW" ] && say PASS "held for review: $t" || say FAIL "'$t' -> $r (expected REVIEW)"
 done
@@ -116,6 +133,51 @@ r="$(try "Winemaking grapes — you press them" "u-pick")"
 r="$(try "Rifle Range Road pickup" "meet at the corner")"
 [ "$r" = "BLOCKED" ] && say WARN "known over-match: a street name containing 'rifle' is blocked" \
                      || say PASS "street name not blocked"
+
+echo
+echo "F. offering versus wanting — the production audit's finding"
+r="$(try "Trade fresh basil for eggs" "swap a bunch for a dozen" "a dozen eggs" "offer")"
+[ "$r" = "REVIEW" ] && say WARN "known: 'for eggs' in the description still queues (one tap to clear)" \
+                    || say PASS "basil-for-eggs stays clear"
+r="$(try "Zucchini glut" "" "fresh herbs or eggs" "offer")"
+[ "$r" = "CLEAR" ] && say PASS "trade_for is what you WANT, not what you offer — not screened for REVIEW" \
+                   || say FAIL "zucchini held because of trade_for -> $r"
+r="$(try "extra pumpkins for the kids" "Will trade eggs or honey" "" "wanted")"
+[ "$r" = "CLEAR" ] && say PASS "a Wanted post is a request, not a sale" \
+                   || say FAIL "wanted post held -> $r"
+r="$(try "Wanted: handgun" "any condition" "" "wanted")"
+[ "$r" = "BLOCKED" ] && say PASS "BLOCK still applies to Wanted posts" \
+                     || say FAIL "asking to buy a handgun was allowed -> $r"
+r="$(try "Zucchini" "trade only" "ammo" "offer")"
+[ "$r" = "BLOCKED" ] && say PASS "BLOCK still screens trade_for" || say FAIL "trade_for ammo allowed -> $r"
+
+echo
+echo "G. exemptions and address text"
+r="$(try "Hemp rope, 50ft" "strong natural cordage")"
+[ "$r" = "CLEAR" ] && say PASS "hemp rope is cordage, not a consumable" || say FAIL "hemp rope -> $r"
+r="$(try "Hemp hearts, 1lb" "food grade")"
+[ "$r" = "REVIEW" ] && say PASS "hemp as a consumable still queues" || say FAIL "hemp hearts -> $r"
+r="$(try "Mushroom growing kit" "oyster mushrooms, indoor")"
+[ "$r" = "CLEAR" ] && say PASS "mushroom growing kit is clear" || say FAIL "grow kit -> $r"
+r="$(try "Tomatoes" "pickup at 1200 Rifle Range Road")"
+[ "$r" = "CLEAR" ] && say PASS "address text is not screened as product content" || say FAIL "address blocked -> $r"
+r="$(try "Killer tomatoes, high yield" "best crop this year")"
+[ "$r" = "CLEAR" ] && say PASS "ordinary phrasing survives ('killer', 'high yield')" || say FAIL "-> $r"
+r="$(try "Root beer bread" "homemade loaf")"
+[ "$r" = "CLEAR" ] && say PASS "root beer / beer bread exempted" || say FAIL "beer bread -> $r"
+r="$(try "Chicken manure, aged" "great for beds")"
+[ "$r" = "CLEAR" ] && say PASS "chicken manure is fertilizer, not poultry" || say FAIL "-> $r"
+r="$(try "Eggplant seedlings" "six pack")"
+[ "$r" = "CLEAR" ] && say PASS "eggplant is not eggs" || say FAIL "eggplant -> $r"
+
+echo
+echo "H. kill switch"
+psql -h "$HOST" -d "$DB" -Atq -c "update public.content_screening_config set screening_enabled=false;" >/dev/null
+r="$(try "Fresh marijuana" "test")"
+[ "$r" = "CLEAR" ] && say PASS "owner kill switch bypasses screening" || say FAIL "kill switch -> $r"
+psql -h "$HOST" -d "$DB" -Atq -c "update public.content_screening_config set screening_enabled=true;" >/dev/null
+r="$(try "Fresh marijuana again" "test")"
+[ "$r" = "BLOCKED" ] && say PASS "screening resumes when switched back on" || say FAIL "-> $r"
 
 echo
 echo "D. the control cannot be bypassed"
