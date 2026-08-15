@@ -168,7 +168,7 @@ grant execute on function public.admin_set_teammate_role(uuid,text,text) to auth
 alter table public.ai_agents
   add column if not exists title            text,
   add column if not exists department       text not null default 'GENERAL',
-  add column if not exists reports_to       uuid references public.ai_agents(id) on delete set null,
+  add column if not exists reports_to       text references public.ai_agents(id) on delete set null,
   add column if not exists authority_level  text not null default 'RECOMMEND',
   add column if not exists charter          text;
 
@@ -187,7 +187,7 @@ exception when duplicate_object then null; end $$;
 -- An officer cannot report to itself, and the chart must stay a tree.
 create or replace function public.ai_agents_no_cycle() returns trigger
 language plpgsql as $$
-declare hop uuid; depth int := 0;
+declare hop text; depth int := 0;
 begin
   if new.reports_to is null then return new; end if;
   if new.reports_to = new.id then raise exception 'AGENT_REPORTS_TO_SELF'; end if;
@@ -243,9 +243,9 @@ update public.ai_agents a set reports_to = o.id
 -- Read-only org chart for the console.
 create or replace function public.admin_ai_org()
 returns table(
-  id uuid, name text, title text, department text, status text,
+  id text, name text, title text, department text, status text,
   authority_level text, model text, charter text,
-  reports_to uuid, reports_to_name text, direct_reports int
+  reports_to text, reports_to_name text, direct_reports int
 )
 language sql stable security definer set search_path = public as $$
   select a.id, a.name, a.title, a.department, a.status, a.authority_level,
@@ -266,7 +266,7 @@ grant execute on function public.admin_ai_org() to authenticated;
 -- decision that lets software act without Daniel, so it is deliberately not
 -- delegable through admin.manage.
 create or replace function public.admin_set_agent_authority(
-  p_agent uuid, p_level text, p_reason text default null
+  p_agent text, p_level text, p_reason text default null
 ) returns public.ai_agents
 language plpgsql security definer set search_path = public as $$
 declare v_old jsonb; v_row public.ai_agents;
@@ -286,8 +286,19 @@ begin
                              v_old, to_jsonb(v_row), p_reason, 'admin', null);
   return v_row;
 end $$;
-revoke all on function public.admin_set_agent_authority(uuid,text,text) from public, anon;
-grant execute on function public.admin_set_agent_authority(uuid,text,text) to authenticated;
+revoke all on function public.admin_set_agent_authority(text,text,text) from public, anon;
+grant execute on function public.admin_set_agent_authority(text,text,text) to authenticated;
+
+-- Supabase grants ALL on every new relation to anon and authenticated, and ALL
+-- includes REFERENCES and TRIGGER. Neither writes a row, so they are easy to wave
+-- past — but TRIGGER lets a client role attach a trigger to admin_users, and a
+-- trigger runs whatever it likes whenever an admin record changes. Take them
+-- back. SELECT stays: the console reads the roster directly.
+--
+-- Note this must revoke from the roles BY NAME. `revoke ... from public` does not
+-- remove a grant held by a named role — the lesson 0087 cost us.
+revoke insert, update, delete, truncate, references, trigger
+  on public.admin_users, public.ai_agents from anon, authenticated;
 
 do $$
 declare bad text;

@@ -37,7 +37,7 @@ create table public.admin_users (
   invited_name text, invited_email text, created_by uuid,
   created_at timestamptz default now(), suspended_at timestamptz, revoked_at timestamptz);
 create table public.ai_agents (
-  id uuid primary key default gen_random_uuid(), name text unique, status text default 'read_only',
+  id text primary key, name text unique, status text default 'read_only',
   provider text, model text, fallback_provider text, fallback_model text,
   automation_level int default 1, permissions text[], daily_budget_cents int,
   created_at timestamptz default now(), updated_at timestamptz default now());
@@ -61,10 +61,17 @@ insert into auth.users (id,email) values
   ('bbbbbbbb-0000-0000-0000-000000000002','newadmin@example.com');
 insert into public.admin_users (user_id, status, role, invited_email)
   values ('aaaaaaaa-0000-0000-0000-000000000001','active','OWNER','owner@example.com');
-insert into public.ai_agents (name, model) values
-  ('Gnome HQ','m'),('Finance Agent','m'),('Operations Agent','m'),('Marketing Agent','m'),
-  ('Security Agent','m'),('Inventory Agent','m'),('Seed Agent','m'),('Support Agent','m'),
-  ('Plot Agent','m'),('Growth Agent','m'),('Compliance Agent','m'),('Marketplace Agent','m');
+-- ai_agents.id is a TEXT slug in production, with no default. An earlier version
+-- of this fixture invented `uuid default gen_random_uuid()`, and 0094 was written
+-- against that invention: the reports_to foreign key would not build against the
+-- real table. Seed explicit slugs, the way production does.
+insert into public.ai_agents (id, name, model) values
+  ('gnome-hq','Gnome HQ','m'),          ('finance','Finance Agent','m'),
+  ('operations','Operations Agent','m'),('marketing','Marketing Agent','m'),
+  ('security','Security Agent','m'),    ('inventory','Inventory Agent','m'),
+  ('seed','Seed Agent','m'),            ('support','Support Agent','m'),
+  ('plot','Plot Agent','m'),            ('growth','Growth Agent','m'),
+  ('compliance','Compliance Agent','m'),('marketplace','Marketplace Agent','m');
 SQL
 
 psql -h "$HOST" -d "$DB" -v ON_ERROR_STOP=1 -q -f "$MIG/0094_admin_team_and_ai_org.sql" 2>&1 | grep -v NOTICE || true
@@ -122,7 +129,7 @@ r=$(q "select count(*)::text from public.ai_agents where authority_level <> 'REC
 [ "$r" = "0" ] && say PASS "every agent ships at RECOMMEND (no new power)" || say FAIL "$r agents above RECOMMEND"
 
 ceo=$(q "select id::text from public.ai_agents where title='CEO'")
-r=$(raises "update public.ai_agents set reports_to='$ceo'::uuid where title='CEO';" "SELF\|CYCLE")
+r=$(raises "update public.ai_agents set reports_to='$ceo' where title='CEO';" "SELF\|CYCLE")
 [ "$r" -ge 1 ] && say PASS "an agent cannot report to itself" || say FAIL "self-report allowed"
 
 echo
