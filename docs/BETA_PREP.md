@@ -101,7 +101,18 @@ vision + structured JSON output, effort=low for speed; refuses gracefully),
 added; fills only empty fields; logs `ai_draft_used`). This is the OfferUp-beating
 seller UX: photo → title/category/description (+ price for sales) in seconds.
 
-**You must:**
+> **SUPERSEDED — do not follow the block below.** It describes the pre-0080
+> world. `0080_gemini_provider_pivot.sql` made Gemini the primary provider, and
+> `ai_settings.allow_paid_fallback` defaults to FALSE, which makes the OpenAI and
+> Anthropic branches in `_shared/providers.ts` unreachable at runtime.
+> **Gnome needs `GEMINI_API_KEY` and nothing else — Anthropic credits and
+> `OPENAI_API_KEY` are NOT required.** See `docs/ai/PROVIDER_SETUP.md`.
+>
+> Annotated rather than deleted, because reading it as current is exactly the
+> mistake it caused: a launch report claimed AI was "blocked on Anthropic
+> credits" when nothing was blocked. `ai-health` answers 200 on the Gemini chain.
+
+**You must:** *(historical — see the note above)*
 ```bash
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # console.anthropic.com
 supabase functions deploy draft-listing
