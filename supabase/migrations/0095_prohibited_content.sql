@@ -379,7 +379,7 @@ returns table(
   city text, state text, created_at timestamptz, screened_at timestamptz
 )
 language sql stable security definer set search_path = pg_catalog, public as $$
-  select l.id, l.title, l.description, l.status,
+  select l.id, l.title, l.description, l.status::text,
          l.owner_id, p.name, p.suspended,
          l.screening_term, l.screening_category, l.screening_reason,
          l.city, l.state, l.created_at, l.screened_at
@@ -394,9 +394,9 @@ grant execute on function public.admin_screening_queue() to authenticated;
 
 -- Full history for one listing: every screening decision ever made on it.
 create or replace function public.admin_screening_history(p_listing uuid)
-returns table(action text, reason text, actor uuid, actor_type text, at timestamptz)
+returns table(action text, reason text, actor_id uuid, actor_type text, at timestamptz)
 language sql stable security definer set search_path = pg_catalog, public as $$
-  select a.action, a.reason, a.actor, a.actor_type, a.created_at
+  select a.action, a.reason, a.actor_id, a.actor_type, a.created_at
     from public.admin_audit_log a
    where a.resource_type = 'listings' and a.resource_id = p_listing::text
      and (public.admin_has_perm('listings.moderate') or public.admin_is_owner())
@@ -424,7 +424,7 @@ begin
   -- list excludes screening_status so this does not re-trigger.
   update public.listings
      set screening_status = case when p_approve then 'APPROVED' else 'BLOCKED' end,
-         status = case when p_approve then 'active' else 'removed' end,
+         status = (case when p_approve then 'active' else 'removed' end)::listing_status,
          screening_reason = coalesce(p_reason, screening_reason)
    where id = p_listing returning * into v_row;
 
