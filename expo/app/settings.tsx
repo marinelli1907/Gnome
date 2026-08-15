@@ -193,6 +193,20 @@ export default function SettingsScreen() {
         >
           <Text style={styles.legalLinkText}>Trust &amp; Safety</Text>
         </Pressable>
+        {/* A marketplace that carries what neighbors write needs a way to reach a
+            human that does not depend on the app working. Report and Block handle
+            a specific person or listing; this is for everything else, and it is
+            the contact route App Review looks for alongside them. */}
+        <Pressable
+          onPress={() => Linking.openURL(
+            'mailto:hello@gnomefarmersmarket.com?subject=Gnome%20support'
+          )}
+          style={styles.legalLink}
+          accessibilityRole="link"
+          accessibilityLabel="Contact Gnome support by email"
+        >
+          <Text style={styles.legalLinkText}>Contact support</Text>
+        </Pressable>
       </View>
 
       <Text style={styles.about}>
