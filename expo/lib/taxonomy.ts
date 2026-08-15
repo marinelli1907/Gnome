@@ -231,12 +231,149 @@ export function usePublishEligibility(nodeId?: string | null, uid?: string) {
   });
 }
 
-/** Parse the trigger's COMPLIANCE_BLOCKED:REASON:message error shape. */
+// ---------------------------------------------------------------------------
+// Server error codes (the server writes the copy; the client picks the title)
+// ---------------------------------------------------------------------------
+
+/** Every prefix a Gnome trigger/RPC raises before the colon. */
+export type ServerErrorCode =
+  | 'PROHIBITED_ITEM'
+  | 'PROHIBITED_CATEGORY'
+  | 'RATE_LIMITED'
+  | 'COMPLIANCE_BLOCKED'
+  | 'PLAN_LIMIT_REACHED'
+  | 'NOT_AUTHORIZED'
+  | 'LAST_OWNER'
+  | 'INVITE_EXPIRED'
+  | 'NO_PENDING_INVITE'
+  | 'INVALID_ROLE'
+  | 'INVALID_EMAIL'
+  | 'REASON_REQUIRED'
+  | 'OWNER_ONLY'
+  | 'UNKNOWN_STATE';
+
+/**
+ * Title per code, plus copy for the codes the server raises BARE.
+ *
+ * The text after the prefix is already written for the person reading it (the
+ * trigger composes it from the compliance class's customer_message), so nothing
+ * here rewrites a body — the table only supplies a title. `fallback` is used
+ * only when the server sent no body at all: `PLAN_LIMIT_REACHED` and the admin
+ * codes are raised as a bare token, and a bare token must never reach a screen.
+ */
+const SERVER_ERRORS: Record<ServerErrorCode, { title: string; fallback: string }> = {
+  PROHIBITED_ITEM: {
+    title: 'Not allowed on Gnome',
+    fallback: 'Gnome can’t carry this one. Editing the wording may help, or contact us if you think that’s wrong.',
+  },
+  PROHIBITED_CATEGORY: {
+    title: 'Not allowed on Gnome',
+    fallback: 'Gnome can’t carry items in that category.',
+  },
+  RATE_LIMITED: {
+    title: 'Posting too quickly',
+    fallback: 'You’ve posted a lot of listings in the last hour. Try again in a little while.',
+  },
+  COMPLIANCE_BLOCKED: {
+    title: 'Verification required',
+    fallback: 'This category needs verification before publishing. You can save a draft instead.',
+  },
+  PLAN_LIMIT_REACHED: {
+    title: 'Listing limit reached',
+    fallback: 'You’re at your plan’s active listing limit. Upgrade or pause a listing, then try again.',
+  },
+  NOT_AUTHORIZED: {
+    title: 'Not permitted',
+    fallback: 'Your account can’t do that.',
+  },
+  LAST_OWNER: {
+    title: 'Last owner',
+    fallback: 'An account must always keep at least one owner.',
+  },
+  INVITE_EXPIRED: {
+    title: 'Invitation expired',
+    fallback: 'That invitation has expired. Ask for a new one.',
+  },
+  NO_PENDING_INVITE: {
+    title: 'No pending invitation',
+    fallback: 'There’s no open invitation for this email address.',
+  },
+  INVALID_ROLE: {
+    title: 'Pick a role',
+    fallback: 'That isn’t a role this account offers.',
+  },
+  INVALID_EMAIL: {
+    title: 'Check the email',
+    fallback: 'That email address doesn’t look right.',
+  },
+  REASON_REQUIRED: {
+    title: 'Add a reason',
+    fallback: 'This action is recorded, so it needs a short reason.',
+  },
+  OWNER_ONLY: {
+    title: 'Owners only',
+    fallback: 'Only an owner can do that.',
+  },
+  UNKNOWN_STATE: {
+    title: 'Check the state',
+    fallback: 'That isn’t a state Gnome recognises.',
+  },
+};
+
+// Matched anywhere in the string, not just at the start: a PostgREST error can
+// arrive wrapped, and the prefix is what identifies it either way.
+const SERVER_ERROR_RE = new RegExp(
+  `\\b(${Object.keys(SERVER_ERRORS).join('|')})\\b:?[ \\t]*([\\s\\S]*)`,
+);
+
+export interface ServerError {
+  code: ServerErrorCode;
+  /** Ours. */
+  title: string;
+  /** The server's, prefix stripped. Never contains the code, an errcode or a trigger name. */
+  message: string;
+  /** COMPLIANCE_BLOCKED only: the eligibility reason it nests. Internal — pick UI from it, never print it. */
+  reason?: EligibilityReason;
+}
+
+/**
+ * Turn a raised server error into something a person can read. Returns null for
+ * anything the server did not author copy for (a network blip, a constraint
+ * string) so the caller can fall back to its own generic line rather than
+ * showing plumbing.
+ */
+export function parseServerError(raw: string | undefined | null): ServerError | null {
+  if (!raw) return null;
+  const m = SERVER_ERROR_RE.exec(raw);
+  if (!m) return null;
+  const code = m[1] as ServerErrorCode;
+  const spec = SERVER_ERRORS[code];
+  let body = (m[2] ?? '').trim();
+  let title = spec.title;
+  let reason: EligibilityReason | undefined;
+  if (code === 'COMPLIANCE_BLOCKED') {
+    // This one nests an eligibility reason: COMPLIANCE_BLOCKED:REASON:copy.
+    // The reason chooses the title and is never shown as itself. The colon is
+    // required so copy that merely opens on a capitalised word keeps its word.
+    const nested = /^([A-Z_]+):[ \t]*([\s\S]*)$/.exec(body);
+    if (nested) {
+      reason = nested[1] as EligibilityReason;
+      title = reason === 'PLAN_REQUIRED' ? 'Paid plan required' : spec.title;
+      body = nested[2].trim();
+    }
+  }
+  return { code, title, message: body || spec.fallback, reason };
+}
+
+/**
+ * The COMPLIANCE_BLOCKED verdict split into its eligibility reason + copy.
+ * Kept as its own export because the reason enum is what callers switch on;
+ * it shares the one parser above so there is a single prefix table.
+ */
 export function parseComplianceError(
   message: string | undefined | null,
 ): { reason: EligibilityReason; message: string } | null {
-  if (!message) return null;
-  const m = /COMPLIANCE_BLOCKED:([A-Z_]+):?(.*)/.exec(message);
-  if (!m) return null;
-  return { reason: m[1] as EligibilityReason, message: m[2]?.trim() || '' };
+  const parsed = parseServerError(message);
+  if (!parsed || parsed.code !== 'COMPLIANCE_BLOCKED' || !parsed.reason) return null;
+  return { reason: parsed.reason, message: parsed.message };
 }

@@ -25,8 +25,9 @@ import {
   breadcrumb,
   legacyCategoryFor,
   rootForLegacy,
-  parseComplianceError,
+  parseServerError,
 } from '@/lib/taxonomy';
+import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 import { TYPE_CHOICES } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
@@ -302,6 +303,16 @@ export default function PostScreen() {
         allowCustomRequest: (isWanted || isPlot) ? allowCustomRequest : undefined,
       });
       reset();
+      // The insert SUCCEEDED and the row is saved — but the screening trigger
+      // can have parked it as `paused` on the way in, so anything that reads
+      // like "you're live" here would be a lie. This wins over the draft notice
+      // below when both apply: both mean "not public", and the server's reason
+      // is the more specific truth (the compliance gate already explained the
+      // draft path inline, before they tapped Save).
+      if (isUnderReview(listing)) {
+        alertUnderReview(listing, { onClose: () => router.push(`/listing/${listing.id}`) });
+        return;
+      }
       if (asDraft) {
         Alert.alert(
           'Saved as draft',
@@ -311,16 +322,15 @@ export default function PostScreen() {
       router.push(`/listing/${listing.id}`);
     } catch (e: any) {
       const msg = e?.message ?? '';
-      const compliance = parseComplianceError(msg);
-      if (compliance) {
+      // A prohibited item and a rate limit read the same on every screen, so
+      // the shared handler owns them — a raw prefix can never reach a seller.
+      if (alertListingWriteError(msg)) return;
+      const err = parseServerError(msg);
+      if (err?.code === 'COMPLIANCE_BLOCKED') {
         // The server gate is the authority — render its verdict even if the
         // client somehow thought this was publishable.
-        Alert.alert(
-          compliance.reason === 'PLAN_REQUIRED' ? 'Paid plan required' : 'Verification required',
-          compliance.message ||
-            'This category needs verification before publishing. You can save a draft instead.',
-        );
-      } else if (/PLAN_LIMIT_REACHED/i.test(msg)) {
+        Alert.alert(err.title, err.message);
+      } else if (err?.code === 'PLAN_LIMIT_REACHED') {
         void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type } });
         Alert.alert(
           'You’ve reached your Free limit',
@@ -331,7 +341,7 @@ export default function PostScreen() {
           ],
         );
       } else {
-        Alert.alert('Could not post', msg || 'Please try again.');
+        Alert.alert('Could not post', safeErrorText(msg, 'Please try again.'));
       }
     } finally {
       setBusy(false);

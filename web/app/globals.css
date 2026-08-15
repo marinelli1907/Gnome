@@ -733,6 +733,25 @@ body {
 .tier .checks { flex: 1; margin-bottom: 14px; }
 .pricing-fine { color: var(--muted); font-size: 13.5px; max-width: 640px; line-height: 1.6; }
 
+/* Seller notices: held for review, blocked content, rate limited.
+   Left rule carries the meaning — gold = saved but waiting on a person,
+   tomato = refused, sage = nothing wrong, just wait. */
+.notice { background: var(--surface); border: 1px solid var(--border); border-left: 5px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 12px 0; max-width: 640px; }
+.notice h3 { font-family: var(--font-display), Georgia, serif; font-size: 17px; font-weight: 600; margin: 0 0 6px; color: var(--text); }
+.notice p { margin: 0 0 8px; font-size: 14.5px; line-height: 1.55; color: var(--text); }
+.notice p:last-of-type { margin-bottom: 0; }
+.notice .notice-sub { color: var(--muted); font-size: 13.5px; }
+.notice-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+.notice-links a, .notice-links .linkbtn { color: var(--green); font-weight: 700; font-size: 14px; }
+.notice.review { border-left-color: var(--gold); }
+.notice.stop { border-left-color: var(--tomato); }
+.notice.stop h3 { color: var(--tomato); }
+.notice.wait { border-left-color: var(--sage); }
+/* The same explanation, sized to sit under one row in a list. */
+.notice-inline { background: var(--bg-2); border: 1px dashed var(--border); border-radius: 12px; padding: 10px 14px; margin: 6px 0 2px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.notice-inline a, .notice-inline .linkbtn { color: var(--green); font-weight: 700; }
+.tag.review { background: rgba(233,196,106,.32); color: #6b5417; }
+
 /* Plan card on My Market */
 .plan-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin: 14px 0 4px; flex-wrap: wrap; }
 .plan-name { text-transform: capitalize; margin-right: 10px; }

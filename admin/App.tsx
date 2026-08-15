@@ -5,7 +5,7 @@
 // checked server-side (admin_has_perm / audited RPCs). No service keys here.
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
   RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -360,17 +360,18 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
 }
 
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
-type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'support' | 'stripe';
+type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'moderation' | 'support' | 'stripe';
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
   const [view, setView] = useState<MoreView>('menu');
   if (view === 'users') return <Users back={() => setView('menu')} can={can} />;
-  if (view === 'team') return <Team back={() => setView('menu')} />;
+  if (view === 'team') return <Team back={() => setView('menu')} can={can} isOwner={isOwner} />;
   if (view === 'audit') return <Audit back={() => setView('menu')} />;
   if (view === 'inventory') return <Inventory back={() => setView('menu')} can={can} />;
   if (view === 'commercial') return <Commercial back={() => setView('menu')} can={can} />;
   if (view === 'seasons') return <Seasons back={() => setView('menu')} can={can} />;
   if (view === 'listings') return <Listings back={() => setView('menu')} can={can} />;
   if (view === 'markets') return <Markets back={() => setView('menu')} />;
+  if (view === 'moderation') return <Moderation back={() => setView('menu')} can={can} isOwner={isOwner} />;
   if (view === 'support') return <Support back={() => setView('menu')} can={can} />;
   if (view === 'stripe') return <BillingHealth back={() => setView('menu')} isOwner={isOwner} />;
   return (
@@ -379,6 +380,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
       {can('seed_drop.view') && <MenuRow label="🌦 Seed Drop Seasons" onPress={() => setView('seasons')} />}
       {can('inventory.view') && <MenuRow label="🌱 Inventory" onPress={() => setView('inventory')} />}
       {can('listings.view') && <MenuRow label="🏷 Listings" onPress={() => setView('listings')} />}
+      {can('listings.moderate') && <MenuRow label="⚖️ Moderation Queue" onPress={() => setView('moderation')} />}
       {can('markets.view') && <MenuRow label="🏡 Markets" onPress={() => setView('markets')} />}
       {can('support.view') && <MenuRow label="🚩 Support & Reports" onPress={() => setView('support')} />}
       {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
@@ -735,22 +737,240 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   );
 }
 
-function Team({ back }: { back: () => void }) {
-  const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => {
-    supabase.rpc('admin_list_team').then(({ data }) => setRows((data as any[]) ?? []));
+// ---------------------------------------------------------------- Admin team
+// Who can open this console. An invitation is a row with an email and no account
+// yet; it becomes a member when that person signs in and accepts. Invitee names
+// and emails live on this screen and nowhere else — they are never logged.
+type TeamMember = {
+  id: string; user_id: string | null; display_name: string | null; email: string | null;
+  role: string; status: string; invite_state: 'active' | 'pending' | 'expired' | 'revoked';
+  created_at: string; invite_expires_at: string | null; revoked_at: string | null;
+  is_last_owner: boolean;
+};
+
+function Team({ back, can, isOwner }: {
+  back: () => void; can: (p: string) => boolean; isOwner: boolean;
+}) {
+  const [rows, setRows] = useState<TeamMember[]>([]);
+  const [roles, setRoles] = useState<{ role: string; label: string }[]>([]);
+  const [audit, setAudit] = useState<any[]>([]);
+  const [err, setErr] = useState<ServerError | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // The server gate is `admin_is_owner() or admin_has_perm('admin.manage')`.
+  // This mirrors it to hide chrome only — every RPC re-checks it.
+  const canManage = can('admin.manage');
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const [r, ro, au] = await Promise.all([
+      supabase.rpc('admin_team_roster'),
+      supabase.rpc('admin_team_roles'),
+      supabase.rpc('admin_team_audit', { p_limit: 30 }),
+    ]);
+    const failed = r.error ?? ro.error ?? au.error;
+    setErr(failed ? serverError(failed) : null);
+    setRows((r.data as TeamMember[]) ?? []);
+    setRoles((ro.data as { role: string; label: string }[]) ?? []);
+    setAudit((au.data as any[]) ?? []);
+    setLoaded(true); setRefreshing(false);
   }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const roleLabel = (r: string) => roles.find((x) => x.role === r)?.label ?? r;
+  const who = (m: TeamMember) => m.display_name || m.email || m.id.slice(0, 8);
+  const expiry = (iso: string | null) => {
+    if (!iso) return 'no expiry set';
+    const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 864e5);
+    const on = String(iso).slice(0, 10);
+    if (days < 0) return `expired ${on}`;
+    if (days === 0) return `expires today (${on})`;
+    return `expires in ${days} day${days === 1 ? '' : 's'} (${on})`;
+  };
+  const group = (state: TeamMember['invite_state']) => rows.filter((m) => m.invite_state === state);
+
+  const invite = async () => {
+    if (!role || !email.trim()) return;
+    setBusy(true);
+    const { error } = await supabase.rpc('admin_invite_teammate',
+      { p_email: email.trim(), p_name: name.trim() || null, p_role: role });
+    setBusy(false);
+    if (error) { setErr(serverError(error)); setNotice(null); return; }
+    setErr(null); setEmail(''); setName(''); setRole(null);
+    setNotice('Invitation created. It waits under “Invitations waiting” until they sign in to Gnome Admin and accept it.');
+    void load();
+  };
+  const changeRole = (m: TeamMember, next: string) => {
+    Alert.alert('Change this role?',
+      `${who(m)} becomes ${roleLabel(next)}. What they can do changes the moment they reload. Audited.`,
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: 'Change role', onPress: async () => {
+         setBusy(true);
+         const { error } = await supabase.rpc('admin_set_teammate_role',
+           { p_admin: m.id, p_role: next, p_reason: 'Role changed from Gnome Admin' });
+         setBusy(false);
+         if (error) { setErr(serverError(error)); setNotice(null); }
+         else { setErr(null); setNotice(`${who(m)} is now ${roleLabel(next)}.`); setEditing(null); }
+         void load();
+       } }]);
+  };
+  const remove = (m: TeamMember) => {
+    const isInvite = m.invite_state === 'pending' || m.invite_state === 'expired';
+    Alert.alert(
+      isInvite ? 'Revoke this invitation?' : 'Remove from the team?',
+      isInvite
+        ? `${who(m)} will not be able to accept it. You can send a new invitation any time.`
+        : `${who(m)} loses access to Gnome Admin immediately. Their ordinary Gnome account is untouched.`,
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: isInvite ? 'Revoke' : 'Remove', style: 'destructive', onPress: async () => {
+         setBusy(true);
+         const { error } = await supabase.rpc('admin_remove_teammate',
+           { p_admin: m.id, p_reason: isInvite ? 'Invitation revoked from Gnome Admin' : 'Removed from Gnome Admin' });
+         setBusy(false);
+         if (error) { setErr(serverError(error)); setNotice(null); }
+         else { setErr(null); setNotice(isInvite ? 'Invitation revoked.' : `${who(m)} no longer has access.`); }
+         void load();
+       } }]);
+  };
+
+  const memberCard = (m: TeamMember) => {
+    const isInvite = m.invite_state === 'pending' || m.invite_state === 'expired';
+    return (
+      <Card key={m.id}>
+        <Text style={s.cardTitle}>{who(m)}</Text>
+        <Text style={s.cardSub}>
+          {roleLabel(m.role)}
+          {m.invite_state === 'active' ? ` · on the team since ${String(m.created_at).slice(0, 10)}` : ''}
+          {m.invite_state === 'pending' ? ` · invited ${String(m.created_at).slice(0, 10)} · ${expiry(m.invite_expires_at)}` : ''}
+          {m.invite_state === 'expired' ? ` · invited ${String(m.created_at).slice(0, 10)} · ${expiry(m.invite_expires_at)}` : ''}
+          {m.invite_state === 'revoked' ? ` · removed ${String(m.revoked_at ?? m.created_at).slice(0, 10)}` : ''}
+        </Text>
+        {m.invite_state === 'active' && m.status !== 'active' && (
+          <Text style={[s.cardSub, { color: C.gold }]}>Account status: {m.status}</Text>
+        )}
+        {m.invite_state === 'expired' && (
+          <Text style={s.cardSub}>They never accepted in time. Send a fresh invitation — the old one can’t be revived.</Text>
+        )}
+        {m.is_last_owner && (
+          <Text style={[s.cardSub, { color: C.gold }]}>
+            Gnome needs at least one owner, so this account can’t be removed or moved to another role. Make someone else an owner first.
+          </Text>
+        )}
+        {canManage && m.invite_state !== 'revoked' && (
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {m.invite_state === 'active' && (
+              <SmallBtn label={editing === m.id ? 'Close' : 'Change role'} disabled={busy || m.is_last_owner}
+                onPress={() => setEditing(editing === m.id ? null : m.id)} />
+            )}
+            {m.invite_state === 'expired' && (
+              <SmallBtn label="Invite again" onPress={() => {
+                setEmail(m.email ?? ''); setName(m.display_name ?? ''); setRole(m.role); setErr(null);
+                setNotice('The invite form at the bottom is filled in — check the role, then send.');
+              }} />
+            )}
+            <SmallBtn label={isInvite ? 'Revoke invitation' : 'Remove'} danger
+              disabled={busy || m.is_last_owner} onPress={() => remove(m)} />
+          </View>
+        )}
+        {editing === m.id && !m.is_last_owner && (
+          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+            {roles.map((o) => (
+              <Pressable key={o.role} disabled={busy || o.role === m.role}
+                onPress={() => changeRole(m, o.role)}
+                style={[s.chip, o.role === m.role && s.chipActive]}>
+                <Text style={[s.chipText, o.role === m.role && s.chipTextActive]}>{o.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </Card>
+    );
+  };
+
+  const active = group('active');
+  const pending = group('pending');
+  const expired = group('expired');
+  const revoked = group('revoked');
+
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
       <BackRow label="← More" onPress={back} />
-      <Text style={s.h2}>Admin team</Text>
-      {rows.map((r) => (
-        <Card key={r.id}>
-          <Text style={s.cardTitle}>{r.name ?? r.email ?? r.user_id.slice(0, 8)}</Text>
-          <Text style={s.cardSub}>{r.role} · {r.status} · since {String(r.created_at).slice(0, 10)}</Text>
+      {err && <ErrorCard e={err} />}
+      {notice && (
+        <Card>
+          <Text style={s.cardTitle}>✅ {notice}</Text>
+          <Pressable onPress={() => setNotice(null)}><Text style={s.cardSub}>Dismiss</Text></Pressable>
+        </Card>
+      )}
+      {!loaded && <Card><Text style={s.cardSub}>Loading the team…</Text></Card>}
+
+      <Text style={s.h2}>On the team ({active.length})</Text>
+      {loaded && active.length === 0 && <Card><Text style={s.cardSub}>Nobody has accepted yet.</Text></Card>}
+      {active.map(memberCard)}
+
+      {pending.length > 0 && (
+        <>
+          <Text style={s.h2}>Invitations waiting ({pending.length})</Text>
+          {pending.map(memberCard)}
+        </>
+      )}
+      {expired.length > 0 && (
+        <>
+          <Text style={s.h2}>Expired invitations ({expired.length})</Text>
+          {expired.map(memberCard)}
+        </>
+      )}
+      {revoked.length > 0 && (
+        <>
+          <Text style={s.h2}>Removed ({revoked.length})</Text>
+          {revoked.map(memberCard)}
+        </>
+      )}
+
+      {canManage && (
+        <>
+          <Text style={s.h2}>Invite a teammate</Text>
+          <Card>
+            <TextInput style={s.input} value={email} onChangeText={setEmail} placeholder="Work email"
+              autoCapitalize="none" keyboardType="email-address" placeholderTextColor={C.muted} />
+            <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Name (optional)"
+              placeholderTextColor={C.muted} />
+            <Text style={s.h3}>Role</Text>
+            {roles.length === 0 && <Text style={s.cardSub}>No roles came back from the server — pull to refresh.</Text>}
+            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+              {roles.map((o) => (
+                <Pressable key={o.role} onPress={() => setRole(o.role)} style={[s.chip, role === o.role && s.chipActive]}>
+                  <Text style={[s.chipText, role === o.role && s.chipTextActive]}>{o.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <SmallBtn label="Send invitation" disabled={busy || !email.trim() || !role} onPress={() => void invite()} />
+            <Text style={s.cardSub}>
+              They get access when they sign in to Gnome Admin with this email and accept. Until then the invitation grants nothing.
+              {isOwner ? '' : ' Only an owner can invite another owner.'}
+            </Text>
+          </Card>
+        </>
+      )}
+
+      <Text style={s.h2}>Team history</Text>
+      {audit.length === 0 && <Card><Text style={s.cardSub}>No team changes recorded yet.</Text></Card>}
+      {audit.map((a, i) => (
+        <Card key={i}>
+          <Text style={s.cardTitle}>{a.action}</Text>
+          <Text style={s.cardSub}>
+            {a.target ? `${a.target} · ` : ''}{a.actor_type} · {String(a.at ?? '').slice(0, 16).replace('T', ' ')}
+          </Text>
+          {a.reason ? <Text style={s.cardText}>“{a.reason}”</Text> : null}
         </Card>
       ))}
-      <Card><Text style={s.cardSub}>Invites & role changes run through audited backend RPCs (admin_upsert_member / admin_revoke_member) — UI next build.</Text></Card>
     </ScrollView>
   );
 }
@@ -1429,6 +1649,472 @@ function Seasons({ back, can }: { back: () => void; can: (p: string) => boolean 
   );
 }
 
+// ---------------------------------------------------------------- Moderation queue
+// Listings the screening trigger held for review. Everything here is decided
+// server-side: the queue RPC is itself permission-checked, `can()` only hides
+// chrome. The matched keyword (screening_term) is deliberately never rendered —
+// it is the detection rule, not a fact about the seller. The class LABEL is.
+type ScreeningClass = {
+  compliance_class: string; label: string; rule_version: number;
+  active: boolean; requires_clearance: boolean;
+};
+
+function Moderation({ back, can, isOwner }: {
+  back: () => void; can: (p: string) => boolean; isOwner: boolean;
+}) {
+  const [counts, setCounts] = useState<any | null>(null);
+  const [settings, setSettings] = useState<any | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [err, setErr] = useState<ServerError | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  // Filters. Every one of these is a parameter on the queue RPC — the server
+  // narrows the queue, so a moderator never holds rows they filtered away.
+  const [fClass, setFClass] = useState<string | null>(null);
+  const [fState, setFState] = useState('');
+  const [fStateOn, setFStateOn] = useState<string | null>(null);
+  const [fDays, setFDays] = useState<number | null>(null);
+  const [fSeller, setFSeller] = useState<{ id: string; name: string } | null>(null);
+  const [cfgReason, setCfgReason] = useState('');
+  const [cfgLimit, setCfgLimit] = useState('');
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const [c, q, st] = await Promise.all([
+      supabase.rpc('admin_screening_counts'),
+      supabase.rpc('admin_screening_queue', {
+        p_class: fClass,
+        p_state: fStateOn,
+        p_seller: fSeller?.id ?? null,
+        p_since: fDays == null ? null : new Date(Date.now() - fDays * 864e5).toISOString(),
+      }),
+      supabase.rpc('admin_screening_settings'),
+    ]);
+    const failed = q.error ?? c.error ?? st.error;
+    setErr(failed ? serverError(failed) : null);
+    setCounts(Array.isArray(c.data) ? c.data[0] : c.data);
+    setRows((q.data as any[]) ?? []);
+    setSettings((st.data as any) ?? null);
+    setLoaded(true); setRefreshing(false);
+  }, [fClass, fStateOn, fSeller, fDays]);
+  useEffect(() => { void load(); }, [load]);
+
+  const classes = ((settings?.classes as ScreeningClass[]) ?? []);
+  useEffect(() => {
+    if (settings?.max_listings_per_hour != null) setCfgLimit(String(settings.max_listings_per_hour));
+  }, [settings?.max_listings_per_hour]);
+
+  if (open) {
+    return <ModerationDetail listing={open} classes={classes} can={can}
+      back={() => { setOpen(null); void load(); }} />;
+  }
+
+  const saveConfig = async (enabled: boolean | null, perHour: number | null) => {
+    const { error } = await supabase.rpc('admin_set_screening_config',
+      { p_enabled: enabled, p_max_per_hour: perHour, p_reason: cfgReason.trim() || null });
+    if (error) alertServerError(error);
+    else { setCfgReason(''); void load(); }
+  };
+  const toggleScreening = (v: boolean) => {
+    if (!v && !cfgReason.trim()) {
+      Alert.alert('Reason first', 'Write why screening is going off. It is stored with the switch and it is the first thing the next person sees.');
+      return;
+    }
+    Alert.alert(
+      v ? 'Turn screening back on?' : 'Turn screening OFF?',
+      v ? 'New listings are checked again from the next post onward.'
+        : 'Every new listing publishes with no prohibited-item check until you turn this back on. Owner action, audited.',
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: v ? 'Turn on' : 'Turn OFF', style: v ? 'default' : 'destructive',
+         onPress: () => void saveConfig(v, null) }]);
+  };
+  const saveLimit = () => {
+    const n = Number(cfgLimit);
+    if (!Number.isFinite(n) || n <= 0) { Alert.alert('Enter a number', 'How many new listings one seller may post in an hour.'); return; }
+    void saveConfig(null, Math.round(n));
+  };
+
+  const enabled = settings?.screening_enabled !== false;
+  const num = (k: string) => Number(counts?.[k] ?? 0);
+  const classLabel = (key?: string | null) =>
+    classes.find((c) => c.compliance_class === key)?.label ?? 'Held for review';
+  const filtered = fClass != null || fStateOn != null || fDays != null || fSeller != null;
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+      <BackRow label="← More" onPress={back} />
+      {err && <ErrorCard e={err} />}
+
+      <Row2 items={[['Waiting', num('pending')], ['Held today', num('held_today')], ['Resolved today', num('resolved_today')]]} />
+
+      <Card>
+        <Text style={s.cardBig}>{enabled ? 'Screening ON' : 'Screening OFF 🔴'}</Text>
+        <Text style={s.cardSub}>
+          {enabled
+            ? 'Every new listing is checked before it can go public. Regulated classes are held here until someone decides.'
+            : 'New listings publish with no prohibited-item check until this is switched back on.'}
+        </Text>
+        {settings?.disabled_reason
+          ? <Text style={[s.cardSub, { color: C.red }]}>Turned off because: {settings.disabled_reason}</Text> : null}
+        <Text style={s.cardSub}>
+          Rate limit: {settings?.max_listings_per_hour ?? '—'} new listings per seller per hour
+          {settings?.updated_at ? ` · changed ${String(settings.updated_at).slice(0, 16).replace('T', ' ')}` : ''}
+        </Text>
+        {isOwner ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+              <Text style={s.cardTitle}>Screening enabled</Text>
+              {settings != null && (
+                <Switch value={enabled} onValueChange={toggleScreening} trackColor={{ true: C.green }} />
+              )}
+            </View>
+            <TextInput style={[s.input, { marginTop: 8, marginBottom: 8 }]} value={cfgReason} onChangeText={setCfgReason}
+              placeholder="Reason (required to turn screening off)" placeholderTextColor={C.muted} />
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <TextInput style={[s.input, { flex: 1, minWidth: 0, marginBottom: 0 }]} value={cfgLimit} onChangeText={setCfgLimit}
+                keyboardType="number-pad" placeholder="Listings per seller per hour" placeholderTextColor={C.muted} />
+              <SmallBtn label="Save limit" onPress={saveLimit} />
+            </View>
+          </>
+        ) : (
+          <Text style={s.cardSub}>Only the Gnome owner can turn screening off or change the rate limit.</Text>
+        )}
+      </Card>
+
+      <Text style={s.h2}>Queue ({rows.length}{filtered ? ' shown' : ''})</Text>
+      <Text style={s.h3}>Product class</Text>
+      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+        <Pressable onPress={() => setFClass(null)} style={[s.chip, fClass === null && s.chipActive]}>
+          <Text style={[s.chipText, fClass === null && s.chipTextActive]}>All</Text>
+        </Pressable>
+        {classes.map((c) => (
+          <Pressable key={c.compliance_class} onPress={() => setFClass(c.compliance_class)}
+            style={[s.chip, fClass === c.compliance_class && s.chipActive]}>
+            <Text style={[s.chipText, fClass === c.compliance_class && s.chipTextActive]}>{c.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={s.h3}>Held since</Text>
+      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+        {([['Any time', null], ['24 hours', 1], ['7 days', 7], ['30 days', 30]] as [string, number | null][]).map(([label, d]) => (
+          <Pressable key={label} onPress={() => setFDays(d)} style={[s.chip, fDays === d && s.chipActive]}>
+            <Text style={[s.chipText, fDays === d && s.chipTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={s.h3}>State</Text>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <TextInput style={[s.input, { flex: 1, minWidth: 0, marginBottom: 0 }]} value={fState} onChangeText={setFState}
+          onSubmitEditing={() => setFStateOn(fState.trim().toUpperCase() || null)} returnKeyType="search"
+          autoCapitalize="characters" placeholder="NC" placeholderTextColor={C.muted} />
+        <SmallBtn label="Filter" onPress={() => setFStateOn(fState.trim().toUpperCase() || null)} />
+      </View>
+      {(fSeller || fStateOn) && (
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {fStateOn && (
+            <Pressable onPress={() => { setFStateOn(null); setFState(''); }} style={[s.chip, s.chipActive]}>
+              <Text style={[s.chipText, s.chipTextActive]}>State {fStateOn}  ✕</Text>
+            </Pressable>
+          )}
+          {fSeller && (
+            <Pressable onPress={() => setFSeller(null)} style={[s.chip, s.chipActive]}>
+              <Text style={[s.chipText, s.chipTextActive]}>{fSeller.name}  ✕</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {!loaded && <Card><Text style={s.cardSub}>Loading the queue…</Text></Card>}
+      {loaded && rows.length === 0 && (
+        <Card>
+          <Text style={s.cardBig}>Nothing waiting 🌱</Text>
+          <Text style={s.cardSub}>
+            {filtered ? 'No held listing matches these filters.' : 'No listing is held for review right now.'}
+          </Text>
+        </Card>
+      )}
+      {rows.map((r) => (
+        <Pressable key={r.listing_id} onPress={() => setOpen(r.listing_id)}>
+          <Card>
+            <Text style={s.cardTitle}>{r.title}</Text>
+            <Text style={s.cardSub}>
+              {r.seller_name ?? 'Unknown seller'}{r.seller_suspended ? '  ⛔ suspended' : ''} · {[r.city, r.state].filter(Boolean).join(', ') || 'no location'}
+              {' · '}held {String(r.screened_at ?? r.created_at).slice(0, 10)}
+            </Text>
+            <Text style={s.cardSub}>{classLabel(r.matched_category)} · listing is {r.listing_status}</Text>
+            {r.reason ? <Text style={s.cardText} numberOfLines={2}>{r.reason}</Text> : null}
+            {!fSeller && r.seller_id && (
+              <SmallBtn label="Only this seller" onPress={() => setFSeller({ id: r.seller_id, name: r.seller_name ?? 'This seller' })} />
+            )}
+          </Card>
+        </Pressable>
+      ))}
+
+      <Text style={s.h2}>Class rules</Text>
+      {classes.map((c) => (
+        <Card key={c.compliance_class}>
+          <Text style={s.cardTitle}>{c.label} · rule v{c.rule_version}</Text>
+          <Text style={s.cardSub}>
+            {!c.active
+              ? 'Inactive — nothing is held for this class.'
+              : c.requires_clearance
+                ? 'Held for review until the seller is cleared for their own state.'
+                : 'Publishes without a clearance.'}
+          </Text>
+        </Card>
+      ))}
+      {classes.length === 0 && <Card><Text style={s.cardSub}>No classes configured.</Text></Card>}
+    </ScrollView>
+  );
+}
+
+function ModerationDetail({ listing, back, can, classes }: {
+  listing: string; back: () => void; can: (p: string) => boolean; classes: ScreeningClass[];
+}) {
+  const [d, setD] = useState<any | null>(null);
+  const [err, setErr] = useState<ServerError | null>(null);
+  const [reason, setReason] = useState('');
+  const [credential, setCredential] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc('admin_moderation_detail', { p_listing: listing });
+    if (error) { setErr(serverError(error)); setD(null); } else { setErr(null); setD(data as any); }
+  }, [listing]);
+  useEffect(() => { void load(); }, [load]);
+
+  if (err && !d) {
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <BackRow label="← Queue" onPress={back} />
+        <ErrorCard e={err} />
+      </ScrollView>
+    );
+  }
+  if (!d) {
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <BackRow label="← Queue" onPress={back} />
+        <Card><Text style={s.cardSub}>Loading this listing…</Text></Card>
+      </ScrollView>
+    );
+  }
+
+  const l = d.listing ?? {};
+  const seller = d.seller ?? {};
+  const cls = d.class ?? null;
+  const creds = (d.credentials as any[]) ?? [];
+  const clearances = (d.clearances as any[]) ?? [];
+  const history = (d.history as any[]) ?? [];
+  const who = seller.name ?? 'this seller';
+  const st: string | null = l.state ?? seller.state ?? null;
+  // The class label is public vocabulary; the matched keyword never leaves the
+  // database, so nothing here reads screening_term.
+  const label = cls?.label
+    ?? classes.find((c) => c.compliance_class === l.screening_category)?.label
+    ?? 'this product';
+  // The seller was shown the class's customer message — that is the sentence to
+  // hold the decision against, not an internal rationale.
+  const shown = cls?.customer_message ?? l.screening_reason ?? null;
+  const photos = ((l.photos as any[]) ?? []).filter((u) => typeof u === 'string' && u.startsWith('http')) as string[];
+  const credId = (c: any): string | null => c?.id ?? c?.credential_id ?? null;
+  const chosen = creds.find((c) => credId(c) === credential) ?? null;
+  const canResolve = can('listings.moderate');
+  const canGrant = can('listings.moderate') || can('compliance.rules_manage');
+  const canRevoke = can('compliance.rules_manage');
+  const needReason = !reason.trim();
+
+  const scope = cls
+    ? `This clears ${who} to sell ${label} in ${st ?? 'their state'} only`
+      + (chosen ? `, while their ${chosen.credential_type} credential is valid.` : ', under the current rule.')
+      + ' It does not clear other regulated products, and it does not clear other states.'
+    : '';
+
+  const resolve = async (approve: boolean, suspend: boolean) => {
+    setBusy(true);
+    const { error } = await supabase.rpc('admin_resolve_screening', {
+      p_listing: listing, p_approve: approve,
+      p_reason: reason.trim() || null, p_suspend_seller: suspend,
+    });
+    setBusy(false);
+    if (error) { setErr(serverError(error)); void load(); } else back();
+  };
+  const suspendSeller = () => {
+    Alert.alert(
+      `Reject and suspend ${who}?`,
+      `${who} is signed out of selling on Gnome and their listings stop being public. The listing is rejected at the same time. Audited, and reversible from Users.`,
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: 'Reject & suspend', style: 'destructive', onPress: () => void resolve(false, true) }]);
+  };
+  const grant = () => {
+    if (!cls || !st) return;
+    Alert.alert('Clear this seller?', scope, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Grant clearance', onPress: async () => {
+        setBusy(true);
+        const { error } = await supabase.rpc('admin_grant_compliance_clearance', {
+          p_seller: seller.id, p_class: cls.compliance_class, p_state: st,
+          p_reason: reason.trim(), p_credential: credential, p_listing: listing,
+        });
+        setBusy(false);
+        if (error) setErr(serverError(error)); else setErr(null);
+        void load();
+      } },
+    ]);
+  };
+  const revoke = (c: any) => {
+    Alert.alert('Revoke this clearance?',
+      `${who} goes back to review for ${classes.find((k) => k.compliance_class === c.compliance_class)?.label ?? 'this class'} in ${c.state}. Listings already approved stay up.`,
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: 'Revoke', style: 'destructive', onPress: async () => {
+         setBusy(true);
+         const { error } = await supabase.rpc('admin_revoke_compliance_clearance',
+           { p_clearance: c.id, p_reason: reason.trim() });
+         setBusy(false);
+         if (error) setErr(serverError(error)); else setErr(null);
+         void load();
+       } }]);
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <BackRow label="← Queue" onPress={back} />
+      {err && <ErrorCard e={err} />}
+
+      <Card>
+        <Text style={s.cardBig}>{l.title}</Text>
+        <Text style={s.cardSub}>
+          {[l.city, l.state].filter(Boolean).join(', ') || 'no location'} · posted {String(l.created_at ?? '').slice(0, 10)} · listing is {l.status}
+        </Text>
+        {photos.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+            {photos.map((u) => <Image key={u} source={{ uri: u }} style={s.modPhoto} />)}
+          </ScrollView>
+        )}
+        {l.description ? <Text style={s.cardText}>{l.description}</Text> : null}
+      </Card>
+
+      <Card>
+        <Text style={s.cardTitle}>Held as {label}</Text>
+        {shown ? <Text style={s.cardText}>What {who} was shown: “{shown}”</Text> : null}
+        <Text style={s.cardSub}>
+          Screening status {l.screening_status ?? '—'}
+          {cls ? ` · rule v${cls.rule_version}${cls.requires_clearance ? ' · needs a clearance' : ' · no clearance needed'}` : ''}
+        </Text>
+      </Card>
+
+      <Text style={s.h2}>Seller</Text>
+      <Card>
+        <Text style={s.cardBig}>{who}</Text>
+        <Text style={s.cardSub}>{seller.state ?? 'no state on file'}</Text>
+        {seller.suspended && <Text style={[s.cardSub, { color: C.red }]}>ALREADY SUSPENDED</Text>}
+        <Text style={s.h3}>Approved credentials</Text>
+        {creds.length === 0 && <Text style={s.cardSub}>None on file. A clearance can still be granted, but nothing will expire it.</Text>}
+        {creds.map((c, i) => {
+          const id = credId(c);
+          const expired = c.expiration_date ? new Date(c.expiration_date) < new Date() : false;
+          const picked = id != null && id === credential;
+          return (
+            <Pressable key={id ?? i} disabled={id == null || expired}
+              onPress={() => setCredential(picked ? null : id)}>
+              <View style={{ marginTop: 6 }}>
+                <Text style={s.cardText}>
+                  {id != null && !expired ? (picked ? '☑ ' : '☐ ') : ''}{c.credential_type} · {c.state ?? '—'} · {c.status}
+                  {c.expiration_date ? ` · ${expired ? 'EXPIRED' : 'valid to'} ${String(c.expiration_date).slice(0, 10)}` : ' · no expiry'}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+        {creds.length > 0 && creds.every((c) => credId(c) == null) && (
+          <Text style={s.cardSub}>These are shown for the record. Attaching one to a clearance needs the credential’s id, which this view doesn’t carry yet.</Text>
+        )}
+      </Card>
+
+      <Text style={s.h2}>Decision</Text>
+      <Card>
+        <TextInput style={s.input} value={reason} onChangeText={setReason} multiline
+          placeholder="Reason — required to reject, to suspend, or to clear a seller"
+          placeholderTextColor={C.muted} />
+        {canResolve ? (
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            <SmallBtn label="Approve listing" disabled={busy} onPress={() => void resolve(true, false)} />
+            <SmallBtn label="Reject listing" danger disabled={busy || needReason} onPress={() => void resolve(false, false)} />
+            <SmallBtn label="Reject & suspend seller" danger disabled={busy || needReason} onPress={suspendSeller} />
+          </View>
+        ) : (
+          <Text style={s.cardSub}>Your role can read this queue but not decide on it.</Text>
+        )}
+        {needReason && canResolve && (
+          <Text style={s.cardSub}>Approving may go without a note. Rejecting or suspending needs one — it is what the seller and the audit log get.</Text>
+        )}
+      </Card>
+
+      {cls && canGrant && (
+        <>
+          <Text style={s.h2}>Clearance</Text>
+          <Card>
+            <Text style={s.cardTitle}>Clear {who} for {label} in {st ?? '—'}</Text>
+            <View style={s.scopeBox}>
+              <Text style={s.cardText}>{scope}</Text>
+            </View>
+            <Text style={s.h3}>What ends it</Text>
+            <Text style={s.cardText}>
+              · {chosen
+                ? `Their ${chosen.credential_type} credential expiring or ceasing to be approved${chosen.expiration_date ? ` (currently valid to ${String(chosen.expiration_date).slice(0, 10)})` : ''}.`
+                : 'No credential attached, so nothing expires it on a date. Attach one when the state requires a permit.'}
+            </Text>
+            <Text style={s.cardText}>· {who} listing from a different state — a clearance answers one state’s rule only.</Text>
+            <Text style={s.cardText}>· The {label} rule version moving past v{cls.rule_version} — changing the rule re-opens every decision made under the old one.</Text>
+            {!st && <Text style={[s.cardSub, { color: C.red }]}>No state on this listing or on the seller, and a clearance is per state. Fix the seller’s state first.</Text>}
+            <SmallBtn label={`Grant clearance · ${label} · ${st ?? '—'}`}
+              disabled={busy || needReason || !st} onPress={grant} />
+            {needReason && <Text style={s.cardSub}>Write the reason above first — the server stores it on the clearance.</Text>}
+          </Card>
+        </>
+      )}
+
+      {clearances.length > 0 && (
+        <>
+          <Text style={s.h2}>Clearances on file</Text>
+          {clearances.map((c) => {
+            const k = classes.find((x) => x.compliance_class === c.compliance_class);
+            const stale = k != null && c.rule_version !== k.rule_version;
+            return (
+              <Card key={c.id}>
+                <Text style={s.cardTitle}>{k?.label ?? 'Clearance'} · {c.state} · rule v{c.rule_version}</Text>
+                <Text style={s.cardSub}>
+                  {c.status} · granted {String(c.granted_at ?? '').slice(0, 10)}
+                  {c.credential_expiration ? ` · credential valid to ${String(c.credential_expiration).slice(0, 10)}` : ' · no credential attached'}
+                </Text>
+                {stale && (
+                  <Text style={[s.cardSub, { color: C.gold }]}>
+                    Granted under rule v{c.rule_version}; the rule is now v{k?.rule_version}. It no longer clears anything.
+                  </Text>
+                )}
+                {c.status === 'ACTIVE' && canRevoke && (
+                  <SmallBtn label="Revoke clearance" danger disabled={busy || needReason} onPress={() => revoke(c)} />
+                )}
+              </Card>
+            );
+          })}
+        </>
+      )}
+
+      <Text style={s.h2}>Decision history</Text>
+      {history.length === 0 && <Card><Text style={s.cardSub}>Nothing decided on this listing yet.</Text></Card>}
+      {history.map((h, i) => (
+        <Card key={i}>
+          <Text style={s.cardTitle}>{h.action}</Text>
+          <Text style={s.cardSub}>{h.actor_type} · {String(h.at ?? '').slice(0, 16).replace('T', ' ')}</Text>
+          {h.reason ? <Text style={s.cardText}>“{h.reason}”</Text> : null}
+        </Card>
+      ))}
+    </ScrollView>
+  );
+}
+
 // ---------------------------------------------------------------- bits
 function Centered({ children }: { children: React.ReactNode }) {
   return <View style={[s.centered]}>{children}</View>;
@@ -1448,12 +2134,62 @@ function Row2({ items, money0 }: { items: [string, number][]; money0?: boolean }
     </View>
   );
 }
-function SmallBtn({ label, onPress, danger }: { label: string; onPress: () => void; danger?: boolean }) {
+function SmallBtn({ label, onPress, danger, disabled }: {
+  label: string; onPress: () => void; danger?: boolean; disabled?: boolean;
+}) {
   return (
-    <Pressable style={[s.smallBtn, danger && { backgroundColor: C.red }]} onPress={onPress}>
+    <Pressable style={[s.smallBtn, danger && { backgroundColor: C.red }, disabled && { opacity: 0.4 }]}
+      onPress={onPress} disabled={disabled}>
       <Text style={s.smallBtnText}>{label}</Text>
     </Pressable>
   );
+}
+function ErrorCard({ e }: { e: ServerError }) {
+  return (
+    <View style={s.errBox}>
+      <Text style={s.errTitle}>{e.title}</Text>
+      <Text style={s.cardText}>{e.body}</Text>
+    </View>
+  );
+}
+
+// A server raise arrives as 'CODE' or 'CODE: a sentence already written for the
+// person reading it'. That sentence is the server's copy and is passed through
+// untouched — this picks the title and supplies a line for the codes that raise
+// bare. Anything unrecognized shows its own message rather than being swallowed.
+type ServerError = { title: string; body: string };
+const SERVER_ERRORS: Record<string, [string, string]> = {
+  PROHIBITED_ITEM: ['Gnome can’t carry this', 'This one falls under something Gnome doesn’t allow.'],
+  PROHIBITED_CATEGORY: ['Gnome can’t carry this', 'Gnome can’t carry items in that category.'],
+  RATE_LIMITED: ['Too many at once', 'That’s a lot at once. Try again in a little while.'],
+  COMPLIANCE_BLOCKED: ['Not cleared yet', 'This seller isn’t cleared for that product in that state.'],
+  PLAN_LIMIT_REACHED: ['Plan limit reached', 'This Market is at the limit its plan allows.'],
+  NOT_AUTHORIZED: ['Not something your role can do', 'Your admin role doesn’t include this action. Ask an owner.'],
+  LAST_OWNER: ['Gnome needs an owner', 'This is the last owner. Make someone else an owner first, then try again.'],
+  ONLY_OWNER_CAN_INVITE_OWNER: ['Owner only', 'Only an owner can invite another owner.'],
+  ONLY_OWNER_CAN_PROMOTE_OWNER: ['Owner only', 'Only an owner can move someone to owner.'],
+  INVITE_EXPIRED: ['That invitation expired', 'Send a fresh invitation instead.'],
+  NO_PENDING_INVITE: ['No invitation waiting', 'There’s no pending invitation for that account.'],
+  INVALID_ROLE: ['Unknown role', 'That role isn’t one Gnome recognizes. Pull to refresh and pick again.'],
+  INVALID_EMAIL: ['Check that email', 'That doesn’t look like an email address.'],
+  REASON_REQUIRED: ['Reason required', 'Write the reason for this decision — it is stored with it.'],
+  OWNER_ONLY: ['Owner only', 'Only the Gnome owner can change this.'],
+  UNKNOWN_STATE: ['State not recognized', 'Use the two-letter state code, e.g. NC.'],
+  UNKNOWN_CLASS: ['Class not recognized', 'That product class no longer exists. Pull to refresh.'],
+  NOT_FOUND: ['Already gone', 'That record no longer exists. Pull to refresh.'],
+};
+function serverError(e: { message?: string } | null | undefined): ServerError {
+  const raw = (e?.message ?? '').trim();
+  const cut = raw.indexOf(':');
+  const code = (cut === -1 ? raw : raw.slice(0, cut)).trim();
+  const rest = cut === -1 ? '' : raw.slice(cut + 1).trim();
+  const known = SERVER_ERRORS[code];
+  if (!known) return { title: 'That didn’t go through', body: raw || 'Something went wrong. Pull to refresh and try again.' };
+  return { title: known[0], body: rest || known[1] };
+}
+function alertServerError(e: { message?: string } | null | undefined) {
+  const { title, body } = serverError(e);
+  Alert.alert(title, body);
 }
 function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
   return (
@@ -1519,6 +2255,10 @@ const s = StyleSheet.create({
   pickName: { fontSize: 22, fontWeight: '800', color: C.green, marginTop: 4 },
   pickLot: { fontSize: 15, color: C.muted, marginTop: 2 },
   pickTap: { fontSize: 13, fontWeight: '800', color: C.mid, marginTop: 10, letterSpacing: 0.6 },
+  errBox: { backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: C.red },
+  errTitle: { fontSize: 15, fontWeight: '800', color: C.red },
+  scopeBox: { backgroundColor: C.bg, borderRadius: 10, padding: 12, marginTop: 8, borderWidth: 1, borderColor: C.border },
+  modPhoto: { width: 96, height: 96, borderRadius: 10, marginRight: 8, backgroundColor: C.bg },
   deniedEmoji: { fontSize: 40 },
   deniedTitle: { fontSize: 18, fontWeight: '800', color: C.green, textAlign: 'center' },
   deniedSub: { fontSize: 13.5, color: C.muted, textAlign: 'center', lineHeight: 19 },

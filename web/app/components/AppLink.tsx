@@ -6,22 +6,27 @@ import { logWeb } from '@/lib/analytics';
 const IOS = process.env.NEXT_PUBLIC_IOS_APP_URL || 'https://apps.apple.com/';
 const ANDROID = process.env.NEXT_PUBLIC_ANDROID_APP_URL || 'https://play.google.com/store/apps';
 
-// Opens the native app via gnome://<kind>/<id>; falls back to the store if the
-// app isn't installed. Web never transacts — it hands off to the app.
+// Opens the native app via gnome://<kind>[/<id>]; falls back to the store if the
+// app isn't installed. Web never transacts — it hands off to the app. Some
+// destinations are a screen rather than a record (the Credential Center, where
+// a seller uploads the permit that clears a held listing), so `id` is optional.
 export default function AppLink({
   kind,
   id,
   label,
   variant = 'primary',
+  plain = false,
 }: {
-  kind: 'listing' | 'market';
-  id: string;
+  kind: 'listing' | 'market' | 'compliance';
+  id?: string;
   label: string;
   variant?: 'primary' | 'secondary';
+  /** Render as an inline text link instead of a button (for notice copy). */
+  plain?: boolean;
 }) {
   const onClick = useCallback(() => {
     logWeb('web_open_app_clicked', { kind, id });
-    const deep = `gnome://${kind}/${id}`;
+    const deep = id ? `gnome://${kind}/${id}` : `gnome://${kind}`;
     const store = /android/i.test(navigator.userAgent) ? ANDROID : IOS;
     const fallback = setTimeout(() => {
       window.location.href = store;
@@ -33,7 +38,11 @@ export default function AppLink({
   }, [kind, id]);
 
   return (
-    <button type="button" onClick={onClick} className={`btn ${variant === 'primary' ? 'btn-primary' : 'btn-secondary'}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={plain ? 'linkbtn' : `btn ${variant === 'primary' ? 'btn-primary' : 'btn-secondary'}`}
+    >
       {label}
     </button>
   );

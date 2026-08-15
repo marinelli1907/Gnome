@@ -21,9 +21,10 @@ import { useListing, useUpdateListing } from '@/lib/db';
 import {
   breadcrumb,
   legacyCategoryFor,
-  parseComplianceError,
+  parseServerError,
   useTaxonomy,
 } from '@/lib/taxonomy';
+import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 
 export default function EditListingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -88,17 +89,23 @@ export default function EditListingScreen() {
         ...(nodeTouched ? { taxonomyNodeId: selectedNode?.id ?? null } : {}),
       },
       {
-        onSuccess: () => router.back(),
+        onSuccess: (saved) => {
+          // An edit re-runs the screening trigger, and a re-screen can park a
+          // listing that was public a second ago. Going straight back with no
+          // feedback would leave the seller believing it is still on sale.
+          if (isUnderReview(saved)) {
+            alertUnderReview(saved, { onClose: () => router.back() });
+            return;
+          }
+          router.back();
+        },
         onError: (e: any) => {
-          const compliance = parseComplianceError(e?.message);
-          if (compliance) {
-            Alert.alert(
-              'Category needs verification',
-              compliance.message ||
-                'Moving this live listing into that category requires verification first.',
-            );
+          if (alertListingWriteError(e?.message)) return;
+          const err = parseServerError(e?.message);
+          if (err?.code === 'COMPLIANCE_BLOCKED') {
+            Alert.alert(err.title, err.message);
           } else {
-            Alert.alert('Could not save', e?.message ?? 'Try again.');
+            Alert.alert('Could not save', safeErrorText(e?.message, 'Try again.'));
           }
         },
       },

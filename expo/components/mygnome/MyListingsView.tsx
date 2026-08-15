@@ -8,13 +8,17 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import { useMyListings, useMyMarket, useUpdateListingStatus } from '@/lib/db';
+import { alertUnderReview, isUnderReview, safeErrorText, UNDER_REVIEW_LABEL } from '@/lib/screening';
 import { supabase } from '@/lib/supabase';
 import type { Listing } from '@/types';
 
-type Group = 'Available' | 'Paused' | 'Claimed' | 'Completed' | 'Expired';
-const GROUP_ORDER: Group[] = ['Available', 'Paused', 'Claimed', 'Completed', 'Expired'];
+type Group = 'Available' | typeof UNDER_REVIEW_LABEL | 'Paused' | 'Claimed' | 'Completed' | 'Expired';
+const GROUP_ORDER: Group[] = ['Available', UNDER_REVIEW_LABEL, 'Paused', 'Claimed', 'Completed', 'Expired'];
 const GROUP_COLOR: Record<Group, string> = {
   Available: Colors.success,
+  // Under review = saved, held back by screening, waiting on a person. Blue,
+  // not amber: there is no action the seller must take for it to move.
+  'Under review': Colors.info,
   // Paused = parked by compliance (expired credential or lapsed plan), not by
   // the seller. Amber, not grey: it's actionable and nothing was lost.
   Paused: Colors.warning,
@@ -25,6 +29,11 @@ const GROUP_COLOR: Record<Group, string> = {
 
 function groupOf(l: Listing): Group {
   const expired = l.status === 'expired' || (l.status === 'active' && new Date(l.expires_at).getTime() < Date.now());
+  // Screening parks a held listing as `paused` too, so this has to come first —
+  // otherwise a listing a moderator is reading looks like one the seller could
+  // fix by renewing a credential. Only while it is still parked: once a
+  // moderator resolves it (or the seller removes it) the ordinary rules apply.
+  if (isUnderReview(l) && l.status === 'paused') return UNDER_REVIEW_LABEL;
   if (l.status === 'paused') return 'Paused';
   if (l.status === 'completed') return 'Completed';
   if (l.status === 'removed' || expired) return 'Expired';
@@ -101,7 +110,9 @@ export default function MyListingsView({ uid }: { uid: string }) {
     );
   }
 
-  const groups: Record<Group, Listing[]> = { Available: [], Paused: [], Claimed: [], Completed: [], Expired: [] };
+  const groups: Record<Group, Listing[]> = {
+    Available: [], 'Under review': [], Paused: [], Claimed: [], Completed: [], Expired: [],
+  };
   for (const l of listings) groups[groupOf(l)].push(l);
 
   const markComplete = (l: Listing) =>
@@ -112,7 +123,14 @@ export default function MyListingsView({ uid }: { uid: string }) {
         onPress: () =>
           updateStatus.mutate(
             { listingId: l.id, status: 'completed', kind: l.kind, title: l.title },
-            { onSuccess: () => void offerRecordSale(l) },
+            {
+              onSuccess: () => void offerRecordSale(l),
+              // The status write reports a rejected row now instead of shrugging,
+              // so say so — a silent no-op here is what sent sellers to a pickup
+              // that never got marked done.
+              onError: (e: any) =>
+                Alert.alert('Couldn’t mark it complete', safeErrorText(e?.message, 'Try again.')),
+            },
           ),
       },
     ]);
@@ -120,7 +138,18 @@ export default function MyListingsView({ uid }: { uid: string }) {
   const remove = (l: Listing) =>
     Alert.alert('Remove listing', `Remove “${l.title}”?`, [
       { text: 'Back', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => updateStatus.mutate({ listingId: l.id, status: 'removed', kind: l.kind, title: l.title }) },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () =>
+          updateStatus.mutate(
+            { listingId: l.id, status: 'removed', kind: l.kind, title: l.title },
+            {
+              onError: (e: any) =>
+                Alert.alert('Couldn’t remove it', safeErrorText(e?.message, 'Try again.')),
+            },
+          ),
+      },
     ]);
 
   const repost = (l: Listing) =>
@@ -172,6 +201,14 @@ export default function MyListingsView({ uid }: { uid: string }) {
                         <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
                         <Pressable onPress={() => markComplete(l)}><Text style={styles.link}>Mark Complete</Text></Pressable>
                         <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Remove</Text></Pressable>
+                      </>
+                    )}
+                    {g === UNDER_REVIEW_LABEL && (
+                      <>
+                        {/* The server's own reason, plus the way to help it
+                            along — never the keyword that matched. */}
+                        <Pressable onPress={() => alertUnderReview(l)}><Text style={styles.link}>Why under review?</Text></Pressable>
+                        <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
                       </>
                     )}
                     {g === 'Paused' && (

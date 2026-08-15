@@ -219,3 +219,180 @@ export async function getAllActiveListingRefs(): Promise<{ id: string; slug: str
 export async function getAllActiveMarketRefs(): Promise<{ slug: string; created_at: string }[]> {
   return rest('public_markets', { select: 'slug,created_at', active_listing_count: 'gt.0', limit: '500' }, 300);
 }
+
+// --- Server errors, in seller language ------------------------------------
+// Every listing write goes straight to PostgREST under RLS, so the only thing
+// that comes back when a trigger refuses is a Postgres message. Those messages
+// are written as customer copy AFTER a machine prefix ("RATE_LIMITED: You have
+// posted…"), so the job here is to strip the prefix, pick a title, and never
+// leak the machine part — a prefix, an enum, a trigger name, an SQLSTATE, or a
+// stack are all things a seller should never see.
+//
+// Mirrors the shape of the app's mapper ({ code, title, message }). web and expo
+// are separate npm packages with no shared code, so the duplication is
+// deliberate: the two must agree on behaviour, not share a module.
+
+export type ServerErrorCode =
+  | 'PROHIBITED_ITEM'
+  | 'PROHIBITED_CATEGORY'
+  | 'RATE_LIMITED'
+  | 'COMPLIANCE_BLOCKED'
+  | 'PLAN_LIMIT_REACHED'
+  | 'PLOTS_REQUIRE_PLAN'
+  | 'NOT_AUTHORIZED'
+  | 'OWNER_ONLY'
+  | 'LAST_OWNER'
+  | 'INVITE_EXPIRED'
+  | 'NO_PENDING_INVITE'
+  | 'INVALID_ROLE'
+  | 'INVALID_EMAIL'
+  | 'REASON_REQUIRED'
+  | 'UNKNOWN_STATE'
+  | 'UNKNOWN';
+
+export interface ServerError {
+  code: ServerErrorCode;
+  /** Ours. */
+  title: string;
+  /** The server's, prefix stripped. Never a code, an errcode, or a trigger name. */
+  message: string;
+}
+
+/** Where Gnome publishes what may and may not be listed. */
+export const RULES_HREF = '/trust';
+export const TERMS_PROHIBITED_HREF = '/terms#prohibited';
+/** The published contact address used across the site (privacy, terms). */
+export const SUPPORT_EMAIL = 'hello@gnomefarmersmarket.com';
+
+// Title per code, plus copy for the codes the server raises BARE (a bare token
+// must never reach a screen). Titles and bare-code copy are kept word-for-word
+// in step with the app's table so the same refusal reads the same in both.
+const TITLES: Record<ServerErrorCode, string> = {
+  PROHIBITED_ITEM: 'Not allowed on Gnome',
+  PROHIBITED_CATEGORY: 'Not allowed on Gnome',
+  RATE_LIMITED: 'Posting too quickly',
+  COMPLIANCE_BLOCKED: 'Verification required',
+  PLAN_LIMIT_REACHED: 'Listing limit reached',
+  PLOTS_REQUIRE_PLAN: 'Paid plan required',
+  NOT_AUTHORIZED: 'Not permitted',
+  OWNER_ONLY: 'Owners only',
+  LAST_OWNER: 'Last owner',
+  INVITE_EXPIRED: 'Invitation expired',
+  NO_PENDING_INVITE: 'No pending invitation',
+  INVALID_ROLE: 'Pick a role',
+  INVALID_EMAIL: 'Check the email',
+  REASON_REQUIRED: 'Add a reason',
+  UNKNOWN_STATE: 'Check the state',
+  UNKNOWN: 'That didn’t go through',
+};
+
+const FALLBACK_BODY: Record<ServerErrorCode, string> = {
+  PROHIBITED_ITEM:
+    'Gnome can’t carry this one. Editing the wording may help, or contact us if you think that’s wrong.',
+  PROHIBITED_CATEGORY: 'Gnome can’t carry items in that category.',
+  RATE_LIMITED:
+    'You’ve posted a lot of listings in the last hour. Try again in a little while.',
+  COMPLIANCE_BLOCKED:
+    'This category needs verification before publishing. Adding your permit, licence, or registration in the Credential Center is what clears it.',
+  PLAN_LIMIT_REACHED:
+    'You’re at your plan’s active listing limit. Upgrade or pause a listing, then try again.',
+  PLOTS_REQUIRE_PLAN:
+    'Offering plots is a Grower & Farm plan feature — upgrade and your garden can take reservations.',
+  NOT_AUTHORIZED: 'Your account can’t do that.',
+  OWNER_ONLY: 'Only an owner can do that.',
+  LAST_OWNER: 'An account must always keep at least one owner.',
+  INVITE_EXPIRED: 'That invitation has expired. Ask for a new one.',
+  NO_PENDING_INVITE: 'There’s no open invitation for this email address.',
+  INVALID_ROLE: 'That isn’t a role this account offers.',
+  INVALID_EMAIL: 'That email address doesn’t look right.',
+  REASON_REQUIRED: 'This action is recorded, so it needs a short reason.',
+  UNKNOWN_STATE: 'That isn’t a state Gnome recognises.',
+  UNKNOWN: 'Something went wrong on our end — try again.',
+};
+
+const CODES: Exclude<ServerErrorCode, 'UNKNOWN'>[] = [
+  'PROHIBITED_ITEM', 'PROHIBITED_CATEGORY', 'RATE_LIMITED', 'COMPLIANCE_BLOCKED',
+  'PLAN_LIMIT_REACHED', 'PLOTS_REQUIRE_PLAN', 'NOT_AUTHORIZED', 'OWNER_ONLY',
+  'LAST_OWNER', 'INVITE_EXPIRED', 'NO_PENDING_INVITE', 'INVALID_ROLE',
+  'INVALID_EMAIL', 'REASON_REQUIRED', 'UNKNOWN_STATE',
+];
+
+// Anything that reads like plumbing rather than a sentence written for a person.
+const MACHINE_PREFIX = /^[A-Z][A-Z0-9_]{3,}(:|$)/;
+const MACHINE_NOISE =
+  /(violates|constraint|permission denied|relation "|column "|null value in|duplicate key|syntax error|invalid input (value|syntax)|function .*does not exist|pg_|PGRST|SQLSTATE|JWT|at Object\.|\n\s*at )/i;
+
+function rawMessage(err: unknown): string {
+  if (!err) return '';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return '';
+}
+
+/**
+ * Turn anything a listing write can reject with into copy a seller can act on.
+ * `fallback` is what an unrecognizable internal error becomes.
+ */
+export function mapServerError(
+  err: unknown,
+  fallback = FALLBACK_BODY.UNKNOWN,
+): ServerError {
+  const raw = rawMessage(err).trim();
+
+  for (const code of CODES) {
+    const at = raw.indexOf(code);
+    // Must be the whole token: EVENT_RATE_LIMITED is not RATE_LIMITED.
+    if (at === -1 || (at > 0 && /[A-Z0-9_]/.test(raw[at - 1]))) continue;
+    let body = raw.slice(at + code.length).replace(/^\s*:\s*/, '').trim();
+    // COMPLIANCE_BLOCKED is raised as CODE:REASON:message — REASON is an internal
+    // enum (CREDENTIAL_REQUIRED, PLAN_REQUIRED…) and never belongs on screen.
+    if (code === 'COMPLIANCE_BLOCKED') body = body.replace(/^[A-Z][A-Z0-9_]{2,}:\s*/, '').trim();
+    return { code, title: TITLES[code], message: body || FALLBACK_BODY[code] };
+  }
+
+  const readable = raw && !MACHINE_PREFIX.test(raw) && !MACHINE_NOISE.test(raw);
+  return { code: 'UNKNOWN', title: TITLES.UNKNOWN, message: readable ? raw : fallback };
+}
+
+// --- Content screening, from the seller's side ----------------------------
+// A saved listing is not automatically a published one. When the screening
+// trigger holds a listing it still returns success — the row is written, but
+// screening_status becomes 'REVIEW' and an active listing is quietly downgraded
+// to 'paused'. Treating that as a normal post is the lie this exists to stop.
+
+export type ScreeningStatus = 'CLEAR' | 'REVIEW' | 'BLOCKED' | 'APPROVED';
+
+export interface ScreenedListing {
+  /** Listing status; 'paused' is the trigger's downgrade of a held listing. */
+  status?: string | null;
+  screening_status?: string | null;
+  /** Customer-facing explanation written by the server. Render verbatim. */
+  screening_reason?: string | null;
+}
+
+/**
+ * Columns to read back after a listing write. Kept here so every write path
+ * asks for the same thing — and deliberately WITHOUT screening_term and
+ * screening_category, which are internal keyword matches.
+ */
+export const SCREENING_COLS = 'status,screening_status,screening_reason';
+
+/** Shown only when the server's own explanation can't be read back. */
+export const REVIEW_FALLBACK_REASON =
+  'Your listing has been saved, but it isn’t public yet — someone at Gnome needs to look at it first.';
+
+export function isUnderReview(row: ScreenedListing | null | undefined): boolean {
+  if (!row) return false;
+  // 'paused' is the same hold seen from the status column alone, which matters
+  // because the screening columns are a separate grant a seller may not have.
+  return row.screening_status === 'REVIEW' || row.status === 'paused';
+}
+
+/** The server's explanation, verbatim, or neutral copy when it isn't readable. */
+export function reviewReason(row: ScreenedListing | null | undefined): string {
+  const reason = row?.screening_reason?.trim();
+  return reason || REVIEW_FALLBACK_REASON;
+}

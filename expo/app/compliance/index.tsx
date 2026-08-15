@@ -27,6 +27,7 @@ import {
   type SellerCredential,
 } from '@/lib/db';
 import { useTaxonomy } from '@/lib/taxonomy';
+import { isUnderReview } from '@/lib/screening';
 
 const STATUS_LABEL: Record<SellerCredential['status'], string> = {
   NOT_SUBMITTED: 'Not submitted',
@@ -85,7 +86,12 @@ export default function ComplianceCenterScreen() {
     );
   }
 
-  const pausedCount = (myListings.data ?? []).filter((l) => l.status === 'paused').length;
+  // Held-for-review listings are `paused` too, but nothing about them is the
+  // seller's to fix — counting them as "paused" would send someone renewing a
+  // credential they already hold. Two states, two cards.
+  const parked = (myListings.data ?? []).filter((l) => l.status === 'paused');
+  const underReview = parked.filter(isUnderReview);
+  const pausedCount = parked.length - underReview.length;
 
   const scopeNames = (cred: SellerCredential): string => {
     const index = taxonomy.data;
@@ -142,6 +148,30 @@ export default function ComplianceCenterScreen() {
         verification before listings can go live. Documents you upload are
         private — only you and Gnome’s review team can see them.
       </Text>
+
+      {underReview.length > 0 ? (
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewTitle}>
+            {underReview.length} listing{underReview.length === 1 ? '' : 's'} under review
+          </Text>
+          {/* The server's words, one line per distinct reason — the internal
+              keyword match behind them never leaves the database. */}
+          {Array.from(
+            new Set(
+              underReview
+                .map((l) => l.screening_reason?.trim())
+                .filter((r): r is string => !!r),
+            ),
+          ).map((reason) => (
+            <Text key={reason} style={styles.reviewBody}>{reason}</Text>
+          ))}
+          <Text style={styles.reviewBody}>
+            Someone at Gnome reads each one by hand and you’ll be notified either
+            way. Adding the documentation for that category below usually settles
+            it faster.
+          </Text>
+        </View>
+      ) : null}
 
       {pausedCount > 0 ? (
         <View style={styles.pausedCard}>
@@ -278,6 +308,17 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 14,
   },
+  reviewCard: {
+    backgroundColor: Colors.info + '11',
+    borderColor: Colors.info + '55',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    gap: 4,
+  },
+  reviewTitle: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
+  reviewBody: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 18 },
   pausedTitle: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
   pausedBody: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
   card: {

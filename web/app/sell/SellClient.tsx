@@ -7,8 +7,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { CATEGORIES } from '../../lib/categories';
+import { listingPath } from '../../lib/format';
+import {
+  isUnderReview,
+  mapServerError,
+  reviewReason,
+  SCREENING_COLS,
+  type ServerError,
+  type ScreenedListing,
+} from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
+import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
 
 type ListingType = 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
 
@@ -64,7 +74,13 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   const [drafting, setDrafting] = useState(false);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ id: string; slug: string | null; count: number } | null>(null);
+  // A refusal from the server (blocked content, rate limit, plan, compliance),
+  // already translated out of Postgres. The form stays on screen underneath it
+  // so the seller can edit the wording and try again.
+  const [refused, setRefused] = useState<ServerError | null>(null);
+  const [done, setDone] = useState<
+    { id: string; title: string; count: number; review: boolean; reason: string } | null
+  >(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Prefill town from the profile (set by the app or a previous web post).
@@ -125,6 +141,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   async function post() {
     if (!uid || posting) return;
     setError(null);
+    setRefused(null);
     if (!title.trim()) return setError('Give your listing a title.');
     if (listingType === 'sale' && (!price || Number(price) <= 0)) {
       return setError('Set a price for a sale listing.');
@@ -199,28 +216,51 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         ...(listingType === 'wanted' || listingType === 'plot'
           ? { allow_custom_request: allowCustomRequest } : {}),
       };
+      // Ask back only for columns a seller is granted SELECT on: PostgREST runs
+      // the returning clause inside the INSERT, so a column the role can't read
+      // fails the whole statement and the listing is never saved. (`slug` is
+      // revoked on the base table — listingPath() rebuilds the same URL from the
+      // title, exactly as My Market does.)
       const { data: rows, error } = await supabase
         .from('listings')
         .insert([row])
-        .select('id,slug');
-      const data = rows?.[0];
+        .select('id,status');
       if (error) {
-        if (error.message.includes('PLOTS_REQUIRE_PLAN')) {
-          throw new Error(
-            'Offering plots is a Grower & Farm plan feature — upgrade on the Pricing page and your garden can take reservations.',
-          );
-        }
-        throw new Error(
-          error.message.includes('plan')
-            ? 'You’ve hit your plan’s active-listing limit — complete or remove an old listing first.'
-            : error.message,
-        );
+        // Blocked content / rate limit / plan gates all arrive here as a thrown
+        // Postgres message. Translate, never echo.
+        setRefused(mapServerError(error, 'Posting failed — try again.'));
+        return;
       }
+      const data = rows?.[0] as { id: string; status: string } | undefined;
       if (!data) throw new Error('Posting failed — try again.');
-      logWeb('listing_published', { type: listingType, count: plotsAvailable ?? 1 });
-      setDone({ id: data.id, slug: data.slug, count: 1 });
+
+      // The row saved — but "saved" is not "public". Screening may have held it
+      // and quietly downgraded it to 'paused'. Read the screening columns in a
+      // SEPARATE statement so that a missing grant on them can never roll back a
+      // post that already succeeded; the status we just read back is the
+      // fallback signal when they can't be read at all.
+      let screened: ScreenedListing = { status: data.status };
+      const { data: srow } = await supabase
+        .from('listings')
+        .select(SCREENING_COLS)
+        .eq('id', data.id)
+        .maybeSingle();
+      if (srow) screened = srow as ScreenedListing;
+
+      const review = isUnderReview(screened);
+      logWeb(review ? 'listing_held_for_review' : 'listing_published', {
+        type: listingType,
+        count: plotsAvailable ?? 1,
+      });
+      setDone({
+        id: data.id,
+        title: title.trim(),
+        count: 1,
+        review,
+        reason: reviewReason(screened),
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Posting failed — try again.');
+      setRefused(mapServerError(e, 'Posting failed — try again.'));
     } finally {
       setPosting(false);
     }
@@ -238,7 +278,27 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   }
 
   if (done) {
-    const href = `/listing/${done.slug ? `${done.slug}-` : ''}${done.id}`;
+    const href = listingPath(done.id, done.title);
+    const reset = () => {
+      setDone(null); setTitle(''); setDescription(''); setQuantity('');
+      setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]); setPlotCount('1');
+      setReqOptions([]); setOptionDraft(''); setAllowCustomRequest(true);
+    };
+
+    // Saved, but held. Never the live message — the listing is not public, and
+    // there is nothing at its public URL to link to yet.
+    if (done.review) {
+      return (
+        <div className="authcard" style={{ maxWidth: 560 }}>
+          <HeldForReview reason={done.reason} />
+          <div className="row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+            <a className="btn btn-primary btn-sm" href="/my">See it in My Market</a>
+            <button className="btn btn-secondary btn-sm" onClick={reset}>Post another</button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="authcard">
         <h2>🎉 Your listing is live</h2>
@@ -246,11 +306,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         <div className="row" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a className="btn btn-primary btn-sm" href={href}>View your listing</a>
           <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
-          <button className="btn btn-secondary btn-sm" onClick={() => {
-            setDone(null); setTitle(''); setDescription(''); setQuantity('');
-            setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]); setPlotCount('1');
-            setReqOptions([]); setOptionDraft(''); setAllowCustomRequest(true);
-          }}>
+          <button className="btn btn-secondary btn-sm" onClick={reset}>
             Post another
           </button>
         </div>
@@ -469,6 +525,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       </div>
 
       {error && <p className="autherror">{error}</p>}
+      {refused && <ServerErrorNotice error={refused} />}
 
       <button className="btn btn-primary" disabled={posting} onClick={() => void post()}>
         {posting

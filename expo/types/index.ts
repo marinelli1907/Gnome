@@ -32,6 +32,15 @@ export type ClaimStatus =
 
 export type ListingKind = 'offer' | 'wanted';
 
+/**
+ * Content-screening verdict written by the listings trigger (migration 0095).
+ * 'REVIEW' is the one that matters to the app: the INSERT/UPDATE SUCCEEDS and
+ * the row is saved, but the trigger silently parks it as `paused` for a human
+ * to look at — so a success path that doesn't read this lies to the seller.
+ * 'BLOCKED'/'APPROVED' are written by moderators after the fact.
+ */
+export type ScreeningStatus = 'CLEAR' | 'REVIEW' | 'BLOCKED' | 'APPROVED';
+
 // M2: listing_type is the source of truth (kind is a derived/deprecated mirror).
 // M11: 'plot' = a garden plot offered for reservation (priced; reserved via a
 // claim of type 'plot_reservation'; payment settles in person like every sale).
@@ -172,6 +181,14 @@ export interface Listing {
   /** Wanted/Plot: allow the responder to choose "Something else" + free text (default true). */
   allow_custom_request?: boolean | null;
   status: ListingStatus;
+  screening_status?: ScreeningStatus;
+  /** Customer copy the server wrote for a REVIEW verdict. Render it verbatim —
+   *  it is the ONLY explanation the seller gets, and we don't paraphrase it. */
+  screening_reason?: string | null;
+  /** Compliance class the match fell under. Internal: routing/telemetry only,
+   *  never rendered — like `screening_term` (which the app never reads at all),
+   *  it describes how the matcher fired, not what the seller should do. */
+  screening_category?: string | null;
   delivery_available?: boolean; // future (V2 delivery), dormant in V1
   is_demo?: boolean | null; // sample content — always labeled "Preview" in the UI
   created_at: string;

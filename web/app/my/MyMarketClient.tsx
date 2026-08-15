@@ -8,8 +8,20 @@ import { useCallback, useEffect, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { categoryFor } from '../../lib/categories';
 import { formatPrice, listingPath, timeLeft, TYPE_LABEL } from '../../lib/format';
+import {
+  isUnderReview,
+  mapServerError,
+  reviewReason,
+  RULES_HREF,
+  SCREENING_COLS,
+  SUPPORT_EMAIL,
+  type ServerError,
+  type ScreenedListing,
+} from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import AppLink from '../components/AppLink';
 import { SignInCard, useSession } from '../components/auth';
+import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
 import PlotThread from '../components/PlotThread';
 import PaymentMethodsEditor from './PaymentMethodsEditor';
 import PickupAvailabilityEditor from './PickupAvailabilityEditor';
@@ -23,12 +35,14 @@ const BOOST_LINK = process.env.NEXT_PUBLIC_STRIPE_LINK_BOOST;
 const COLS =
   'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until,market_position,market_featured,inventory_count';
 
-interface MyListing {
+interface MyListing extends ScreenedListing {
   id: string;
   title: string;
   category: string;
   listing_type: 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
-  status: 'active' | 'claimed' | 'completed' | 'expired' | 'removed';
+  // 'paused' is content screening holding a listing: the row saved, but it is
+  // not public until a person clears it.
+  status: 'active' | 'claimed' | 'completed' | 'expired' | 'removed' | 'paused';
   price_cents: number | null;
   unit: string | null;
   photos: string[];
@@ -95,24 +109,38 @@ interface MyReservation {
   listing: { id: string; title: string; status: string } | null;
 }
 
+// A held listing is never "Live", "Unsold", or anything else — it is its own
+// state, and it has to be checked first or a paused row silently vanishes from
+// the dashboard (no group matched it before this existed).
+function isHeld(l: MyListing) { return isUnderReview(l); }
+function isLiveGroup(l: MyListing) {
+  return !isHeld(l)
+    && (l.status === 'active' || l.status === 'claimed')
+    && new Date(l.expires_at) > new Date();
+}
+
 const GROUPS: { key: string; title: string; blurb: string; match: (l: MyListing) => boolean }[] = [
   {
+    key: 'review', title: 'Under review',
+    blurb: 'Saved, but not public yet — a person at Gnome is taking a look.',
+    match: isHeld,
+  },
+  {
     key: 'live', title: 'Live', blurb: 'Visible to neighbors right now.',
-    match: (l) => (l.status === 'active' || l.status === 'claimed') && new Date(l.expires_at) > new Date(),
+    match: isLiveGroup,
   },
   {
     key: 'sold', title: 'Sold & shared', blurb: 'Completed — nice work.',
-    match: (l) => l.status === 'completed',
+    match: (l) => !isHeld(l) && l.status === 'completed',
   },
   {
     key: 'unsold', title: 'Unsold', blurb: 'Expired or removed. Relist anytime.',
     match: (l) =>
-      l.status === 'expired' || l.status === 'removed' ||
-      (l.status === 'active' && new Date(l.expires_at) <= new Date()),
+      !isHeld(l) && (
+        l.status === 'expired' || l.status === 'removed' ||
+        (l.status === 'active' && new Date(l.expires_at) <= new Date())),
   },
 ];
-
-function isLiveGroup(l: MyListing) { return GROUPS[0].match(l); }
 
 export default function MyMarketClient() {
   const { session, ready } = useSession();
@@ -154,18 +182,34 @@ export default function MyMarketClient() {
   const [credits, setCredits] = useState<number>(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A refusal from the server, translated out of Postgres.
+  const [refused, setRefused] = useState<ServerError | null>(null);
+  // A write that succeeded but came back held — e.g. a relist that screening
+  // caught. Never let that read as "it's live again".
+  const [heldNow, setHeldNow] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!uid) return;
     const supabase = supabaseBrowser();
-    const [{ data: m }, { data: ls, error: lerr }] = await Promise.all([
+    // The screening columns are a separate column grant from the rest of the
+    // row, so they are asked for in their own statement: if that grant is
+    // missing the dashboard still loads, and 'paused' alone still marks the
+    // listing Under review — only the server's written explanation is lost.
+    const [{ data: m }, { data: ls, error: lerr }, { data: screens }] = await Promise.all([
       supabase.from('markets').select('id,name,slug,plan,tagline,theme,description').eq('owner_id', uid).limit(1).maybeSingle(),
       supabase.from('listings').select(COLS).eq('owner_id', uid).order('created_at', { ascending: false }),
+      supabase.from('listings').select(`id,${SCREENING_COLS}`).eq('owner_id', uid),
     ]);
-    if (lerr) setError(lerr.message);
+    if (lerr) setRefused(mapServerError(lerr));
     setMarket((m as MyMarket) ?? null);
     const rows = (ls as unknown as MyListing[]) ?? [];
-    setListings(rows);
+
+    type ScreenFields = Pick<ScreenedListing, 'screening_status' | 'screening_reason'>;
+    const screenById = new Map<string, ScreenFields>();
+    for (const s of (screens as unknown as ({ id: string } & ScreenFields)[] | null) ?? []) {
+      screenById.set(s.id, { screening_status: s.screening_status, screening_reason: s.screening_reason });
+    }
+    setListings(rows.map((l) => ({ ...l, ...(screenById.get(l.id) ?? {}) })));
 
     // Incoming plot reservations on my plot listings (claims RLS shows the
     // owner every claim on their listings; the FK-qualified embed avoids the
@@ -221,16 +265,38 @@ export default function MyMarketClient() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Mark sold / remove / relist. Relisting re-publishes, which re-runs the
+  // server's gates: it can be refused outright, and it can come back saved but
+  // held. Both have to reach the seller — a relist that lands in review must
+  // never look like the listing is live again.
   async function setStatus(l: MyListing, status: string, extra: Record<string, unknown> = {}) {
     setBusyId(l.id);
     setError(null);
-    const { error } = await supabaseBrowser()
+    setRefused(null);
+    setHeldNow(null);
+    const sb = supabaseBrowser();
+    const { data: rows, error } = await sb
       .from('listings')
       .update({ status, ...extra })
-      .eq('id', l.id);
+      .eq('id', l.id)
+      .select('id,status');
     setBusyId(null);
-    if (error) setError(error.message);
-    else await load();
+    if (error) {
+      setRefused(mapServerError(error));
+      return;
+    }
+    if (status === 'active') {
+      const saved = (rows?.[0] as { id: string; status: string } | undefined) ?? { id: l.id, status };
+      let screened: ScreenedListing = { status: saved.status };
+      const { data: srow } = await sb
+        .from('listings')
+        .select(SCREENING_COLS)
+        .eq('id', l.id)
+        .maybeSingle();
+      if (srow) screened = srow as ScreenedListing;
+      if (isUnderReview(screened)) setHeldNow(reviewReason(screened));
+    }
+    await load();
   }
 
   // Redeem a plan boost credit → 7-day featured promotion (M7 trigger
@@ -239,6 +305,7 @@ export default function MyMarketClient() {
     if (!market) return;
     setBusyId(l.id);
     setError(null);
+    setRefused(null);
     const { error } = await supabaseBrowser().from('listing_promotions').insert({
       listing_id: l.id,
       market_id: market.id,
@@ -250,11 +317,9 @@ export default function MyMarketClient() {
     });
     setBusyId(null);
     if (error) {
-      setError(
-        error.message.includes('credit')
-          ? 'No boost credits left this month — upgrade for more, or grab a one-off boost.'
-          : error.message,
-      );
+      if (error.message.includes('credit')) {
+        setError('No boost credits left this month — upgrade for more, or grab a one-off boost.');
+      } else setRefused(mapServerError(error));
     } else await load();
   }
 
@@ -264,9 +329,10 @@ export default function MyMarketClient() {
   async function setReservation(r: Reservation, status: 'approved' | 'declined') {
     setBusyId(r.id);
     setError(null);
+    setRefused(null);
     const { error } = await supabaseBrowser().from('claims').update({ status }).eq('id', r.id);
     setBusyId(null);
-    if (error) setError(error.message);
+    if (error) setRefused(mapServerError(error));
     else await load();
   }
 
@@ -274,7 +340,7 @@ export default function MyMarketClient() {
     if (!market) return;
     const name = custForm.name.trim();
     if (name.length < 3 || name.length > 60) return setError('Market name needs 3–60 characters.');
-    setBusyId('customize'); setError(null);
+    setBusyId('customize'); setError(null); setRefused(null);
     const { error } = await supabaseBrowser().from('markets').update({
       name,
       tagline: custForm.tagline.trim().slice(0, 120) || null,
@@ -282,7 +348,7 @@ export default function MyMarketClient() {
       theme: custForm.theme,
     }).eq('id', market.id);
     setBusyId(null);
-    if (error) setError(error.message);
+    if (error) setRefused(mapServerError(error));
     else { logWeb('market_customized'); setCustomizeOpen(false); await load(); }
   }
 
@@ -290,7 +356,7 @@ export default function MyMarketClient() {
     if (!market) return;
     const gross = Math.round(Number(saleForm.amount) * 100);
     if (!gross || gross <= 0) return setError('Enter the sale amount.');
-    setBusyId('sale'); setError(null);
+    setBusyId('sale'); setError(null); setRefused(null);
     const { error } = await supabaseBrowser().rpc('record_sale', {
       p_market: market.id,
       p_listing: saleForm.listing || null,
@@ -306,9 +372,9 @@ export default function MyMarketClient() {
     });
     setBusyId(null);
     if (error) {
-      setError(error.message.includes('INSUFFICIENT_INVENTORY')
-        ? 'Not enough inventory on that listing — check the quantity.'
-        : error.message);
+      if (error.message.includes('INSUFFICIENT_INVENTORY')) {
+        setError('Not enough inventory on that listing — check the quantity.');
+      } else setRefused(mapServerError(error));
     } else {
       logWeb('sale_recorded', { method: saleForm.method });
       setSaleOpen(false);
@@ -320,23 +386,23 @@ export default function MyMarketClient() {
   async function voidTxn(t: Txn) {
     const reason = window.prompt('Void this recorded sale? It stays in your history as voided, and any inventory it used is restored. Reason:', 'entered by mistake');
     if (reason === null) return;
-    setBusyId(t.id); setError(null);
+    setBusyId(t.id); setError(null); setRefused(null);
     const { error } = await supabaseBrowser().rpc('void_sale', { p_txn: t.id, p_reason: reason });
     setBusyId(null);
-    if (error) setError(error.message); else await load();
+    if (error) setRefused(mapServerError(error)); else await load();
   }
 
   async function addExpense() {
     if (!market) return;
     const amt = Math.round(Number(expForm.amount) * 100);
     if (!amt || amt <= 0) return setError('Enter the expense amount.');
-    setBusyId('expense'); setError(null);
+    setBusyId('expense'); setError(null); setRefused(null);
     const { error } = await supabaseBrowser().from('seller_expenses').insert({
       market_id: market.id, category: expForm.category, amount_cents: amt,
       vendor: expForm.vendor.trim() || null, notes: expForm.notes.trim() || null,
     });
     setBusyId(null);
-    if (error) setError(error.message);
+    if (error) setRefused(mapServerError(error));
     else { logWeb('expense_recorded'); setExpenseOpen(false); setExpForm({ category: 'seeds', amount: '', vendor: '', notes: '' }); await load(); }
   }
 
@@ -414,7 +480,8 @@ export default function MyMarketClient() {
   if (listings === null) return <div className="empty"><p>Loading your Market…</p></div>;
 
   const activeCount = listings.filter(isLiveGroup).length;
-  const soldCount = listings.filter((l) => l.status === 'completed').length;
+  const heldCount = listings.filter(isHeld).length;
+  const soldCount = listings.filter((l) => !isHeld(l) && l.status === 'completed').length;
   const featured = listings.filter(
     (l) => l.is_featured && l.featured_until && new Date(l.featured_until) > new Date(),
   );
@@ -438,6 +505,7 @@ export default function MyMarketClient() {
           </div>
         </div>
         {error && <p className="autherror">{error}</p>}
+        {refused && <ServerErrorNotice error={refused} />}
         <div className="empty">
           <div className="emoji">🌱</div>
           <h2>Nothing posted yet</h2>
@@ -455,6 +523,7 @@ export default function MyMarketClient() {
           <h1>{market?.name ?? 'My Market'}</h1>
           <p className="mm-stats">
             <strong>{activeCount}</strong> live · <strong>{soldCount}</strong> sold &amp; shared
+            {heldCount > 0 && <> · <strong>{heldCount}</strong> under review 🔎</>}
             {featured.length > 0 && <> · <strong>{featured.length}</strong> boosted ✨</>}
             {market?.plan && <> · {market.plan} plan</>}
           </p>
@@ -494,6 +563,10 @@ export default function MyMarketClient() {
       </div>
 
       {error && <p className="autherror">{error}</p>}
+      {refused && <ServerErrorNotice error={refused} />}
+      {heldNow && (
+        <HeldForReview reason={heldNow} heading="Saved — but back under review" />
+      )}
 
       {/* ---------------- Seller business dashboard ---------------- */}
       {market && (() => {
@@ -892,8 +965,10 @@ export default function MyMarketClient() {
                 const boosted =
                   l.is_featured && l.featured_until && new Date(l.featured_until) > new Date();
                 const live = g.key === 'live';
+                const held = g.key === 'review';
                 return (
-                  <div key={l.id} className="mm-row">
+                  <div key={l.id}>
+                  <div className="mm-row">
                     <div className="mm-thumb">
                       {l.photos?.[0]
                         // eslint-disable-next-line @next/next/no-img-element
@@ -901,14 +976,17 @@ export default function MyMarketClient() {
                         : <span>{cat.emoji}</span>}
                     </div>
                     <div className="mm-info">
-                      <a className="mm-title" href={listingPath(l.id, l.title)}>{l.title}</a>
+                      {held
+                        ? <span className="mm-title">{l.title}</span>
+                        : <a className="mm-title" href={listingPath(l.id, l.title)}>{l.title}</a>}
                       <div className="mm-meta">
                         <span className={`tag type-${l.listing_type}`}>
                           {l.listing_type === 'sale' && l.price_cents
                             ? formatPrice(l.price_cents, l.unit)
                             : TYPE_LABEL[l.listing_type]}
                         </span>
-                        {boosted && <span className="tag featured">✨ Boosted</span>}
+                        {held && <span className="tag review">🔎 Under review</span>}
+                        {boosted && !held && <span className="tag featured">✨ Boosted</span>}
                         {l.status === 'claimed' && (
                           <span className="tag type-trade">
                             {l.listing_type === 'plot' ? 'Reserved — growing' : 'Claimed — pending pickup'}
@@ -954,7 +1032,27 @@ export default function MyMarketClient() {
                           Relist
                         </button>
                       )}
+                      {held && (
+                        <button className="mm-btn danger" disabled={busyId === l.id} onClick={() => void remove(l)}>
+                          Remove
+                        </button>
+                      )}
                     </div>
+                  </div>
+                  {held && (
+                    <div className="notice-inline">
+                      {/* The server's own words. screening_term / screening_category
+                          are internal keyword matches and never shown. */}
+                      <p style={{ margin: 0 }}>{reviewReason(l)}</p>
+                      <p style={{ margin: '6px 0 0' }}>
+                        A person at Gnome decides this one — you’ll be notified, and it
+                        stays saved in the meantime. Documentation can help:{' '}
+                        <AppLink kind="compliance" label="open the Credential Center" plain />.
+                        See <a href={RULES_HREF}>what Gnome allows</a>, or{' '}
+                        <a href={`mailto:${SUPPORT_EMAIL}`}>ask us about it</a>.
+                      </p>
+                    </div>
+                  )}
                   </div>
                 );
               })}

@@ -16,6 +16,7 @@ import {
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ImagePlus, Send, Sparkles } from 'lucide-react-native';
@@ -24,7 +25,10 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { fetchListingScreening } from '@/lib/db';
 import { pickImages, uploadListingImages } from '@/lib/images';
+import { parseServerError, type ServerError } from '@/lib/taxonomy';
+import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Draft = {
@@ -34,6 +38,17 @@ type Draft = {
   ai_confidence: number | null; ai_seller_questions: string[];
   compliance_attention: boolean; status: string;
 };
+/**
+ * What the server actually did with one draft. Publishing goes through a
+ * trigger that can save-and-hold or refuse outright, so "the RPC returned" is
+ * not the same as "it is live" — the caller has to be told which.
+ */
+type PublishResult =
+  | { outcome: 'published' }
+  | { outcome: 'review'; reason: string | null }
+  | { outcome: 'blocked'; error: ServerError }
+  | { outcome: 'ratelimited'; error: ServerError }
+  | { outcome: 'failed'; error: ServerError | null; message: string };
 
 const STARTERS = [
   'What should I sell right now, and why?',
@@ -45,6 +60,7 @@ const STARTERS = [
 export default function AiTab() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
+  const router = useRouter();
   const { userId } = useAuth();
   const scroller = useRef<ScrollView>(null);
 
@@ -55,6 +71,9 @@ export default function AiTab() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  // A bulk publish is a sequence of real writes; a second tap mid-run would
+  // publish the same drafts twice.
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const drafts = useQuery({
     queryKey: ['listing-drafts', userId],
@@ -144,21 +163,52 @@ export default function AiTab() {
     }
   }, [qc, userId]);
 
-  const publish = async (d: Draft) => {
+  // Publishes one draft and reports what came back. It deliberately shows
+  // nothing itself: one draft and twenty drafts owe the seller the same facts
+  // told very differently, and stacking an alert per draft is what we're fixing.
+  const publishDraft = async (d: Draft): Promise<PublishResult> => {
     try {
-      const { error: e } = await supabase.rpc('publish_listing_draft', { p_draft: d.id });
+      const { data, error: e } = await supabase.rpc('publish_listing_draft', { p_draft: d.id });
       if (e) throw e;
       await qc.invalidateQueries({ queryKey: ['listing-drafts', userId] });
       await qc.invalidateQueries({ queryKey: ['listings'] });
+      // The RPC hands back only the new listing's id, and the screening trigger
+      // can park that row as `paused` on the way in — so ask the row itself
+      // whether this draft actually reached buyers.
+      const saved = data ? await fetchListingScreening(String(data)) : null;
+      if (isUnderReview(saved)) {
+        return { outcome: 'review', reason: saved?.screening_reason ?? null };
+      }
+      return { outcome: 'published' };
     } catch (err: any) {
       const msg = String(err?.message ?? '');
-      Alert.alert(
-        /PLAN_LIMIT_REACHED/.test(msg) ? 'Listing limit reached' : 'Couldn’t publish',
-        /PLAN_LIMIT_REACHED/.test(msg)
-          ? 'You’re at your plan’s active listing limit. Upgrade or pause a listing, then publish this one.'
-          : 'Something went wrong publishing that draft.',
-      );
+      const parsed = parseServerError(msg);
+      if (parsed?.code === 'PROHIBITED_ITEM' || parsed?.code === 'PROHIBITED_CATEGORY') {
+        return { outcome: 'blocked', error: parsed };
+      }
+      if (parsed?.code === 'RATE_LIMITED') return { outcome: 'ratelimited', error: parsed };
+      return { outcome: 'failed', error: parsed, message: msg };
     }
+  };
+
+  const publish = async (d: Draft) => {
+    const r = await publishDraft(d);
+    // Published cleanly: the draft card disappearing is the confirmation.
+    if (r.outcome === 'published') return;
+    if (r.outcome === 'review') {
+      alertUnderReview({ screening_reason: r.reason });
+      return;
+    }
+    if (r.outcome === 'blocked' || r.outcome === 'ratelimited') {
+      alertScreeningError(r.error);
+      return;
+    }
+    Alert.alert(
+      r.error?.code === 'PLAN_LIMIT_REACHED' ? 'Listing limit reached' : 'Couldn’t publish',
+      r.error?.code === 'PLAN_LIMIT_REACHED'
+        ? 'You’re at your plan’s active listing limit. Upgrade or pause a listing, then publish this one.'
+        : safeErrorText(r.message, 'Something went wrong publishing that draft.'),
+    );
   };
 
   // Edits are written straight to the draft row (owner-only RLS), so the draft
@@ -190,12 +240,72 @@ export default function AiTab() {
     } catch { /* the list refetch will show reality */ }
   };
 
-  const publishAll = async () => {
-    const list = drafts.data ?? [];
-    for (const d of list) {
-      if (d.compliance_attention) continue; // regulated items always get a look
-      await publish(d);
+  // One pass, one summary. Each publish is a real listing against the seller's
+  // plan limit and can come back held or refused, so this asks first and then
+  // reports the whole batch once instead of an alert per draft.
+  const runPublishAll = async (list: Draft[]) => {
+    setBulkBusy(true);
+    let published = 0;
+    let held = 0;
+    let blocked = 0;
+    let failed = 0;
+    let stopped: ServerError | null = null;
+    // Verbatim server copy, kept apart by outcome and deduplicated: twelve held
+    // eggs share one sentence, and a held listing is not a refused one.
+    const heldReasons = new Set<string>();
+    const blockedReasons = new Set<string>();
+    try {
+      for (const d of list) {
+        const r = await publishDraft(d);
+        if (r.outcome === 'published') published += 1;
+        else if (r.outcome === 'review') {
+          held += 1;
+          if (r.reason?.trim()) heldReasons.add(r.reason.trim());
+        } else if (r.outcome === 'blocked') {
+          blocked += 1;
+          blockedReasons.add(r.error.message);
+        } else if (r.outcome === 'ratelimited') {
+          // Pace, not content: every remaining draft would hit the same wall,
+          // so stop and leave them pending rather than burn through them.
+          stopped = r.error;
+          break;
+        } else failed += 1;
+      }
+    } finally {
+      setBulkBusy(false);
     }
+
+    const lines = [`${published} published.`];
+    if (held) lines.push(`${held} held for review.`);
+    if (blocked) lines.push(`${blocked} not allowed on Gnome.`);
+    if (failed) lines.push(`${failed} didn’t go through — try ${failed === 1 ? 'it' : 'them'} again.`);
+    if (stopped) lines.push(`Stopped early. ${stopped.message}`);
+    const parts = [lines.join('\n')];
+    if (heldReasons.size) parts.push(`Held for review:\n${Array.from(heldReasons).slice(0, 2).join('\n\n')}`);
+    if (blockedReasons.size) parts.push(`Not allowed:\n${Array.from(blockedReasons).slice(0, 2).join('\n\n')}`);
+    Alert.alert(
+      `Published ${published} of ${list.length}`,
+      parts.join('\n\n'),
+      held
+        ? [
+            { text: 'Seller verification', onPress: () => router.push('/compliance') },
+            { text: 'OK', style: 'cancel' },
+          ]
+        : undefined,
+    );
+  };
+
+  const publishAll = () => {
+    const list = (drafts.data ?? []).filter((d) => !d.compliance_attention);
+    if (!list.length || bulkBusy) return;
+    Alert.alert(
+      `Publish ${list.length} drafts?`,
+      'They go live as ordinary listings right away. Anything flagged as commonly regulated is left out — publish those one at a time.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: `Publish ${list.length}`, onPress: () => void runPublishAll(list) },
+      ],
+    );
   };
 
   const pending = drafts.data ?? [];
@@ -268,8 +378,10 @@ export default function AiTab() {
                   {pending.length} draft{pending.length === 1 ? '' : 's'} to review
                 </Text>
                 {bulkable > 1 && (
-                  <Pressable onPress={publishAll} hitSlop={8}>
-                    <Text style={styles.publishAll}>Publish all {bulkable}</Text>
+                  <Pressable onPress={publishAll} hitSlop={8} disabled={bulkBusy}>
+                    <Text style={[styles.publishAll, bulkBusy && styles.publishAllBusy]}>
+                      {bulkBusy ? 'Publishing…' : `Publish all ${bulkable}`}
+                    </Text>
                   </Pressable>
                 )}
               </View>
@@ -463,6 +575,7 @@ const styles = StyleSheet.create({
   draftsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   draftsTitle: { fontFamily: fonts.semibold, fontSize: 15, color: Colors.text },
   publishAll: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.primary },
+  publishAllBusy: { color: Colors.textTertiary },
   card: {
     flexDirection: 'row', gap: 10, backgroundColor: Colors.surface, borderRadius: 14,
     borderWidth: 1, borderColor: Colors.borderLight, overflow: 'hidden',

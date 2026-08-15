@@ -63,7 +63,8 @@ export default function TermsPage() {
         to describe the real thing you actually have, honestly.
       </p>
 
-      <h2>4. What&rsquo;s not allowed</h2>
+      {/* Anchored: a refused listing links straight to this section. */}
+      <h2 id="prohibited">4. What&rsquo;s not allowed</h2>
       <p>
         Gnome has no tolerance for objectionable content or abusive behavior.
         Don&rsquo;t post or send anything harassing, threatening, hateful,

@@ -27,6 +27,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { breadcrumb, useTaxonomy } from '@/lib/taxonomy';
+import { alertUnderReview, isUnderReview, UNDER_REVIEW_LABEL } from '@/lib/screening';
 import { listingShareUrl } from '@/lib/links';
 
 const { width } = Dimensions.get('window');
@@ -303,7 +304,19 @@ export default function ListingDetailScreen() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-        {isOwner ? (
+        {isOwner && isUnderReview(listing) && listing.status === 'paused' ? (
+          // The seller lands here straight after posting, so this is the first
+          // place the held state has to be honest: it is saved, it is not public.
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Under review. Tap to see why."
+            onPress={() => alertUnderReview(listing)}
+          >
+            <Text style={styles.reviewNote}>
+              {UNDER_REVIEW_LABEL} — saved, but not visible to neighbors yet. Tap for details.
+            </Text>
+          </Pressable>
+        ) : isOwner ? (
           <Text style={styles.footerNote}>
             {isWanted
               ? "This is your Wanted post. We'll notify you when a neighbor offers a match."
@@ -389,4 +402,5 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.borderLight,
   },
   footerNote: { textAlign: 'center', color: Colors.textSecondary, fontSize: 14, paddingVertical: 8, fontFamily: fonts.regular },
+  reviewNote: { textAlign: 'center', color: Colors.info, fontSize: 14, paddingVertical: 8, fontFamily: fonts.semibold },
 });

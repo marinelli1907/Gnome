@@ -79,11 +79,22 @@ export const keys = {
 
 // Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
 // revoked from anon/authenticated for privacy; the app reads approx_* only).
+// The screening columns ride along on every listing read because a REVIEW
+// verdict is invisible otherwise: the row saves, the status silently becomes
+// 'paused', and only screening_status tells the seller's UI why.
+//
+// EXACTLY TWO of the five screening columns may appear here, because 0102 grants
+// exactly those two. `listings` uses per-COLUMN grants, and PostgREST asks for
+// every column in this list — so ONE ungranted column here returns 42501 for the
+// WHOLE query and takes Browse down. That is not hypothetical: it is what 0085
+// did with request_options and what 0092 had to repair.
+// screening_term (the matched keyword), screening_category and screened_at are
+// revoked on purpose. Do not add them.
 const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
   'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
   'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at,' +
-  'request_options,allow_custom_request';
+  'request_options,allow_custom_request,screening_status,screening_reason';
 // The ONLY profile shape other users ever receive. Reads go through the
 // `public_profiles` view (0087), which enumerates its columns server-side, so a
 // column added to `profiles` cannot leak here. Administrative flags (can_*,
@@ -478,11 +489,16 @@ export function useUpdateListingStatus(uid?: string) {
       kind?: ListingKind;
       title?: string;
     }): Promise<void> => {
-      const { error } = await supabase
+      // Return the id for the same reason useUpdateListing does: an update RLS
+      // rejects comes back as 0 rows and NO error, so without this a seller who
+      // can no longer touch the row is told their change was saved.
+      const { data, error } = await supabase
         .from('listings')
         .update({ status: input.status })
-        .eq('id', input.listingId);
+        .eq('id', input.listingId)
+        .select('id');
       if (error) throw error;
+      if (!data?.length) throw new Error('That listing could no longer be updated.');
       // Completing a pickup also completes its approved claim, which closes the
       // pickup chat to writes while keeping it readable as history.
       if (input.status === 'completed') {
@@ -522,10 +538,13 @@ export function useUpdateListing(uid?: string) {
       /** undefined = leave the node untouched (legacy listings keep their
        *  backfilled node); a value re-points it and re-runs the server gate. */
       taxonomyNodeId?: string | null;
-    }): Promise<void> => {
+    }): Promise<Listing> => {
       if (!uid) throw new Error('You must be signed in to edit a listing.');
-      // Return the id so an RLS-rejected update (0 rows, no error) is caught
-      // here instead of looking like a successful save.
+      // Return the saved row for two reasons: an RLS-rejected update (0 rows, no
+      // error) is caught here instead of looking like a successful save, and the
+      // edit re-runs the screening trigger, which can park a live listing —
+      // screening_status is the only place that shows up. Columns only, no
+      // joins: the edit screen needs the verdict, not the owner card.
       const { data, error } = await supabase
         .from('listings')
         .update({
@@ -538,9 +557,10 @@ export function useUpdateListing(uid?: string) {
             : {}),
         })
         .eq('id', input.listingId)
-        .select('id');
+        .select(LISTING_FIELDS);
       if (error) throw error;
       if (!data?.length) throw new Error('You can only edit your own listings.');
+      return shapeListing(data[0]);
     },
     onSuccess: (_d, input) => {
       qc.invalidateQueries({ queryKey: keys.myListings(uid) });
@@ -548,6 +568,28 @@ export function useUpdateListing(uid?: string) {
       qc.invalidateQueries({ queryKey: ['listings'] });
     },
   });
+}
+
+/**
+ * Read back what the screening trigger decided about a row the server just
+ * wrote. `publish_listing_draft` hands back only the new listing's id, so a
+ * publish that was quietly parked as `paused` is indistinguishable from one
+ * that went live until the row itself is asked.
+ *
+ * Best-effort by design: if the read fails we return null and the caller treats
+ * the publish as ordinary — we would rather under-report a review than invent
+ * one. RLS already limits this to rows the seller can see.
+ */
+export async function fetchListingScreening(
+  listingId: string,
+): Promise<Pick<Listing, 'id' | 'status' | 'screening_status' | 'screening_reason'> | null> {
+  const { data, error } = await supabase
+    .from('listings')
+    .select('id,status,screening_status,screening_reason')
+    .eq('id', listingId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as Pick<Listing, 'id' | 'status' | 'screening_status' | 'screening_reason'>;
 }
 
 // ---------------------------------------------------------------------------
