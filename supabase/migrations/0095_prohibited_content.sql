@@ -379,7 +379,11 @@ returns text language sql immutable set search_path = pg_catalog, public as $fn$
       and upper(btrim(p_state)) in (
         'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA',
         'ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK',
-        'OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC')
+        'OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+        -- Territories and military posts: ordinary marketplace accounts may
+        -- operate here. Seed Drop's contiguous-48 shipping limit is a separate
+        -- rule in seed_destination_supported() and does not apply to listings.
+        'PR','VI','GU','AS','MP','AA','AE','AP')
       then upper(btrim(p_state))
     else (select code from (values
       ('alabama','AL'),('alaska','AK'),('arizona','AZ'),('arkansas','AR'),('california','CA'),
@@ -392,7 +396,10 @@ returns text language sql immutable set search_path = pg_catalog, public as $fn$
       ('north dakota','ND'),('ohio','OH'),('oklahoma','OK'),('oregon','OR'),('pennsylvania','PA'),
       ('rhode island','RI'),('south carolina','SC'),('south dakota','SD'),('tennessee','TN'),
       ('texas','TX'),('utah','UT'),('vermont','VT'),('virginia','VA'),('washington','WA'),
-      ('west virginia','WV'),('wisconsin','WI'),('wyoming','WY'),('district of columbia','DC')
+      ('west virginia','WV'),('wisconsin','WI'),('wyoming','WY'),('district of columbia','DC'),
+      ('washington dc','DC'),('washington d.c.','DC'),('d.c.','DC'),
+      ('puerto rico','PR'),('virgin islands','VI'),('u.s. virgin islands','VI'),
+      ('guam','GU'),('american samoa','AS'),('northern mariana islands','MP')
     ) as m(name, code)
     where m.name = lower(regexp_replace(btrim(p_state), '\s+', ' ', 'g')))
   end;

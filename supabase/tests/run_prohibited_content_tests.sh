@@ -288,5 +288,29 @@ r=$(psql -h "$HOST" -d "$DB" -Atq -c "select set_config('test.owner','true',fals
 [ "$r" -ge 1 ] && say PASS "a clearance cannot be granted for an unknown state" || say FAIL "granted anyway"
 
 echo
+echo "L. nationwide coverage, and state only matters for regulated sales"
+for v in PR "Puerto Rico" GU VI AS MP DC "Washington DC" AK HI; do
+  n=$(psql -h "$HOST" -d "$DB" -Atq -c "select coalesce(public.normalize_state('$v'),'NULL')" | tail -1)
+  [ "$n" != "NULL" ] && say PASS "'$v' -> $n (nationwide, not contiguous-48)" || say FAIL "'$v' rejected"
+done
+n=$(psql -h "$HOST" -d "$DB" -Atq -c "select count(*)::text from (select public.normalize_state(c) s from unnest(array['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']) c) x where s is not null" | tail -1)
+[ "$n" = "51" ] && say PASS "all 50 states + DC resolve" || say FAIL "only $n of 51 resolve"
+
+# An ordinary unrestricted listing must publish with no state at all.
+r="$(try "Cherry tomatoes" "free to a good home" "" offer "" "")"
+[ "$r" = "CLEAR" ] && say PASS "an unrestricted listing with NO state still publishes" || say FAIL "-> $r"
+r="$(try "Hand-painted garden gnome" "made this winter" "" offer "" "Freedonia")"
+[ "$r" = "CLEAR" ] && say PASS "an unrestricted listing with a nonsense state still publishes" || say FAIL "-> $r"
+
+echo
+echo "M. the migration's enum assumption is pinned to production"
+n=$(psql -h "$HOST" -d "$DB" -Atq -c "select string_agg(e.enumlabel,',' order by e.enumsortorder) from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='credential_status'" | tail -1)
+[ "$n" = "NOT_SUBMITTED,PENDING,APPROVED,DENIED,EXPIRED,RENEWAL_REQUIRED,REVOKED" ] \
+  && say PASS "credential_status labels match what 0095 assumes" \
+  || say FAIL "ENUM DRIFT — 0095 assumes APPROVED among NOT_SUBMITTED,PENDING,APPROVED,DENIED,EXPIRED,RENEWAL_REQUIRED,REVOKED but production has: $n"
+n=$(psql -h "$HOST" -d "$DB" -Atq -c "select count(*)::text from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='credential_status' and e.enumlabel='APPROVED'" | tail -1)
+[ "$n" = "1" ] && say PASS "the exact label 0095 uses ('APPROVED') exists" || say FAIL "'APPROVED' not a valid label"
+
+echo
 [ $fail -eq 0 ] && echo "PROHIBITED CONTENT (0095): ALL TESTS PASSED" || echo "PROHIBITED CONTENT (0095): FAILURES PRESENT"
 exit $fail
