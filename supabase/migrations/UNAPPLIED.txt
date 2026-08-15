@@ -32,3 +32,7 @@
 0091_founding_members.sql  Founding Member program; 92/92 local, ships behind a flag, awaiting approval
 0091_down_founding_members.sql  rollback for 0091
 0092_down_launch_grant_repairs.sql  rollback for the applied 0092; restores the broken state on purpose
+
+# Admin console round 2026-08-13. Written and tested locally; NOT applied.
+0094_admin_team_and_ai_org.sql  admin invite/accept/remove + AI org chart; 17/17 local
+0095_prohibited_content.sql  prohibited-goods screening at publish; 28/28 local
