@@ -8,8 +8,10 @@ export const metadata: Metadata = {
   alternates: { canonical: '/pricing' },
 };
 
-const GROWER = process.env.NEXT_PUBLIC_STRIPE_LINK_GROWER;
-const FARM = process.env.NEXT_PUBLIC_STRIPE_LINK_FARM;
+// Product KEYS, not payment links. billing-checkout resolves the key to the
+// right test-or-live Stripe price and refuses entirely when the owner's
+// Payments Live switch is off. The old NEXT_PUBLIC_STRIPE_LINK_* vars pointed
+// straight at Stripe and bypassed that switch — see PricingCTA for the story.
 
 export const revalidate = 3600;
 
@@ -82,7 +84,7 @@ const TIERS = [
       'Full AI access — 25 drafts, 40 planner questions/day',
       'Featured eligibility on the homepage rail',
     ],
-    cta: { link: GROWER, label: 'Upgrade to Grower' },
+    cta: { productKey: 'GNOME_GROWER_MONTHLY', label: 'Upgrade to Grower' },
   },
   {
     name: 'Farm',
@@ -98,7 +100,7 @@ const TIERS = [
       'Featured eligibility + verified review',
       'Everything in Grower',
     ],
-    cta: { link: FARM, label: 'Upgrade to Farm' },
+    cta: { productKey: 'GNOME_FARM_MONTHLY', label: 'Upgrade to Farm' },
   },
 ];
 
@@ -145,7 +147,7 @@ export default async function PricingPage() {
               {t.features.map((f) => <li key={f}>{f}</li>)}
             </ul>
             {t.cta ? (
-              <PricingCTA link={t.cta.link} label={t.cta.label} primary={'highlight' in t && !!t.highlight} />
+              <PricingCTA productKey={t.cta.productKey} label={t.cta.label} primary={'highlight' in t && !!t.highlight} />
             ) : (
               <a className="btn btn-secondary" href="/sell">Start free</a>
             )}

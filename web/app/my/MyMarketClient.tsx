@@ -30,8 +30,6 @@ import PickupOrdersManager from './PickupOrdersManager';
 
 // Explicit column list — post-0010 the base table rejects select=* for
 // non-service roles (lat/lng/slug are revoked; everything else is granted).
-const BOOST_LINK = process.env.NEXT_PUBLIC_STRIPE_LINK_BOOST;
-
 const COLS =
   'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until,market_position,market_featured,inventory_count';
 
@@ -180,6 +178,20 @@ export default function MyMarketClient() {
   }, []);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
+
+  // Stripe sends the seller back here after checkout. Without this they land on
+  // their dashboard with no acknowledgement that anything happened — and a
+  // cancelled checkout looks identical to a failed one.
+  const [checkoutNote, setCheckoutNote] = useState<string | null>(null);
+  useEffect(() => {
+    const r = new URLSearchParams(window.location.search).get('checkout');
+    if (r === 'success') {
+      setCheckoutNote('Payment received — thank you. If your plan or boost is not showing yet, give it a few seconds and refresh.');
+    } else if (r === 'cancelled') {
+      setCheckoutNote('Checkout cancelled. Nothing was charged.');
+    }
+    if (r) window.history.replaceState({}, '', '/my');
+  }, []);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A refusal from the server, translated out of Postgres.
@@ -301,6 +313,38 @@ export default function MyMarketClient() {
 
   // Redeem a plan boost credit → 7-day featured promotion (M7 trigger
   // enforces the monthly allowance server-side; we just surface it).
+  // Buying a one-off promotion when the monthly credits are gone. This used to
+  // be an <a> to a raw Stripe Payment Link, which went straight to Stripe and so
+  // ignored the owner's Payments Live switch entirely. It goes through
+  // billing-checkout now, which checks that switch, picks the test-or-live price,
+  // and verifies server-side that this listing actually belongs to the caller.
+  async function buyBoost(l: MyListing) {
+    setBusyId(l.id);
+    setError(null);
+    setRefused(null);
+    try {
+      const { data, error } = await supabaseBrowser().functions.invoke('billing-checkout', {
+        body: { product_key: 'GNOME_LISTING_PROMOTION', listing_id: l.id },
+      });
+      const code = (data as { error?: string } | null)?.error;
+      if (code === 'NOT_YOUR_LISTING') { setError('That listing is not yours.'); return; }
+      if (code === 'PRICE_MISSING' || code === 'STRIPE_KEY_MISSING') {
+        setError('Promotions are not on sale yet. Nothing was charged.'); return;
+      }
+      if (code || error) { setError('Checkout is unavailable right now. Nothing was charged.'); return; }
+      const { url, mode } = (data ?? {}) as { url?: string; mode?: string };
+      if (!url) { setError('Checkout is unavailable right now. Nothing was charged.'); return; }
+      if (mode === 'test') {
+        setError('Opening Stripe in test mode — a real card will not be charged. Use 4242 4242 4242 4242.');
+      }
+      window.location.href = url;
+    } catch {
+      setError('Checkout is unavailable right now. Nothing was charged.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function boost(l: MyListing) {
     if (!market) return;
     setBusyId(l.id);
@@ -562,6 +606,7 @@ export default function MyMarketClient() {
         )}
       </div>
 
+      {checkoutNote && <p className="notice">{checkoutNote}</p>}
       {error && <p className="autherror">{error}</p>}
       {refused && <ServerErrorNotice error={refused} />}
       {heldNow && (
@@ -1014,10 +1059,14 @@ export default function MyMarketClient() {
                               ✨ Boost
                             </button>
                           )}
-                          {!boosted && l.status === 'active' && credits === 0 && BOOST_LINK && (
-                            <a className="mm-btn" href={`${BOOST_LINK}?client_reference_id=boost_${l.id}`}>
-                              ✨ Boost $4.99
-                            </a>
+                          {!boosted && l.status === 'active' && credits === 0 && (
+                            <button
+                              className="mm-btn"
+                              disabled={busyId === l.id}
+                              onClick={() => void buyBoost(l)}
+                            >
+                              ✨ Boost this listing
+                            </button>
                           )}
                           <button className="mm-btn" disabled={busyId === l.id} onClick={() => void markSold(l)}>
                             Mark sold

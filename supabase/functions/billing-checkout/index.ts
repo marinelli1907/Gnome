@@ -122,8 +122,11 @@ Deno.serve(async (req: Request) => {
       line_items: [lineItem],
       client_reference_id: clientRef,
       metadata: meta,                    // server-authored ownership binding
-      success_url: `${base}/account?checkout=success`,
-      cancel_url: `${base}/account?checkout=cancelled`,
+      // /account does not exist and never has — a customer who paid landed on a
+      // 404 the instant the charge went through. /my is the seller dashboard and
+      // the only page where the thing they just bought becomes visible.
+      success_url: `${base}/my?checkout=success`,
+      cancel_url: `${base}/my?checkout=cancelled`,
       allow_promotion_codes: false,
     });
 
