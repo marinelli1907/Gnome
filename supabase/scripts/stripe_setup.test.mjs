@@ -139,6 +139,11 @@ await withStub({}, async (port, stub) => {
   const { out } = await run(port, ['--apply']);
   const posts = (path) => stub.created.filter((c) => c.path === path).length;
   check('creates 2 products (credit + farm)', posts('/v1/products') === 2, `${posts('/v1/products')}`);
+  // Without a tax code every checkout fails at payment time under Managed Payments, which is on by
+  // default for this account — so this is a purchase-blocking omission, not metadata hygiene.
+  check('every product carries a tax code',
+    stub.created.filter((c) => c.path === '/v1/products').every((c) => c.params.tax_code === 'txcd_10000000'),
+    stub.created.filter((c) => c.path === '/v1/products').map((c) => c.params.tax_code).join(','));
   check('creates 3 prices', posts('/v1/prices') === 3, `${posts('/v1/prices')}`);
   check('creates 1 coupon', posts('/v1/coupons') === 1, `${posts('/v1/coupons')}`);
   check('creates 1 promotion code', posts('/v1/promotion_codes') === 1, `${posts('/v1/promotion_codes')}`);

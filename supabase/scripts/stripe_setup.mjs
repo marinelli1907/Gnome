@@ -132,6 +132,13 @@ async function ensurePrice({ lookupKey, productName, gnomeKey, unitAmount, recur
     product = await stripe('POST', '/products', {
       name: productName,
       description,
+      // REQUIRED, not cosmetic. Managed Payments is enabled by default on this account, and it
+      // refuses any checkout line item whose product has no tax code:
+      //   "the product tax code is missing ... required for Managed Payments"
+      // A product created without one looks fine in the dashboard and then fails at the moment a
+      // customer tries to pay. txcd_10000000 (General - Electronically Supplied Services) matches
+      // what the existing Gnome products already use.
+      tax_code: 'txcd_10000000',
       metadata: { gnome_key: gnomeKey, managed_by: 'stripe_setup.mjs' },
     });
     note('create', 'product', productName, product.id);
