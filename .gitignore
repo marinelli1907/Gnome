@@ -2,3 +2,10 @@ node_modules
 .env
 .expo
 supabase/tests/.build/
+
+# macOS Finder metadata — never belongs in the tree.
+.DS_Store
+
+# Local-only secrets for scripts. Never committed.
+.env.stripe.local
+.env.*.local
