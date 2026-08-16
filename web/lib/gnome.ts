@@ -2,6 +2,8 @@
 // (never base tables), so private fields are unreachable. Anon key over fetch;
 // Next's fetch cache handles ISR revalidation.
 
+import type { ListingType } from './format';
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
@@ -11,7 +13,7 @@ export interface WebListing {
   title: string;
   description: string | null;
   category: string;
-  listing_type: 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
+  listing_type: ListingType;
   status: string;
   price_cents: number | null;
   currency: string | null;

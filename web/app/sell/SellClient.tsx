@@ -7,7 +7,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { CATEGORIES } from '../../lib/categories';
-import { listingPath } from '../../lib/format';
+import {
+  DEFAULT_LISTING_TYPE,
+  listingPath,
+  LISTING_TYPE_ACTION_LABEL,
+  LISTING_TYPE_BLURB,
+  LISTING_TYPE_HINT,
+  LISTING_TYPES,
+  type ListingType,
+} from '../../lib/format';
 import {
   isUnderReview,
   mapServerError,
@@ -20,15 +28,13 @@ import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
 import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
 
-type ListingType = 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
-
-const TYPES: { id: ListingType; label: string; hint: string }[] = [
-  { id: 'free', label: 'Share free', hint: 'Give surplus to neighbors' },
-  { id: 'trade', label: 'Trade', hint: 'Swap for something you want' },
-  { id: 'sale', label: 'Sell', hint: 'Neighborly price, paid at pickup' },
-  { id: 'wanted', label: 'Wanted', hint: 'Ask neighbors for something' },
-  { id: 'plot', label: 'Offer a plot', hint: 'A neighbor reserves it; you grow their pick' },
-];
+// Order, labels and hints all come from the canonical config in lib/format —
+// this file must never carry its own list or its own idea of the default.
+const TYPES: { id: ListingType; label: string; hint: string }[] = LISTING_TYPES.map((id) => ({
+  id,
+  label: LISTING_TYPE_ACTION_LABEL[id],
+  hint: LISTING_TYPE_HINT[id],
+}));
 
 const MAX_PHOTOS = 5;
 
@@ -56,7 +62,12 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   const { session, ready } = useSession();
   const uid = session?.user?.id;
 
-  const [listingType, setListingType] = useState<ListingType>(initialType ?? 'free');
+  // First paint is already the right type: an explicit ?type= deep link wins,
+  // otherwise the canonical default (Sell). Deriving it here — not correcting it
+  // in an effect — is what keeps Share Free from flashing before Sell.
+  const [listingType, setListingType] = useState<ListingType>(
+    initialType ?? DEFAULT_LISTING_TYPE,
+  );
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('vegetables');
   const [description, setDescription] = useState('');
@@ -330,6 +341,10 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         ))}
       </div>
 
+      {/* Lead copy follows the selected type, so Sell opens with selling
+          language and Share Free keeps its own wording when it is picked. */}
+      <p className="authhint" style={{ margin: 0 }}>{LISTING_TYPE_BLURB[listingType]}</p>
+
       <div className="field">
         <label>Photos {listingType === 'wanted' ? '(optional)' : ''}</label>
         <div className="photorow">
@@ -365,9 +380,8 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
 
       {listingType === 'plot' && (
         <p className="authhint" style={{ margin: 0 }}>
-          🧑‍🌾 A neighbor reserves a plot and picks the crop; you grow it. Set the
-          plot size and how many identical plots you have — the listing stays up
-          until the last one is reserved. Plot offers are a{' '}
+          🧑‍🌾 Set the plot size and how many identical plots you have — the
+          listing stays up until the last one is reserved. Plot offers are a{' '}
           <a href="/pricing">Grower &amp; Farm plan</a> feature.
         </p>
       )}

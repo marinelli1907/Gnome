@@ -16,6 +16,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { resolveListingType } from '@/lib/listingType';
 
 interface Draft {
   candidate_name: string;
@@ -108,7 +109,10 @@ export default function AiListingScreen() {
     router.replace({
       pathname: '/(tabs)/post',
       params: {
-        type: draft.suggested_listing_type || 'sale',
+        // The AI's determination wins whenever it made one — a photo it read as
+        // a giveaway/trade/wanted/plot opens the editor on that type. Only a
+        // missing or unreadable suggestion falls back, and it falls back to Sell.
+        type: resolveListingType(draft.suggested_listing_type),
         aiTitle: draft.suggested_title,
         aiDescription: draft.suggested_description,
         aiPrice: draft.suggested_price_cents ? (draft.suggested_price_cents / 100).toFixed(2) : '',

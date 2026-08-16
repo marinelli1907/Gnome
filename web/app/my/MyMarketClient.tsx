@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { categoryFor } from '../../lib/categories';
-import { formatPrice, listingPath, timeLeft, TYPE_LABEL } from '../../lib/format';
+import { formatPrice, listingPath, timeLeft, TYPE_LABEL, type ListingType } from '../../lib/format';
 import {
   isUnderReview,
   mapServerError,
@@ -37,7 +37,7 @@ interface MyListing extends ScreenedListing {
   id: string;
   title: string;
   category: string;
-  listing_type: 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
+  listing_type: ListingType;
   // 'paused' is content screening holding a listing: the row saved, but it is
   // not public until a person clears it.
   status: 'active' | 'claimed' | 'completed' | 'expired' | 'removed' | 'paused';

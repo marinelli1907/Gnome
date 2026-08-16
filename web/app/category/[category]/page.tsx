@@ -33,7 +33,7 @@ export default async function CategoryPage({ params }: Params) {
       <div className="crumbs"><Link href="/">Home</Link> · {name}</div>
       <section className="hero" style={{ paddingBottom: 8 }}>
         <h1>{cat.id === category ? `${cat.emoji} ` : ''}{name} on Gnome</h1>
-        <p>Homegrown {name.toLowerCase()} from Markets near you — free, trade, or for sale.</p>
+        <p>Homegrown {name.toLowerCase()} from Markets near you — for sale, free to share, or trade.</p>
       </section>
       {listings.length > 0 ? (
         <div className="grid">{listings.map((l) => <ListingCard key={l.id} listing={l} />)}</div>
