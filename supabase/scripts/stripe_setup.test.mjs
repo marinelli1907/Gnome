@@ -148,8 +148,15 @@ await withStub({}, async (port, stub) => {
   check('coupon repeats for 3 months',
     coupon.duration === 'repeating' && coupon.duration_in_months === '3',
     `${coupon.duration}/${coupon.duration_in_months}`);
-  check('coupon is restricted to the Grower product',
-    coupon['applies_to[products][0]'] === GROWER, coupon['applies_to[products][0]']);
+  // Stripe silently drops applies_to on coupon create — verified against the real account, and
+  // against a raw curl, so it is not an encoding fault. Sending it anyway would be worse than
+  // useless: it reads as a restriction that does not exist. Plan eligibility is enforced
+  // server-side in billing-checkout instead, so the assertion is that we do NOT send it.
+  check('coupon does not claim a Stripe-level product restriction',
+    coupon['applies_to[products][0]'] === undefined, coupon['applies_to[products][0]']);
+  check('coupon records its intended plan as metadata',
+    coupon['metadata[gnome_applicable_plan]'] === 'grower',
+    coupon['metadata[gnome_applicable_plan]']);
 
   const amounts = stub.created.filter((c) => c.path === '/v1/prices').map((c) => c.params.unit_amount).sort();
   check('prices are 99, 99, 9900', JSON.stringify(amounts) === JSON.stringify(['99', '99', '9900']),
