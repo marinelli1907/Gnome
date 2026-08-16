@@ -36,3 +36,4 @@
 # Admin console round: 0094-0099 are now APPLIED (see APPLIED.tsv).
 
 0104_listing_allowance_model.sql  built+tested 2026-08-16, NOT yet applied to production — needs owner go-ahead and the Stripe $0.99 price
+0105_plan_aware_publish_rate_limit.sql  built+tested 2026-08-16, NOT yet applied — ships with 0104
