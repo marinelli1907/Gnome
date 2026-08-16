@@ -19,6 +19,8 @@ import {
   type ScreenedListing,
 } from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import AllowanceCard from '../components/AllowanceCard';
+import { planDisplay } from '../../lib/allowance';
 import AppLink from '../components/AppLink';
 import { SignInCard, useSession } from '../components/auth';
 import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
@@ -562,6 +564,7 @@ export default function MyMarketClient() {
 
   return (
     <div>
+      <AllowanceCard />
       <div className="mm-head">
         <div>
           <h1>{market?.name ?? 'My Market'}</h1>
@@ -569,7 +572,7 @@ export default function MyMarketClient() {
             <strong>{activeCount}</strong> live · <strong>{soldCount}</strong> sold &amp; shared
             {heldCount > 0 && <> · <strong>{heldCount}</strong> under review 🔎</>}
             {featured.length > 0 && <> · <strong>{featured.length}</strong> boosted ✨</>}
-            {market?.plan && <> · {market.plan} plan</>}
+            {market?.plan && <> · {planDisplay(market.plan)} plan</>}
           </p>
         </div>
         <div className="mm-actions">
@@ -582,7 +585,7 @@ export default function MyMarketClient() {
 
       <div className="plan-card">
         <div>
-          <strong className="plan-name">{(market?.plan ?? 'free') === 'free' ? 'Neighbor (free)' : `${market?.plan} plan`}</strong>
+          <strong className="plan-name">{`${planDisplay(market?.plan)} plan`}</strong>
           <span className="plan-usage">
             {ent
               ? ent.max_active_listings == null
