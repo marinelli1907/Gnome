@@ -200,14 +200,29 @@ async function main() {
   });
 
   console.log('\nFOUNDING3');
+  //
+  // PLAN RESTRICTION IS NOT ENFORCED BY STRIPE. Verified 2026-08-16 against this account: creating a
+  // coupon with applies_to[products][0] returns 200 with applies_to absent from the response, and it
+  // is still absent on retrieve. Not an encoding fault — a raw curl behaves identically. Stripe
+  // accepts the parameter and silently drops it.
+  //
+  // So FOUNDING3 is an UNRESTRICTED 100%-off coupon at the Stripe layer. Anything that lets a
+  // customer attach it to a checkout session attaches it to ANY plan, which would hand out Max
+  // ($29.99) and Farm ($99) free.
+  //
+  // Eligibility therefore has to be Gnome's job, enforced server-side in billing-checkout against
+  // promotion_campaigns.applicable_plan before the code is ever passed to Stripe. That is where the
+  // spec wanted it regardless — Gnome holds the campaign metadata for eligibility, reporting and
+  // abuse prevention; Stripe only supplies the discount mechanics.
+  //
+  // Do not "fix" this by re-adding applies_to. It will appear to work and will not.
   let coupon = await stripe('GET', '/coupons/FOUNDING3');
   if (coupon) {
     const okPct = coupon.percent_off === 100;
     const okDur = coupon.duration === 'repeating' && coupon.duration_in_months === 3;
-    const okAppl = (coupon.applies_to?.products ?? []).includes(GROWER_PRODUCT);
-    note(okPct && okDur && okAppl ? 'reuse' : 'WARN', 'coupon', 'FOUNDING3', coupon.id,
+    note(okPct && okDur ? 'reuse' : 'WARN', 'coupon', 'FOUNDING3', coupon.id,
       `${coupon.percent_off}% ${coupon.duration}/${coupon.duration_in_months}mo` +
-      (okAppl ? ' restricted-to-grower' : ' NOT RESTRICTED TO GROWER — coupons are immutable, delete and recreate'));
+      (okPct && okDur ? ' — plan eligibility enforced server-side, not here' : ' UNEXPECTED SHAPE'));
   } else if (APPLY) {
     coupon = await stripe('POST', '/coupons', {
       id: 'FOUNDING3',
@@ -215,12 +230,15 @@ async function main() {
       duration: 'repeating',
       duration_in_months: 3,
       name: 'Founding Seller — 3 months free',
-      applies_to: { products: [GROWER_PRODUCT] },
-      metadata: { gnome_campaign: 'FOUNDING3', managed_by: 'stripe_setup.mjs' },
+      metadata: {
+        gnome_campaign: 'FOUNDING3',
+        gnome_applicable_plan: 'grower',
+        managed_by: 'stripe_setup.mjs',
+      },
     });
-    note('create', 'coupon', 'FOUNDING3', coupon.id, '100% repeating/3mo restricted-to-grower');
+    note('create', 'coupon', 'FOUNDING3', coupon.id, '100% repeating/3mo');
   } else {
-    note('would', 'coupon', 'FOUNDING3', null, '100% off, repeating 3 months, restricted to Grower');
+    note('would', 'coupon', 'FOUNDING3', null, '100% off, repeating 3 months');
   }
 
   const promos = await stripe('GET', '/promotion_codes?code=FOUNDING3&limit=1');
@@ -251,6 +269,10 @@ async function main() {
     ['GNOME_SPONSOR_MONTHLY',  'subscription', 9900, 'Farm plan (internal enum sponsor), monthly',                  sponsor],
   ].filter(([, , , , r]) => r.priceId);
 
+  // Postgres string literals are single-quoted; a double-quoted value is an IDENTIFIER, so
+  // JSON.stringify here emitted SQL that failed on execution. Escape by doubling any apostrophe.
+  const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
+
   if (rows.length) {
     console.log(`\n-- Apply to Supabase to make these purchasable (${col} columns):`);
     for (const [key, kind, cents, desc, r] of rows) {
@@ -258,7 +280,7 @@ async function main() {
 `insert into public.billing_products
   (key, kind, description, unit_amount_cents, currency, active,
    stripe_product_id_${col}, stripe_price_id_${col})
-values ('${key}', '${kind}', ${JSON.stringify(desc)}, ${cents}, 'usd', true,
+values ('${key}', '${kind}', ${lit(desc)}, ${cents}, 'usd', true,
         '${r.productId}', '${r.priceId}')
 on conflict (key) do update set
   stripe_product_id_${col} = excluded.stripe_product_id_${col},
