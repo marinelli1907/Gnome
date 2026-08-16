@@ -11,6 +11,14 @@
 do $$ begin create role anon nologin;          exception when duplicate_object then null; end $$;
 do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
 do $$ begin create role service_role nologin;  exception when duplicate_object then null; end $$;
+-- Supabase-managed roles that appear as GRANT targets in a production pg_dump. Without them a
+-- baseline restore reports "role ... does not exist" for every such grant, which looks like a
+-- defect in the dump rather than a gap in this shim.
+do $$ begin create role postgres nologin superuser; exception when duplicate_object then null; end $$;
+do $$ begin create role supabase_admin nologin;     exception when duplicate_object then null; end $$;
+do $$ begin create role authenticator nologin;      exception when duplicate_object then null; end $$;
+do $$ begin create role supabase_auth_admin nologin;    exception when duplicate_object then null; end $$;
+do $$ begin create role supabase_storage_admin nologin; exception when duplicate_object then null; end $$;
 grant anon, authenticated, service_role to current_user;
 
 create schema if not exists auth;
@@ -26,7 +34,9 @@ create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
   email text,
   raw_user_meta_data jsonb default '{}'::jsonb,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  -- public_markets and 0015's trust layer both derive "verified email" from this.
+  email_confirmed_at timestamptz
 );
 
 -- PostgREST sets request.jwt.claims per request; these read it exactly as
