@@ -364,7 +364,7 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
 // into one — `allow.publishes_allowed ?? 0` would turn Farm's unlimited into a hard zero.
 const cap = (v: number | null | undefined) => (v === null || v === undefined ? 'Unlimited' : String(v));
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
-type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'moderation' | 'support' | 'stripe';
+type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'moderation' | 'support' | 'stripe' | 'promos';
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
   const [view, setView] = useState<MoreView>('menu');
   if (view === 'users') return <Users back={() => setView('menu')} can={can} />;
@@ -378,6 +378,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
   if (view === 'moderation') return <Moderation back={() => setView('menu')} can={can} isOwner={isOwner} />;
   if (view === 'support') return <Support back={() => setView('menu')} can={can} />;
   if (view === 'stripe') return <BillingHealth back={() => setView('menu')} isOwner={isOwner} />;
+  if (view === 'promos') return <PromoCampaigns back={() => setView('menu')} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       {can('subscriptions.view') && <MenuRow label="💰 Revenue & Promotions" onPress={() => setView('commercial')} />}
@@ -389,6 +390,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
       {can('support.view') && <MenuRow label="🚩 Support & Reports" onPress={() => setView('support')} />}
       {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
       {can('subscriptions.view') && <MenuRow label="💳 Billing Health" onPress={() => setView('stripe')} />}
+      {can('subscriptions.view') && <MenuRow label="🎟 Promo Codes" onPress={() => setView('promos')} />}
       {can('admins.view') && <MenuRow label="🛡 Admin Team" onPress={() => setView('team')} />}
       <MenuRow label="📜 Audit Log" onPress={() => setView('audit')} />
       <Card>
@@ -805,6 +807,289 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
         )}
         ListEmptyComponent={<Text style={s.cardSub}>Search for a user to inspect and manage entitlements.</Text>}
       />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------- Promo campaigns
+// Console over the 0106 campaign tables. Bookkeeping, NOT the boundary: promo_validate inside
+// billing-checkout decides whether a code is actually redeemable, so nothing rendered or saved
+// here can make FOUNDING3 valid for Max or Farm — the DB suite re-asserts that after every write
+// this screen can perform. Validation below is convenience; the server's answer is the answer.
+const PLAN_CHOICES: [string, string][] = [['free', 'Free'], ['grower', 'Pro'], ['farm', 'Max'], ['sponsor', 'Farm']];
+const promoPlanLabel = (p: string) => PLAN_CHOICES.find(([k]) => k === p)?.[1] ?? p;
+const promoDiscountLabel = (c: any) =>
+  `${c.discount_type === 'percent' ? `${Number(c.discount_percent)}% off` : `${money(c.discount_amount_cents ?? 0)} off`} · ${
+    c.duration === 'repeating' ? `${c.duration_in_months} months` : c.duration}`;
+
+// The upsert RPC replaces every column from the payload, so a toggle must resend the whole
+// campaign — a partial {id, active} payload nulls the discount and the server refuses it
+// (promo_discount_coherent). Pinned by the suite; do not "simplify" this into a patch.
+const campaignPayload = (c: any, over: Record<string, unknown> = {}) => ({
+  id: c.id, code: c.code, campaign_name: c.campaign_name, active: c.active,
+  applicable_plans: c.applicable_plans ?? [],
+  discount_type: c.discount_type, discount_percent: c.discount_percent,
+  discount_amount_cents: c.discount_amount_cents,
+  duration: c.duration, duration_in_months: c.duration_in_months,
+  starts_at: c.starts_at, expires_at: c.expires_at,
+  max_redemptions: c.max_redemptions, max_redemptions_per_user: c.max_redemptions_per_user,
+  new_customers_only: c.new_customers_only, internal_notes: c.internal_notes,
+  ...over,
+});
+
+function PromoCampaigns({ back }: { back: () => void }) {
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [rows, setRows] = useState<any[]>([]);
+  const [sel, setSel] = useState<any | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [reds, setReds] = useState<any[] | 'loading' | 'error'>('loading');
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc('admin_promo_campaigns');
+    // An RPC failure is NOT zero campaigns. FOUNDING3 exists; rendering an empty list on error
+    // would invite an admin to recreate it.
+    if (error) { setState('error'); return; }
+    setRows((data as any[]) ?? []); setState('ok');
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const open = async (c: any) => {
+    setSel(c); setEditing(false); setReds('loading');
+    const { data, error } = await supabase.rpc('admin_promo_redemptions', { p_campaign: c.id });
+    setReds(error ? 'error' : ((data as any[]) ?? []));
+  };
+
+  const toggleActive = (c: any) => {
+    Alert.alert(c.active ? 'Deactivate this code?' : 'Reactivate this code?',
+      c.active
+        ? 'New redemptions stop immediately. History is kept, and anyone already subscribed keeps their discount.'
+        : 'The code becomes redeemable again, subject to its dates and limits.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: c.active ? 'Deactivate' : 'Reactivate', style: c.active ? 'destructive' : 'default',
+        onPress: async () => {
+          const { error } = await supabase.rpc('admin_upsert_promo_campaign',
+            { p_payload: campaignPayload(c, { active: !c.active }) });
+          if (error) { Alert.alert('Server refused', error.message); return; }
+          await load(); setSel(null);
+        } },
+    ]);
+  };
+
+  if (sel && !editing) {
+    return (
+      <View style={{ flex: 1, padding: 16 }}>
+        <BackRow label="← Promo Codes" onPress={() => setSel(null)} />
+        <ScrollView>
+          <Card>
+            <Text style={s.cardTitle}>🎟 {sel.code}{sel.active ? '' : '  (inactive)'}</Text>
+            <Text style={s.cardSub}>{sel.campaign_name}</Text>
+            <Text style={s.cardSub}>
+              {(sel.applicable_plans?.length ?? 0) === 0 ? 'All plans'
+                : sel.applicable_plans.map((p: string) => promoPlanLabel(p)).join(', ')}
+              {(sel.applicable_plans?.length ?? 0) > 0 && ` · internal: ${sel.applicable_plans.join(', ')}`}
+            </Text>
+            <Text style={s.cardSub}>{promoDiscountLabel(sel)}</Text>
+            <Text style={s.cardSub}>
+              {sel.starts_at ? `From ${String(sel.starts_at).slice(0, 10)}` : 'No start date'}
+              {' · '}{sel.expires_at ? `until ${String(sel.expires_at).slice(0, 10)}` : 'no end date'}
+            </Text>
+            <Text style={s.cardSub}>
+              Limits: {sel.max_redemptions ?? 'no total cap'} total · {sel.max_redemptions_per_user} per user
+              {sel.new_customers_only ? ' · new customers only' : ''}
+            </Text>
+            <Text style={s.cardSub}>
+              Redeemed {sel.redeemed} · converted {sel.converted} · cancelled {sel.cancelled}
+              {sel.revenue_after_promo_cents > 0 ? ` · ${money(Number(sel.revenue_after_promo_cents))} post-promo` : ''}
+            </Text>
+            {!sel.configured && (
+              <Text style={[s.cardSub, { color: C.gold }]}>
+                ⚠️ No Stripe promotion code wired — checkout refuses this code (NOT_CONFIGURED) until
+                the setup script links one. Saving here cannot fix that, by design.
+              </Text>
+            )}
+            {sel.internal_notes ? <Text style={s.cardSub}>📝 {sel.internal_notes}</Text> : null}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <SmallBtn label="Edit" onPress={() => setEditing(true)} />
+              <SmallBtn label={sel.active ? 'Deactivate' : 'Reactivate'} danger={sel.active}
+                onPress={() => toggleActive(sel)} />
+            </View>
+          </Card>
+          <Text style={[s.cardTitle, { marginTop: 12 }]}>Redemptions</Text>
+          {reds === 'loading' && <Text style={s.cardSub}>Loading redemptions…</Text>}
+          {reds === 'error' && (
+            <Text style={[s.cardSub, { color: C.red }]}>Unable to load redemptions — this is not an empty history.</Text>
+          )}
+          {Array.isArray(reds) && reds.length === 0 && <Text style={s.cardSub}>No redemptions yet.</Text>}
+          {Array.isArray(reds) && reds.map((r) => (
+            <Card key={`${r.user_id}-${r.redeemed_at}`}>
+              <Text style={s.cardTitle}>{r.email ?? r.user_id}</Text>
+              <Text style={s.cardSub}>
+                {promoPlanLabel(String(r.plan ?? ''))} · {r.status} · {String(r.redeemed_at).slice(0, 10)}
+                {r.amount_discounted_cents != null ? ` · ${money(r.amount_discounted_cents)} discounted` : ''}
+                {r.converted_at ? ` · converted ${String(r.converted_at).slice(0, 10)}` : ''}
+                {r.cancelled_at ? ` · cancelled ${String(r.cancelled_at).slice(0, 10)}` : ''}
+              </Text>
+            </Card>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if ((sel && editing) || creating) {
+    return (
+      <PromoForm campaign={creating ? null : sel} back={() => { setEditing(false); setCreating(false); }}
+        onSaved={async () => { setEditing(false); setCreating(false); setSel(null); await load(); }} />
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, padding: 16 }}>
+      <BackRow label="← More" onPress={back} />
+      {state === 'loading' && <Text style={s.cardSub}>Loading campaigns…</Text>}
+      {state === 'error' && (
+        <Card>
+          <Text style={[s.cardSub, { color: C.red }]}>
+            Unable to load campaigns. The promo RPCs (0106/0109) may not be applied in this
+            environment. This is NOT an empty campaign list.
+          </Text>
+        </Card>
+      )}
+      {state === 'ok' && (
+        <ScrollView>
+          <SmallBtn label="+ New campaign" onPress={() => setCreating(true)} />
+          {rows.length === 0 && <Text style={[s.cardSub, { marginTop: 8 }]}>No campaigns yet.</Text>}
+          {rows.map((c) => (
+            <Pressable key={c.id} onPress={() => void open(c)}>
+              <Card>
+                <Text style={s.cardTitle}>
+                  🎟 {c.code}{c.active ? '' : '  (inactive)'}{c.configured ? '' : '  ⚠️'}
+                </Text>
+                <Text style={s.cardSub}>
+                  {(c.applicable_plans?.length ?? 0) === 0 ? 'All plans'
+                    : c.applicable_plans.map((p: string) => promoPlanLabel(p)).join(', ')}
+                  {' · '}{promoDiscountLabel(c)} · {c.redeemed} redeemed
+                </Text>
+              </Card>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+// Create and edit share one form; edit prefills. Everything is convenience validation — the same
+// rules exist as CHECK constraints, and a payload that slips past this form is refused there.
+function PromoForm({ campaign, back, onSaved }: { campaign: any | null; back: () => void; onSaved: () => Promise<void> }) {
+  const [code, setCode] = useState<string>(campaign?.code ?? '');
+  const [name, setName] = useState<string>(campaign?.campaign_name ?? '');
+  const [plans, setPlans] = useState<string[]>(campaign?.applicable_plans ?? []);
+  const [dtype, setDtype] = useState<'percent' | 'amount'>(campaign?.discount_type ?? 'percent');
+  const [dval, setDval] = useState<string>(
+    campaign ? String(campaign.discount_type === 'percent' ? campaign.discount_percent : (campaign.discount_amount_cents ?? '') ) : '');
+  const [duration, setDuration] = useState<'once' | 'repeating' | 'forever'>(campaign?.duration ?? 'repeating');
+  const [months, setMonths] = useState<string>(campaign?.duration_in_months ? String(campaign.duration_in_months) : '');
+  const [startsAt, setStartsAt] = useState<string>(campaign?.starts_at ? String(campaign.starts_at).slice(0, 10) : '');
+  const [expiresAt, setExpiresAt] = useState<string>(campaign?.expires_at ? String(campaign.expires_at).slice(0, 10) : '');
+  const [maxTotal, setMaxTotal] = useState<string>(campaign?.max_redemptions ? String(campaign.max_redemptions) : '');
+  const [maxPerUser, setMaxPerUser] = useState<string>(String(campaign?.max_redemptions_per_user ?? 1));
+  const [newOnly, setNewOnly] = useState<boolean>(campaign?.new_customers_only ?? false);
+  const [notes, setNotes] = useState<string>(campaign?.internal_notes ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const togglePlan = (p: string) =>
+    setPlans((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
+
+  const save = async () => {
+    const v = Number(dval);
+    if (!/^[A-Za-z0-9_-]{3,40}$/.test(code.trim())) { Alert.alert('Check the code', 'Letters, digits, - and _ only (3–40 chars). It will be stored upper-case.'); return; }
+    if (!name.trim()) { Alert.alert('Name the campaign', 'The internal campaign name is required.'); return; }
+    if (dtype === 'percent' && (!Number.isFinite(v) || v <= 0 || v > 100)) { Alert.alert('Check the discount', 'Percent must be between 1 and 100.'); return; }
+    if (dtype === 'amount' && (!Number.isInteger(v) || v <= 0)) { Alert.alert('Check the discount', 'Amount must be a positive number of cents.'); return; }
+    if (duration === 'repeating' && (!Number.isInteger(Number(months)) || Number(months) <= 0)) { Alert.alert('Check the duration', 'Repeating campaigns need a month count.'); return; }
+    if (startsAt && expiresAt && expiresAt <= startsAt) { Alert.alert('Check the dates', 'The end date must come after the start date.'); return; }
+    if (maxTotal && (!Number.isInteger(Number(maxTotal)) || Number(maxTotal) <= 0)) { Alert.alert('Check the limits', 'Total redemptions must be a positive whole number, or blank for no cap.'); return; }
+    if (!Number.isInteger(Number(maxPerUser)) || Number(maxPerUser) <= 0) { Alert.alert('Check the limits', 'Per-user limit must be at least 1.'); return; }
+
+    setSaving(true);
+    const { error } = await supabase.rpc('admin_upsert_promo_campaign', { p_payload: {
+      ...(campaign ? { id: campaign.id } : {}),
+      code: code.trim(), campaign_name: name.trim(),
+      active: campaign ? campaign.active : true,
+      applicable_plans: plans,
+      discount_type: dtype,
+      discount_percent: dtype === 'percent' ? v : null,
+      discount_amount_cents: dtype === 'amount' ? v : null,
+      duration,
+      duration_in_months: duration === 'repeating' ? Number(months) : null,
+      starts_at: startsAt || null, expires_at: expiresAt || null,
+      max_redemptions: maxTotal ? Number(maxTotal) : null,
+      max_redemptions_per_user: Number(maxPerUser),
+      new_customers_only: newOnly,
+      internal_notes: notes.trim() || null,
+    } });
+    setSaving(false);
+    // Never claim success the server did not grant: the row is only re-shown after a reload.
+    if (error) { Alert.alert('Server refused', error.message); return; }
+    await onSaved();
+  };
+
+  return (
+    <View style={{ flex: 1, padding: 16 }}>
+      <BackRow label={campaign ? `← ${campaign.code}` : '← Promo Codes'} onPress={back} />
+      <ScrollView>
+        <Card>
+          <Text style={s.cardTitle}>{campaign ? `Edit ${campaign.code}` : 'New campaign'}</Text>
+          <TextInput style={s.input} placeholder="Code (e.g. FOUNDING3)" value={code} onChangeText={setCode}
+            autoCapitalize="characters" autoCorrect={false} placeholderTextColor={C.muted} editable={!campaign} />
+          <TextInput style={s.input} placeholder="Internal campaign name" value={name} onChangeText={setName}
+            placeholderTextColor={C.muted} />
+          <Text style={s.cardSub}>Applies to (none selected = all plans):</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 6 }}>
+            {PLAN_CHOICES.map(([val, label]) => (
+              <SmallBtn key={val} label={`${plans.includes(val) ? '✓ ' : ''}${label} (${val})`}
+                onPress={() => togglePlan(val)} />
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, marginVertical: 6 }}>
+            <SmallBtn label={`${dtype === 'percent' ? '✓ ' : ''}Percent`} onPress={() => setDtype('percent')} />
+            <SmallBtn label={`${dtype === 'amount' ? '✓ ' : ''}Fixed cents`} onPress={() => setDtype('amount')} />
+          </View>
+          <TextInput style={s.input} placeholder={dtype === 'percent' ? 'Percent off (1–100)' : 'Cents off (e.g. 500)'}
+            value={dval} onChangeText={setDval} keyboardType="number-pad" placeholderTextColor={C.muted} />
+          <View style={{ flexDirection: 'row', gap: 8, marginVertical: 6 }}>
+            {(['once', 'repeating', 'forever'] as const).map((d) => (
+              <SmallBtn key={d} label={`${duration === d ? '✓ ' : ''}${d}`} onPress={() => setDuration(d)} />
+            ))}
+          </View>
+          {duration === 'repeating' && (
+            <TextInput style={s.input} placeholder="Months (e.g. 3)" value={months} onChangeText={setMonths}
+              keyboardType="number-pad" placeholderTextColor={C.muted} />
+          )}
+          <TextInput style={s.input} placeholder="Start date YYYY-MM-DD (optional)" value={startsAt}
+            onChangeText={setStartsAt} autoCapitalize="none" placeholderTextColor={C.muted} />
+          <TextInput style={s.input} placeholder="End date YYYY-MM-DD (optional)" value={expiresAt}
+            onChangeText={setExpiresAt} autoCapitalize="none" placeholderTextColor={C.muted} />
+          <TextInput style={s.input} placeholder="Total redemption cap (blank = none)" value={maxTotal}
+            onChangeText={setMaxTotal} keyboardType="number-pad" placeholderTextColor={C.muted} />
+          <TextInput style={s.input} placeholder="Per-user limit" value={maxPerUser}
+            onChangeText={setMaxPerUser} keyboardType="number-pad" placeholderTextColor={C.muted} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
+            <Switch value={newOnly} onValueChange={setNewOnly} trackColor={{ true: C.green }} />
+            <Text style={s.cardSub}>New customers only</Text>
+          </View>
+          <TextInput style={s.input} placeholder="Internal notes (optional)" value={notes} onChangeText={setNotes}
+            placeholderTextColor={C.muted} />
+          <SmallBtn label={saving ? 'Saving…' : campaign ? 'Save changes' : 'Create campaign'}
+            onPress={() => { if (!saving) void save(); }} disabled={saving} />
+          <Text style={[s.cardSub, { marginTop: 6 }]}>
+            Stripe objects are owned by the setup script, never created from here. A new campaign
+            shows ⚠️ until its Stripe promotion code is wired, and checkout refuses it until then.
+          </Text>
+        </Card>
+      </ScrollView>
     </View>
   );
 }
