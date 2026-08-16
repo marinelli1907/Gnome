@@ -153,7 +153,7 @@ export default function AiTab() {
       const msg = String(err?.message ?? '');
       setRetryCount(0);
       setError(
-        /PLAN_REQUIRED/.test(msg) ? 'Drafting listings from photos is a Grower & Farm feature.'
+        /PLAN_REQUIRED/.test(msg) ? 'Drafting listings from photos is included with paid plans.'
         : /NO_MARKET/.test(msg) ? 'Post once from the Post tab to create your Market first.'
         : /DAILY_LIMIT/.test(msg) ? 'You’ve hit today’s AI limit — it resets tomorrow.'
         : 'Couldn’t analyze those photos — try again in a moment.',
@@ -203,11 +203,14 @@ export default function AiTab() {
       alertScreeningError(r.error);
       return;
     }
+    const limitCode = r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED' || r.error?.code === 'PLAN_LIMIT_REACHED';
     Alert.alert(
-      r.error?.code === 'PLAN_LIMIT_REACHED' ? 'Listing limit reached' : 'Couldn’t publish',
-      r.error?.code === 'PLAN_LIMIT_REACHED'
-        ? 'You’re at your plan’s active listing limit. Upgrade or pause a listing, then publish this one.'
-        : safeErrorText(r.message, 'Something went wrong publishing that draft.'),
+      limitCode ? 'Included listings used up' : 'Couldn’t publish',
+      r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED'
+        ? 'You’ve used your included Sell listings for this period. Publish for $0.99, or upgrade for more each month — the draft stays saved.'
+        : r.error?.code === 'PLAN_LIMIT_REACHED'
+          ? 'You’re at your plan’s listing limit right now. Upgrade for more room — the draft stays saved.'
+          : safeErrorText(r.message, 'Something went wrong publishing that draft.'),
     );
   };
 

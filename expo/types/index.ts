@@ -85,8 +85,14 @@ export type MarketPlan = 'free' | 'grower' | 'farm' | 'sponsor';
 
 export interface PlanLimit {
   plan: MarketPlan;
-  /** null = unlimited (0062 remodel: farm & sponsor). */
+  /** RETIRED as an enforcement gate by 0104 — the column persists and legacy readers still select
+   *  it, but no seller-facing surface may present it as the listing model. */
   max_active_listings: number | null;
+  /** 0104 columns. Optional: absent until 0104 is applied to the connected environment, and the
+   *  UI must degrade explicitly on undefined rather than fall back to max_active_listings. */
+  display_name?: string | null;
+  monthly_publish_allowance?: number | null;
+  included_renewals_per_period?: number | null;
   max_photos: number;
   analytics: boolean;
   featured: boolean;

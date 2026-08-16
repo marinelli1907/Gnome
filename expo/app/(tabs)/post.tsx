@@ -344,14 +344,29 @@ export default function PostScreen() {
         // The server gate is the authority — render its verdict even if the
         // client somehow thought this was publishable.
         Alert.alert(err.title, err.message);
-      } else if (err?.code === 'PLAN_LIMIT_REACHED') {
-        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type } });
+      } else if (err?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
+        // 0104 model: a monthly publish allowance that expiry does not refund. The draft is
+        // preserved by construction — the insert was refused, and the form state is untouched.
+        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'allowance' } });
         Alert.alert(
-          'You’ve reached your Free limit',
-          'Free Markets can have up to 10 active listings. Upgrade to Grower for more.',
+          'Included listings used up',
+          'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more every month — your draft is saved right here either way.',
           [
             { text: 'Not now', style: 'cancel' },
-            { text: 'See upgrade', onPress: () => router.push('/upgrade') },
+            { text: 'See plans', onPress: () => router.push('/upgrade') },
+          ],
+        );
+      } else if (err?.code === 'PLAN_LIMIT_REACHED') {
+        // Transitional: production still runs the pre-0104 active-listing gate until the
+        // allowance migrations apply. The old copy here claimed "10 active listings", which was
+        // never true on any plan — the Free cap is 5 today.
+        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'active_cap' } });
+        Alert.alert(
+          'Listing limit reached',
+          'You’re at your plan’s listing limit right now. Upgrade for more room, or try again after a listing wraps up.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'See plans', onPress: () => router.push('/upgrade') },
           ],
         );
       } else {
@@ -444,7 +459,7 @@ export default function PostScreen() {
             <Text style={styles.aiBannerEmoji}>✨</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.aiBannerTitle}>Take a photo — Gnome drafts it</Text>
-              <Text style={styles.aiBannerSub}>AI Listing Assistant · Grower & Farm plans</Text>
+              <Text style={styles.aiBannerSub}>AI Listing Assistant · included with paid plans</Text>
             </View>
             <Text style={styles.aiBannerArrow}>→</Text>
           </Pressable>

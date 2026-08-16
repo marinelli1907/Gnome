@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { AllowanceRow } from '@/lib/allowance';
 import {
   useMutation,
   useQuery,
@@ -698,6 +699,23 @@ export function useMarketListings(marketId?: string) {
 }
 
 /** Plan limits (public read), keyed by plan. */
+/** The seller's own allowance row (0107). No market-id parameter exists to spoof — the RPC pins
+ *  to auth.uid() server-side. staleTime is short: this drives the My Market usage card, and a
+ *  seller who just published should see the numbers move. */
+export function useMyListingAllowance(uid?: string) {
+  return useQuery({
+    queryKey: ['my-listing-allowance', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    staleTime: 30 * 1000,
+    queryFn: async (): Promise<AllowanceRow | null> => {
+      const { data, error } = await supabase.rpc('my_listing_allowance');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as AllowanceRow | null;
+    },
+  });
+}
+
 export function usePlanLimits() {
   return useQuery({
     queryKey: keys.planLimits(),

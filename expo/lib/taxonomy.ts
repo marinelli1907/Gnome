@@ -242,6 +242,7 @@ export type ServerErrorCode =
   | 'RATE_LIMITED'
   | 'COMPLIANCE_BLOCKED'
   | 'PLAN_LIMIT_REACHED'
+  | 'PUBLISH_ALLOWANCE_EXHAUSTED'
   | 'NOT_AUTHORIZED'
   | 'LAST_OWNER'
   | 'INVITE_EXPIRED'
@@ -279,8 +280,16 @@ const SERVER_ERRORS: Record<ServerErrorCode, { title: string; fallback: string }
     fallback: 'This category needs verification before publishing. You can save a draft instead.',
   },
   PLAN_LIMIT_REACHED: {
+    // Transitional: raised by the pre-0104 active-listing gate, which is what production runs
+    // until the allowance migrations apply. Delete this entry once 0104 is live everywhere.
     title: 'Listing limit reached',
-    fallback: 'You’re at your plan’s active listing limit. Upgrade or pause a listing, then try again.',
+    fallback: 'You’re at your plan’s listing limit right now. Upgrade, or try again later.',
+  },
+  PUBLISH_ALLOWANCE_EXHAUSTED: {
+    // The 0104 model: a monthly PUBLISH allowance that expiry does not refund. The wording is
+    // per-period, never "active listings" — that model is retired.
+    title: 'Included listings used up',
+    fallback: 'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more each month.',
   },
   NOT_AUTHORIZED: {
     title: 'Not permitted',

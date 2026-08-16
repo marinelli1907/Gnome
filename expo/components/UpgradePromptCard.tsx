@@ -6,6 +6,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { logEvent, usePlanLimits } from '@/lib/db';
 import { formatPrice } from '@/lib/listingType';
+import { planDisplay } from '@/lib/allowance';
 import type { MarketPlan } from '@/types';
 
 const NEXT: Record<string, MarketPlan | null> = {
@@ -14,12 +15,7 @@ const NEXT: Record<string, MarketPlan | null> = {
   farm: 'sponsor',
   sponsor: null,
 };
-const PLAN_LABEL: Record<string, string> = {
-  free: 'Free',
-  grower: 'Grower',
-  farm: 'Farm',
-  sponsor: 'Sponsor',
-};
+// Customer-facing names only; the internal enum stays internal.
 
 export default function UpgradePromptCard({
   plan,
@@ -41,13 +37,16 @@ export default function UpgradePromptCard({
 
   const nextLimit = limits.data?.[next];
   const price = nextLimit ? formatPrice(nextLimit.price_cents) : '';
-  const maxListings = nextLimit?.max_active_listings;
+  // 0104 columns; undefined until the migrations apply, in which case the pitch omits numbers
+  // rather than falling back to the retired active-listing cap.
+  const monthly = nextLimit?.monthly_publish_allowance;
+  const renewals = nextLimit?.included_renewals_per_period;
 
   const onUpgrade = () => {
     void logEvent('upgrade_prompt_tapped', { userId: userId ?? null, metadata: { plan, next, reason } });
     Alert.alert(
       'Coming soon',
-      `${PLAN_LABEL[next]} plans arrive soon — we’ll let you know the moment you can upgrade.`,
+      `${planDisplay(next)} plans arrive soon — we’ll let you know the moment you can upgrade.`,
     );
   };
 
@@ -58,11 +57,16 @@ export default function UpgradePromptCard({
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.title}>
-          {reason === 'limit' ? 'You’ve hit your Free limit' : 'You’re close to your Free limit'}
+          {reason === 'limit'
+            ? 'You’ve used this period’s included listings'
+            : 'You’re close to this period’s included listings'}
         </Text>
         <Text style={styles.body}>
-          Upgrade to {PLAN_LABEL[next]}
-          {maxListings != null ? ` for ${maxListings} active listings` : ''}
+          Publish more for $0.99 each, or upgrade to {planDisplay(next)}
+          {monthly === null ? ' for unlimited Sell listings'
+            : monthly != null ? ` for ${monthly} new Sell listings a month` : ''}
+          {renewals === null ? ' and unlimited renewals'
+            : renewals != null && renewals > 0 ? ` and ${renewals} free renewals` : ''}
           {price ? ` — ${price}/mo` : ''}.
         </Text>
       </View>

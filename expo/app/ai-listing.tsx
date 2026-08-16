@@ -95,7 +95,7 @@ export default function AiListingScreen() {
     } catch (e: any) {
       setDraft(null);
       setFailed(
-        /PLAN_REQUIRED/.test(e?.message) ? 'The AI Listing Assistant is a Grower & Farm feature.'
+        /PLAN_REQUIRED/.test(e?.message) ? 'The AI Listing Assistant is included with paid plans.'
         : /DAILY_LIMIT/.test(e?.message) ? 'Daily AI limit reached — try again tomorrow.'
         : 'Gnome couldn’t confidently identify this item.',
       );
@@ -137,7 +137,7 @@ export default function AiListingScreen() {
         <EmptyState
           emoji="🔒"
           title="AI Listing Assistant"
-          subtitle="Snap a photo and Gnome drafts the listing for you — included with Grower and Farm plans."
+          subtitle="Snap a photo and Gnome drafts the listing for you — included with every paid plan."
         >
           <Button label="See plans" onPress={() => router.push('/upgrade')} style={{ marginTop: 14 }} />
         </EmptyState>
