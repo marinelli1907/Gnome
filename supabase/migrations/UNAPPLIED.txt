@@ -34,3 +34,5 @@
 0092_down_launch_grant_repairs.sql  rollback for the applied 0092; restores the broken state on purpose
 
 # Admin console round: 0094-0099 are now APPLIED (see APPLIED.tsv).
+
+0104_listing_allowance_model.sql  built+tested 2026-08-16, NOT yet applied to production — needs owner go-ahead and the Stripe $0.99 price
