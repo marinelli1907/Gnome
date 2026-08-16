@@ -359,6 +359,10 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   );
 }
 
+
+// NULL from the allowance RPC means unlimited. It is never a number, and must never be coerced
+// into one — `allow.publishes_allowed ?? 0` would turn Farm's unlimited into a hard zero.
+const cap = (v: number | null | undefined) => (v === null || v === undefined ? 'Unlimited' : String(v));
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
 type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'moderation' | 'support' | 'stripe';
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
@@ -587,6 +591,11 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   const [ent, setEnt] = useState<any | null>(null);
   const [mkt, setMkt] = useState<any | null>(null);
   const [promo, setPromo] = useState<any | null>(null);
+  // 'loading' | 'ok' | 'none' | 'error' are kept apart deliberately: a seller with no activity and
+  // an RPC that failed must never look the same. Rendering 0s on error would tell an admin the
+  // seller had published nothing, which is a worse answer than admitting we do not know.
+  const [allow, setAllow] = useState<any | null>(null);
+  const [allowState, setAllowState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
 
   const search = async () => {
     const { data } = await supabase.from('profiles')
@@ -595,15 +604,23 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
     setRows(data ?? []); setSel(null);
   };
   const open = async (p: any) => {
-    setSel(p); setEnt(null); setMkt(null); setPromo(null);
+    setSel(p); setEnt(null); setMkt(null); setPromo(null); setAllow(null); setAllowState('loading');
     const { data: m } = await supabase.from('markets').select('id,name,plan').eq('owner_id', p.id).limit(1).maybeSingle();
     setMkt(m);
     if (m) {
-      const [{ data: e }, { data: ps }] = await Promise.all([
+      const [{ data: e }, { data: ps }, au] = await Promise.all([
         supabase.rpc('admin_market_entitlements', { p_market: m.id }),
         supabase.rpc('market_promotion_status', { p_market: m.id }),
+        // admin_market_allowance, NOT market_allowance_usage: the latter is revoked from
+        // authenticated on purpose, because it takes a market id and would let any seller read any
+        // other seller. The wrapper re-checks is_admin() server-side.
+        supabase.rpc('admin_market_allowance', { p_market: m.id }),
       ]);
       setEnt(e); setPromo(ps as any);
+      const arow = Array.isArray(au.data) ? au.data[0] : au.data;
+      if (au.error) { setAllow(null); setAllowState('error'); }
+      else if (!arow) { setAllow(null); setAllowState('none'); }
+      else { setAllow(arow); setAllowState('ok'); }
     }
   };
   const grantPromoCredits = () => {
@@ -671,6 +688,61 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
               {ent?.effective?.grant_expires ? ` · until ${String(ent.effective.grant_expires).slice(0, 10)}` : ''}
             </Text>
             <Text style={s.cardSub}>Stripe/base plan: {ent?.base_plan ?? mkt.plan}</Text>
+            {/* Sell allowance. Every figure is a field from admin_market_allowance — nothing here
+                adds, subtracts or derives one. In particular `actual` is NOT used+paid: that holds
+                on metered plans and is wrong on Farm, where all activity is funded='unlimited', so
+                included used is legitimately 0 while actual is 47. */}
+            {allowState === 'loading' && <Text style={s.cardSub}>Sell allowance: loading…</Text>}
+            {allowState === 'error' && (
+              <Text style={[s.cardSub, { color: C.red }]}>
+                Sell allowance: unable to load. The allowance RPCs (0104–0108) may not be applied in
+                this environment. This is NOT zero usage.
+              </Text>
+            )}
+            {allowState === 'none' && (
+              <Text style={s.cardSub}>Sell allowance: no allowance record for this Market.</Text>
+            )}
+            {allowState === 'ok' && allow && (
+              <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8 }}>
+                <Text style={s.cardSub}>
+                  {/* Customer-facing name leads; the internal enum is secondary and admin-only. */}
+                  Plan: {allow.display_name}  ·  internal: {allow.plan}
+                </Text>
+                <Text style={s.cardSub}>
+                  Period: {String(allow.period_start).slice(0, 10)} → {String(allow.period_end).slice(0, 10)}
+                  {'  ·  resets '}{String(allow.period_end).slice(0, 10)}  ·  {allow.period_source}
+                </Text>
+
+                <Text style={[s.cardSub, { marginTop: 6, fontWeight: '600' }]}>LISTINGS (Sell only)</Text>
+                <Text style={s.cardSub}>
+                  Allowed: {cap(allow.publishes_allowed)}  ·  included used: {allow.publishes_used}
+                  {'  ·  actual published: '}{allow.publishes_actual}
+                </Text>
+                <Text style={s.cardSub}>
+                  Paid overages this period: {allow.paid_publishes_period}
+                  {'  ·  remaining: '}{cap(allow.publishes_remaining)}
+                </Text>
+
+                <Text style={[s.cardSub, { marginTop: 6, fontWeight: '600' }]}>RENEWALS</Text>
+                <Text style={s.cardSub}>
+                  Allowed: {cap(allow.renewals_allowed)}  ·  included used: {allow.renewals_used}
+                  {'  ·  actual renewed: '}{allow.renewals_actual}
+                </Text>
+                <Text style={s.cardSub}>
+                  Paid renewals this period: {allow.paid_renewals_period}
+                  {'  ·  remaining: '}{cap(allow.renewals_remaining)}
+                </Text>
+
+                <Text style={[s.cardSub, { marginTop: 6, fontWeight: '600' }]}>LIFETIME OVERAGE</Text>
+                <Text style={s.cardSub}>
+                  Paid publishes: {allow.paid_publishes_lifetime}  ·  paid renewals: {allow.paid_renewals_lifetime}
+                  {'  ·  spend: '}{money(allow.paid_cents_lifetime)}  (this period {money(allow.paid_cents_period)})
+                </Text>
+                <Text style={s.cardSub}>
+                  Sell listings: {allow.active_listings} active · {allow.expired_listings} expired
+                </Text>
+              </View>
+            )}
             {promo && (
               <Text style={s.cardSub}>
                 Promotions: {promo.included_remaining} of {promo.included_allowance} included left · resets {String(promo.resets_on).slice(5)}

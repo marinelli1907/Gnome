@@ -39,3 +39,4 @@
 0105_plan_aware_publish_rate_limit.sql  built+tested 2026-08-16, NOT yet applied — ships with 0104
 0106_promotions_and_paid_publishing.sql  built+tested 2026-08-16, NOT yet applied — ships with 0104/0105
 0107_allowance_actual_usage.sql  built+tested 2026-08-16, NOT yet applied — ships with 0104-0106
+0108_admin_allowance_usage.sql  built+tested 2026-08-16, NOT yet applied — ships with 0104-0107
