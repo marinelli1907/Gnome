@@ -598,6 +598,8 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   // seller had published nothing, which is a worse answer than admitting we do not know.
   const [allow, setAllow] = useState<any | null>(null);
   const [allowState, setAllowState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
+  const [wanted, setWanted] = useState<any | null>(null);
+  const [wantedState, setWantedState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
 
   const search = async () => {
     const { data } = await supabase.from('profiles')
@@ -607,6 +609,7 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   };
   const open = async (p: any) => {
     setSel(p); setEnt(null); setMkt(null); setPromo(null); setAllow(null); setAllowState('loading');
+    setWanted(null); setWantedState('loading');
     const { data: m } = await supabase.from('markets').select('id,name,plan').eq('owner_id', p.id).limit(1).maybeSingle();
     setMkt(m);
     if (m) {
@@ -623,6 +626,12 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
       if (au.error) { setAllow(null); setAllowState('error'); }
       else if (!arow) { setAllow(null); setAllowState('none'); }
       else { setAllow(arow); setAllowState('ok'); }
+      // Wanted usage hangs off the USER, not the market — introductions are claims by claimer_id.
+      const wq = await supabase.rpc('admin_wanted_usage', { p_user: p.id });
+      const wrow = Array.isArray(wq.data) ? wq.data[0] : wq.data;
+      if (wq.error) { setWanted(null); setWantedState('error'); }
+      else if (!wrow) { setWanted(null); setWantedState('none'); }
+      else { setWanted(wrow); setWantedState('ok'); }
     }
   };
   const grantPromoCredits = () => {
@@ -743,6 +752,27 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
                 <Text style={s.cardSub}>
                   Sell listings: {allow.active_listings} active · {allow.expired_listings} expired
                 </Text>
+              </View>
+            )}
+            {wantedState === 'error' && (
+              <Text style={[s.cardSub, { color: C.red }]}>
+                Wanted usage: unable to load (0110 may not be applied). This is NOT zero usage.
+              </Text>
+            )}
+            {wantedState === 'ok' && wanted && (
+              <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8 }}>
+                <Text style={[s.cardSub, { fontWeight: '600' }]}>WANTED INTRODUCTIONS (daily)</Text>
+                <Text style={s.cardSub}>
+                  Allowed: {cap(wanted.allowed)}  ·  used today: {wanted.used_today}
+                  {'  ·  remaining: '}{cap(wanted.remaining)}
+                  {wanted.hit_limit_today ? '  ·  AT LIMIT' : ''}
+                </Text>
+                <Text style={s.cardSub}>Lifetime introductions: {wanted.lifetime_intros}</Text>
+                {(wanted.recent ?? []).slice(0, 5).map((r: any, i: number) => (
+                  <Text key={`${r.created_at}-${i}`} style={s.cardSub}>
+                    · “{r.title}” — {String(r.created_at).slice(0, 10)} ({r.status})
+                  </Text>
+                ))}
               </View>
             )}
             {promo && (
