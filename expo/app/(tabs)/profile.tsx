@@ -93,6 +93,16 @@ export default function ProfileScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>
 
+      <Pressable
+        style={[styles.link, { marginTop: 10 }]}
+        onPress={() => router.push('/following')}
+        accessibilityRole="button"
+        accessibilityLabel="Markets you follow"
+      >
+        <Text style={styles.linkText}>Markets you follow</Text>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
       {isSeller ? (
         <>
           <Pressable

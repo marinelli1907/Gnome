@@ -76,6 +76,11 @@ export const keys = {
   marketReputation: (marketId?: string) => ['marketReputation', marketId] as const,
   myBlocks: (uid?: string) => ['myBlocks', uid] as const,
   myProfile: (uid?: string) => ['myProfile', uid] as const,
+  isFollowing: (marketId?: string, uid?: string) => ['isFollowing', marketId, uid] as const,
+  followedMarkets: (uid?: string) => ['followedMarkets', uid] as const,
+  followedListings: (uid?: string) => ['followedListings', uid] as const,
+  followedDrops: (uid?: string) => ['followedDrops', uid] as const,
+  myFollowerCount: (uid?: string) => ['myFollowerCount', uid] as const,
 };
 
 // Explicit column list — NEVER select('*') or lat/lng (SELECT on exact coords is
@@ -1645,6 +1650,177 @@ export function useUpdateProfile(uid?: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile'] });
       qc.invalidateQueries({ queryKey: ['myProfile'] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Market following (0005 market_follows; RLS keeps every row self-scoped).
+// The 0119 aggregate my_market_follower_count() is the ONLY seller-facing
+// read — a count, never identities.
+// ---------------------------------------------------------------------------
+
+/**
+ * A signed-out Follow tap remembers WHICH market the buyer wanted; after the
+ * sign-in modal dismisses back to the market screen, the button completes the
+ * follow — but only after re-resolving the market through canonical
+ * visibility (status='active'), never blindly from stale intent.
+ */
+let pendingFollowMarketId: string | null = null;
+export function setPendingFollow(marketId: string): void {
+  pendingFollowMarketId = marketId;
+}
+export function consumePendingFollow(marketId: string): boolean {
+  if (pendingFollowMarketId !== marketId) return false;
+  pendingFollowMarketId = null;
+  return true;
+}
+
+export function useIsFollowing(marketId?: string, uid?: string) {
+  return useQuery({
+    queryKey: keys.isFollowing(marketId, uid),
+    enabled: isSupabaseConfigured && !!marketId && !!uid,
+    queryFn: async (): Promise<boolean> => {
+      const { data, error } = await supabase
+        .from('market_follows')
+        .select('id')
+        .eq('market_id', marketId as string)
+        .eq('follower_id', uid as string)
+        .maybeSingle();
+      if (error) throw error;
+      return !!data;
+    },
+  });
+}
+
+export function useToggleFollow(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ marketId, follow }: { marketId: string; follow: boolean }) => {
+      if (!uid) throw new Error('Not signed in.');
+      if (follow) {
+        // Canonical visibility decides followability at WRITE time — a market
+        // that went non-public since the tap is simply not followable.
+        const { data: mkt } = await supabase
+          .from('markets').select('id').eq('id', marketId).eq('status', 'active').maybeSingle();
+        if (!mkt) throw new Error('MARKET_UNAVAILABLE');
+        // Idempotent: unique (market_id, follower_id) + ignoreDuplicates means
+        // a doubled tap or a race can never create a second relationship.
+        const { error } = await supabase
+          .from('market_follows')
+          .upsert({ market_id: marketId, follower_id: uid },
+                  { onConflict: 'market_id,follower_id', ignoreDuplicates: true });
+        if (error) throw error;
+        void logEvent('market_followed', { userId: uid, metadata: { market: marketId } });
+      } else {
+        const { error } = await supabase
+          .from('market_follows')
+          .delete()
+          .eq('market_id', marketId)
+          .eq('follower_id', uid);
+        if (error) throw error;
+        void logEvent('market_unfollowed', { userId: uid, metadata: { market: marketId } });
+      }
+      return follow;
+    },
+    onSuccess: (_v, { marketId }) => {
+      qc.invalidateQueries({ queryKey: keys.isFollowing(marketId, uid) });
+      qc.invalidateQueries({ queryKey: ['followedMarkets'] });
+      qc.invalidateQueries({ queryKey: ['followedListings'] });
+      qc.invalidateQueries({ queryKey: ['followedDrops'] });
+    },
+  });
+}
+
+export type FollowedMarket = PublicMarket & { active_count: number };
+
+export function useFollowedMarkets(uid?: string) {
+  return useQuery({
+    queryKey: keys.followedMarkets(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<FollowedMarket[]> => {
+      const { data: follows, error } = await supabase
+        .from('market_follows')
+        .select('market_id')
+        .eq('follower_id', uid as string)
+        .limit(50);
+      if (error) throw error;
+      const ids = (follows ?? []).map((f) => f.market_id as string);
+      if (!ids.length) return [];
+      // Canonical visibility: only active markets render — a followed market
+      // that got suspended simply disappears from the surface.
+      const { data: mkts, error: merr } = await supabase
+        .from('markets')
+        .select(PUBLIC_MARKET_FIELDS)
+        .in('id', ids)
+        .eq('status', 'active');
+      if (merr) throw merr;
+      const rows = (mkts ?? []) as unknown as PublicMarket[];
+      const counts = await Promise.all(rows.map(async (m) => {
+        const { count } = await supabase
+          .from('listings')
+          .select('id', { count: 'exact', head: true })
+          .eq('market_id', m.id)
+          .eq('status', 'active')
+          .gt('expires_at', new Date().toISOString());
+        return count ?? 0;
+      }));
+      return rows.map((m, i) => ({ ...m, active_count: counts[i] }));
+    },
+  });
+}
+
+export type FollowedDrop = {
+  id: string; market_id: string; title: string; description: string | null;
+  starts_at: string; ends_at: string; timezone: string; phase: string;
+  available_items: number;
+};
+
+export function useFollowedDrops(uid?: string, marketIds?: string[]) {
+  return useQuery({
+    queryKey: [...keys.followedDrops(uid), marketIds] as const,
+    enabled: isSupabaseConfigured && !!uid && !!marketIds && marketIds.length > 0,
+    queryFn: async (): Promise<FollowedDrop[]> => {
+      const { data, error } = await supabase
+        .from('public_market_drops')
+        .select('id,market_id,title,description,starts_at,ends_at,timezone,phase,available_items')
+        .in('market_id', marketIds as string[])
+        .order('starts_at', { ascending: true })
+        .limit(12);
+      if (error) throw error;
+      return (data ?? []) as FollowedDrop[];
+    },
+  });
+}
+
+export function useFollowedListings(uid?: string, marketIds?: string[]) {
+  return useQuery({
+    queryKey: [...keys.followedListings(uid), marketIds] as const,
+    enabled: isSupabaseConfigured && !!uid && !!marketIds && marketIds.length > 0,
+    queryFn: async (): Promise<Listing[]> => {
+      const { data, error } = await supabase
+        .from('listings')
+        .select(LISTING_SELECT)
+        .in('market_id', marketIds as string[])
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      return (data ?? []).map(shapeListing);
+    },
+  });
+}
+
+/** The seller's own follower count — the 0119 aggregate; an integer, nothing else. */
+export function useMyFollowerCount(uid?: string) {
+  return useQuery({
+    queryKey: keys.myFollowerCount(uid),
+    enabled: isSupabaseConfigured && !!uid,
+    queryFn: async (): Promise<number> => {
+      const { data, error } = await supabase.rpc('my_market_follower_count');
+      if (error) throw error;
+      return typeof data === 'number' ? data : 0;
     },
   });
 }

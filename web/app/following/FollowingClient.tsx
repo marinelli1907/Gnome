@@ -1,14 +1,39 @@
 'use client';
 
 // Following feed: the user's own follows (RLS own-rows) joined against the
-// PUBLIC views only — markets and listings render exactly what any visitor
-// could see; following just curates it.
-import { useEffect, useState } from 'react';
+// PUBLIC views only — markets, listings, AND Market Drops render exactly what
+// any visitor could see; following just curates it.
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import ListingCard from '../components/ListingCard';
 import MarketCard from '../components/MarketCard';
 import type { WebListing, WebMarket } from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
+
+type FollowedDrop = {
+  id: string; market_id: string; title: string; description: string | null;
+  starts_at: string; ends_at: string; timezone: string; phase: string;
+  available_items: number;
+};
+
+const dropWindow = (d: FollowedDrop) => {
+  const opts: Intl.DateTimeFormatOptions = { timeZone: d.timezone || 'America/New_York' };
+  const s = new Date(d.starts_at);
+  const e = new Date(d.ends_at);
+  const day = s.toLocaleDateString('en-US', { ...opts, weekday: 'short', month: 'short', day: 'numeric' });
+  const t = (x: Date) => x.toLocaleTimeString('en-US', { ...opts, hour: 'numeric', minute: '2-digit' });
+  return `${day}, ${t(s)} – ${t(e)}`;
+};
+
+// Best-effort, authenticated analytics — same posture as the Drops editor.
+function logFollowingEvent(eventType: string, meta?: Record<string, unknown>) {
+  try {
+    void supabaseBrowser().from('events')
+      .insert({ event_type: eventType, metadata: meta ?? {} })
+      .then(() => {}, () => {});
+  } catch { /* analytics never breaks the page */ }
+}
 
 const LISTING_COLS =
   'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo';
@@ -21,22 +46,29 @@ export default function FollowingClient() {
 
   const [markets, setMarkets] = useState<WebMarket[] | null>(null);
   const [listings, setListings] = useState<WebListing[]>([]);
+  const [drops, setDrops] = useState<FollowedDrop[]>([]);
+  const viewLogged = useRef(false);
 
   useEffect(() => {
     if (!uid) return;
+    if (!viewLogged.current) { viewLogged.current = true; logFollowingEvent('following_screen_viewed'); }
     void (async () => {
       const sb = supabaseBrowser();
       const { data: follows } = await sb
         .from('market_follows').select('market_id').eq('follower_id', uid);
       const ids = (follows ?? []).map((f) => f.market_id);
       if (ids.length === 0) { setMarkets([]); return; }
-      const [m, l] = await Promise.all([
+      const [m, l, d] = await Promise.all([
         sb.from('public_markets').select(MARKET_COLS).in('id', ids),
         sb.from('public_listings').select(LISTING_COLS).in('market_id', ids)
           .order('created_at', { ascending: false }).limit(48),
+        sb.from('public_market_drops')
+          .select('id,market_id,title,description,starts_at,ends_at,timezone,phase,available_items')
+          .in('market_id', ids).order('starts_at', { ascending: true }).limit(12),
       ]);
       setMarkets((m.data as unknown as WebMarket[]) ?? []);
       setListings((l.data as unknown as WebListing[]) ?? []);
+      setDrops((d.data as unknown as FollowedDrop[]) ?? []);
     })();
   }, [uid]);
 
@@ -62,14 +94,51 @@ export default function FollowingClient() {
     );
   }
 
+  const marketById = new Map(markets.map((m) => [m.id, m]));
+
   return (
     <div>
       <section className="section" style={{ paddingTop: 0 }}>
         <div className="section-head"><h2>Your Markets <span className="mm-count">{markets.length}</span></h2></div>
-        <div className="grid">
+        <div className="grid" onClickCapture={() => logFollowingEvent('followed_market_opened')}>
           {markets.map((m) => <MarketCard key={m.id} market={m} />)}
         </div>
       </section>
+
+      {drops.length > 0 && (
+        <section className="section">
+          <div className="section-head"><h2>🧺 Market Drops from them</h2></div>
+          <div className="preview-note" style={{ maxWidth: 720, display: 'grid', gap: 8 }}>
+            {drops.map((d) => {
+              const m = marketById.get(d.market_id);
+              return (
+                <div key={d.id}>
+                  <strong>
+                    🧺 {d.title}{' '}
+                    {d.phase === 'live' ? <span className="chip" style={{ fontSize: 11 }}>LIVE NOW</span>
+                      : d.phase === 'ended' ? <span className="chip" style={{ fontSize: 11 }}>Just ended</span>
+                      : <span className="chip" style={{ fontSize: 11 }}>Coming up</span>}
+                  </strong>
+                  <p style={{ margin: '4px 0 0' }}>
+                    {m ? `${m.name} · ` : ''}{dropWindow(d)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
+                    {m && d.phase !== 'ended' && (
+                      <>
+                        {' · '}
+                        <Link
+                          href={`/market/${m.slug}?drop=${d.id}`}
+                          onClick={() => logFollowingEvent('followed_drop_opened', { drop: d.id })}
+                        >
+                          See what’s in it
+                        </Link>
+                      </>
+                    )}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="section">
         <div className="section-head"><h2>Fresh from them</h2></div>

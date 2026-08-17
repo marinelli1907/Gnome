@@ -9,7 +9,10 @@ import Reputation from '@/components/Reputation';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useBlockUser, useMarket, useMarketListings, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import {
+  consumePendingFollow, logEvent, setPendingFollow, useBlockUser, useIsFollowing,
+  useMarket, useMarketListings, useMarketReputation, useReport, useToggleFollow,
+} from '@/lib/db';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { usePickupSettings } from '@/lib/marketops';
 import { useDeliverySettings } from '@/lib/delivery';
@@ -75,6 +78,41 @@ export default function MarketScreen() {
   const block = useBlockUser(userId ?? undefined);
   const pickupSettings = usePickupSettings(id);
   const deliverySettings = useDeliverySettings(id);
+
+  // Follow / Unfollow (0005 market_follows, self-scoped RLS). A signed-out tap
+  // remembers this market, opens sign-in, and completes on return — but the
+  // mutation re-resolves the market through canonical visibility first, so a
+  // stale intent can never follow a market that went non-public in between.
+  const isFollowing = useIsFollowing(id, userId ?? undefined);
+  const toggleFollow = useToggleFollow(userId ?? undefined);
+  useEffect(() => {
+    if (!userId || !id) return;
+    if (!consumePendingFollow(id)) return;
+    toggleFollow.mutate({ marketId: id, follow: true }, {
+      onError: (e: unknown) => {
+        const msg = e instanceof Error && e.message === 'MARKET_UNAVAILABLE'
+          ? 'This Market isn’t available right now.'
+          : 'Couldn’t follow just now — try the button again.';
+        Alert.alert('Follow', msg);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, id]);
+  const onToggleFollow = () => {
+    if (!userId) {
+      if (id) setPendingFollow(id);
+      router.push('/sign-in');
+      return;
+    }
+    toggleFollow.mutate({ marketId: id, follow: !isFollowing.data }, {
+      onError: (e: unknown) => {
+        const msg = e instanceof Error && e.message === 'MARKET_UNAVAILABLE'
+          ? 'This Market isn’t available right now.'
+          : 'That didn’t stick — try again.';
+        Alert.alert('Follow', msg);
+      },
+    });
+  };
 
   useEffect(() => {
     if (market.data) {
@@ -193,6 +231,15 @@ export default function MarketScreen() {
           label="Name your Market"
           variant="secondary"
           onPress={() => router.push(`/market/edit/${m.id}`)}
+          style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
+        />
+      )}
+      {!isOwner && (
+        <Button
+          label={isFollowing.data ? '✓ Following' : '+ Follow this Market'}
+          variant={isFollowing.data ? 'secondary' : 'primary'}
+          loading={toggleFollow.isPending || (!!userId && isFollowing.isLoading)}
+          onPress={onToggleFollow}
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
         />
       )}

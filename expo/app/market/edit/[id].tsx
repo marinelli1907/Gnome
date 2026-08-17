@@ -18,7 +18,7 @@ import { Avatar, Button, Field, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { useMarket, useUpdateMarket } from '@/lib/db';
+import { useMarket, useMyFollowerCount, useUpdateMarket } from '@/lib/db';
 import { pickImages, uploadListingImages } from '@/lib/images';
 
 export default function EditMarketScreen() {
@@ -28,6 +28,8 @@ export default function EditMarketScreen() {
   const { userId } = useAuth();
   const market = useMarket(id);
   const update = useUpdateMarket(userId ?? undefined);
+  // Aggregate only (0119): a count, never follower identities.
+  const followers = useMyFollowerCount(userId ?? undefined);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -92,6 +94,11 @@ export default function EditMarketScreen() {
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.intro}>This is your corner of the neighborhood — name it, add a photo, and tell folks what you grow.</Text>
+        {typeof followers.data === 'number' && followers.data > 0 && (
+          <Text style={styles.followers}>
+            🌻 {followers.data} {followers.data === 1 ? 'person follows' : 'people follow'} your Market
+          </Text>
+        )}
 
         <Pressable style={styles.avatarRow} onPress={pickAvatar}>
           <Avatar uri={avatarUrl} name={name} size={72} />
@@ -170,6 +177,7 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   container: { padding: 20, paddingTop: 16 },
   intro: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20, marginBottom: 18, fontFamily: fonts.regular },
+  followers: { fontSize: 14, color: Colors.text, fontFamily: fonts.semibold, marginTop: -8, marginBottom: 18 },
   avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 18 },
   avatarBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   avatarBtnText: { color: Colors.primary, fontSize: 14, fontFamily: fonts.bold },

@@ -183,6 +183,13 @@ export default function MyMarketClient() {
       if (row) setEnt(row);
     });
   }, []);
+  // Aggregate only (0119): the seller sees a follower COUNT, never identities.
+  const [followerCount, setFollowerCount] = useState<number | null>(null);
+  useEffect(() => {
+    void supabaseBrowser().rpc('my_market_follower_count').then(({ data }) => {
+      if (typeof data === 'number') setFollowerCount(data);
+    });
+  }, []);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [credits, setCredits] = useState<number>(0);
 
@@ -596,6 +603,9 @@ export default function MyMarketClient() {
             <strong>{activeCount}</strong> live · <strong>{soldCount}</strong> sold &amp; shared
             {heldCount > 0 && <> · <strong>{heldCount}</strong> under review 🔎</>}
             {featured.length > 0 && <> · <strong>{featured.length}</strong> boosted ✨</>}
+            {followerCount != null && followerCount > 0 && (
+              <> · <strong>{followerCount}</strong> follower{followerCount === 1 ? '' : 's'}</>
+            )}
             {market?.plan && <> · {planDisplay(market.plan)} plan</>}
           </p>
         </div>

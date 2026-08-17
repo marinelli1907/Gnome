@@ -186,6 +186,17 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
   );
 }
 
+// Where to land after a successful sign-in. Only same-site paths are honored —
+// a ?next= pointing anywhere else (protocol-relative included) falls back to
+// /my, so the login page can never be used as an open redirect.
+function safeNext(): string {
+  try {
+    const next = new URLSearchParams(window.location.search).get('next') ?? '';
+    if (next.startsWith('/') && !next.startsWith('//')) return next;
+  } catch { /* no window during SSR */ }
+  return '/my';
+}
+
 export default function LoginClient() {
   const { session, ready } = useSession();
   const [mode, setMode] = useState<Mode>('signin');
@@ -204,6 +215,18 @@ export default function LoginClient() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // An explicit ?next= means the visitor came here mid-task (e.g. tapping
+  // Follow on a Market). The moment any sign-in path lands a session — code,
+  // password, or signup — send them back to finish what they started. Without
+  // ?next= a signed-in visit still shows the account view as before.
+  useEffect(() => {
+    if (!session || mode === 'reset') return;
+    const next = new URLSearchParams(window.location.search).get('next');
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+      window.location.replace(next);
+    }
+  }, [session, mode]);
+
   async function signIn() {
     if (busy) return;
     setBusy(true); setError(null); setNotice(null);
@@ -218,7 +241,7 @@ export default function LoginClient() {
           : error.message,
       );
     } else {
-      window.location.href = '/my';
+      window.location.href = safeNext();
     }
   }
 
@@ -233,7 +256,7 @@ export default function LoginClient() {
     });
     setBusy(false);
     if (error) setError(error.message);
-    else if (data.session) window.location.href = '/my';
+    else if (data.session) window.location.href = safeNext();
     else setNotice('Check your email to confirm your account — then sign in here.');
   }
 
