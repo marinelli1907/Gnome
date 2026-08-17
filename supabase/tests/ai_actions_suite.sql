@@ -454,7 +454,115 @@ begin
 end $$;
 
 -- ============================================================================
--- 9. Audit hygiene: actions leave a trail; the trail holds no conversation
+-- 9. Payment identity: a $0.99 authorization funds EXACTLY what it bought
+--    (the CTO gate's Section-4 proof: existing architecture, demonstrated)
+-- ============================================================================
+do $$
+declare
+  f uuid := '00000000-0000-0000-0000-0000000000f5';
+  g uuid := '00000000-0000-0000-0000-0000000000f6';
+  mf uuid; mg uuid;
+  f1 uuid := 'ffff1111-0000-0000-0000-000000000001';
+  f2 uuid := 'ffff1111-0000-0000-0000-000000000002';
+  g1 uuid := 'ffff2222-0000-0000-0000-000000000001';
+  auth_id uuid; act uuid; r jsonb; n int;
+begin
+  insert into auth.users (id) values (f), (g) on conflict do nothing;
+  delete from public.markets where owner_id in (f, g);
+  insert into public.markets (owner_id, plan) values (f, 'free') returning id into mf;
+  insert into public.markets (owner_id, plan) values (g, 'free') returning id into mg;
+
+  -- Two published-then-expired Sell listings for F (2 of Free's 3 publishes), one for G.
+  insert into public.listings (id, owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at) values
+    (f1, f, mf, 'Paid Peaches', 'fruit', 500, 'lb', 'sale', 'active', now() + interval '7 days'),
+    (f2, f, mf, 'Paid Plums', 'fruit', 400, 'lb', 'sale', 'active', now() + interval '7 days'),
+    (g1, g, mg, 'Foreign Figs', 'fruit', 300, 'lb', 'sale', 'active', now() + interval '7 days');
+  update public.listings set status = 'expired', expires_at = now() - interval '1 day'
+   where id in (f1, f2, g1);
+
+  -- A PAID authorization bound to listing F1, intent renewal (what checkout+webhook produce).
+  insert into public.listing_publish_authorizations
+    (market_id, listing_id, intent, amount_cents, stripe_session_id, status, paid_at)
+  values (mf, f1, 'renewal', 99, 'cs_test_ai_actions_f1', 'paid', now())
+  returning id into auth_id;
+
+  perform pg_temp.impersonate(f);
+
+  -- (a) The auth bound to F1 cannot renew F2.
+  r := public.ai_propose_action('renew', array[f2], '{}', 'renew F2', null);
+  r := public.ai_confirm_action((r ->> 'action_id')::uuid);
+  perform pg_temp.ck('a listing-bound payment cannot renew a DIFFERENT listing',
+    (r ->> 'payment_needed')::int = 1
+    and exists (select 1 from public.listings where id = f2 and status = 'expired')
+    and exists (select 1 from public.listing_publish_authorizations where id = auth_id and status = 'paid'),
+    r::text);
+
+  -- (b) An EXPIRED pending action cannot spend it either; the payment survives untouched.
+  r := public.ai_propose_action('renew', array[f1], '{}', 'renew F1', null);
+  act := (r ->> 'action_id')::uuid;
+  update public.ai_pending_actions set expires_at = now() - interval '1 minute' where id = act;
+  perform pg_temp.ck_raises('an expired proposal cannot spend the payment',
+    format($q$ select public.ai_confirm_action('%s') $q$, act), 'ACTION_EXPIRED');
+  perform pg_temp.ck('the payment survives an expired proposal',
+    exists (select 1 from public.listing_publish_authorizations where id = auth_id and status = 'paid'));
+
+  -- (c) Resume-later: a FRESH proposal + confirm consumes the payment for exactly F1.
+  r := public.ai_propose_action('renew', array[f1], '{}', 'renew F1 again', null);
+  r := public.ai_confirm_action((r ->> 'action_id')::uuid);
+  perform pg_temp.ck('a fresh confirm consumes the payment and renews exactly the paid listing',
+    (r ->> 'ok_count')::int = 1
+    and exists (select 1 from public.listings where id = f1 and status = 'active')
+    and exists (select 1 from public.listing_publish_authorizations
+                 where id = auth_id and status = 'consumed' and listing_id = f1),
+    r::text);
+  select count(*) into n from public.listing_publish_events
+   where authorization_id = auth_id;
+  perform pg_temp.ck('the payment funded exactly ONE ledger event', n = 1, format('n=%s', n));
+
+  -- (d) The consumed payment funds nothing further.
+  r := public.ai_propose_action('renew', array[f2], '{}', 'renew F2 retry', null);
+  r := public.ai_confirm_action((r ->> 'action_id')::uuid);
+  perform pg_temp.ck('a consumed payment funds nothing else',
+    (r ->> 'payment_needed')::int = 1
+    and exists (select 1 from public.listings where id = f2 and status = 'expired'), r::text);
+
+  -- (e) Foreign market: F's money never renews G's listing.
+  perform pg_temp.impersonate(g);
+  insert into public.listing_publish_authorizations
+    (market_id, listing_id, intent, amount_cents, stripe_session_id, status, paid_at)
+  values (mf, null, 'renewal', 99, 'cs_test_ai_actions_floating', 'paid', now());
+  r := public.ai_propose_action('renew', array[g1], '{}', 'renew G1', null);
+  r := public.ai_confirm_action((r ->> 'action_id')::uuid);
+  perform pg_temp.ck('another market''s payment never funds this seller''s renewal',
+    (r ->> 'payment_needed')::int = 1
+    and exists (select 1 from public.listings where id = g1 and status = 'expired'), r::text);
+
+  -- (f) Intent binding: a renewal-intent payment cannot fund a PUBLISH.
+  perform pg_temp.impersonate(f);
+  insert into public.listings (owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at)
+  values (f, mf, 'Third Publish', 'fruit', 200, 'lb', 'sale', 'active', now() + interval '7 days');
+  -- Free's 3 publishes now spent (F1, F2, Third). The floating renewal-intent payment above
+  -- belongs to F's market — a 4th PUBLISH must still refuse.
+  begin
+    insert into public.listings (owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at)
+    values (f, mf, 'Fourth Publish', 'fruit', 200, 'lb', 'sale', 'active', now() + interval '7 days');
+    perform pg_temp.ck('a renewal payment cannot fund a publish', false, 'insert unexpectedly succeeded');
+  exception when others then
+    perform pg_temp.ck('a renewal payment cannot fund a publish',
+      position('PUBLISH_ALLOWANCE_EXHAUSTED' in sqlerrm) > 0, left(sqlerrm, 80));
+  end;
+
+  -- (g) Webhook replay: mark_authorization_paid flips a session exactly once.
+  perform set_config('request.jwt.claims', '{}', false);
+  perform public.create_publish_authorization(mf, 'renewal', f2, 'cs_test_ai_actions_replay', 99);
+  perform pg_temp.ck('webhook marks a pending authorization paid once',
+    public.mark_authorization_paid('cs_test_ai_actions_replay', 'pi_test_1') = true);
+  perform pg_temp.ck('a webhook replay is a no-op',
+    public.mark_authorization_paid('cs_test_ai_actions_replay', 'pi_test_1') = false);
+end $$;
+
+-- ============================================================================
+-- 10. Audit hygiene: actions leave a trail; the trail holds no conversation
 -- ============================================================================
 do $$
 declare n int; bad int;

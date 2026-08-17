@@ -16,14 +16,21 @@
 //
 // New payment surfaces should import this module.
 
-// Deny-by-default: only these four keys may reach Stripe. A renamed or newly
-// added seed key therefore opens nothing by accident — it has to be added here
-// on purpose. Reactivating a billing_products row does not open a path either.
+// Deny-by-default: only these keys may reach Stripe. A renamed or newly added
+// seed key therefore opens nothing by accident — it has to be added here on
+// purpose. Reactivating a billing_products row does not open a path either.
+// Must match billing-checkout's inline CHECKOUT_ALLOWED_KEYS exactly; the
+// seed-drop-off suite fails when they drift (as it did when the 0106 commercial
+// model added the Farm tier and the two $0.99 overage keys to the inline copy
+// without this module following).
 export const CHECKOUT_ALLOWED_KEYS: readonly string[] = [
   'GNOME_GROWER_MONTHLY',
   'GNOME_FARM_MONTHLY',
+  'GNOME_SPONSOR_MONTHLY',
   'GNOME_LISTING_PROMOTION',
   'GNOME_PICKUP_LOCATION_ADDON',
+  'GNOME_LISTING_PUBLISH',
+  'GNOME_LISTING_RENEWAL',
 ];
 
 // Named so a refusal can say WHY rather than "unknown product". Covers every

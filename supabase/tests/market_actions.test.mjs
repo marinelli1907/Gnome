@@ -215,6 +215,41 @@ function fakeDeps({ intent, listings = [], rpcLog = [], rpcResults = {} }) {
     JSON.stringify(resp));
 }
 
+// Renew proposal carries server money facts (never model output).
+{
+  const { deps } = fakeDeps({
+    intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
+    listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
+    rpcResults: { my_overage_required: { data: [{ required: true, reason: 'ALLOWANCE_EXHAUSTED' }], error: null } },
+  });
+  const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
+  ck('payment-required proposal carries the structured money block',
+    resp?.proposal?.payment?.required === true && resp.proposal.payment.price_cents === 99,
+    JSON.stringify(resp?.proposal));
+}
+{
+  const { deps } = fakeDeps({
+    intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
+    listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
+    rpcResults: { my_overage_required: { data: [{ required: false, reason: 'ALREADY_AUTHORIZED' }], error: null } },
+  });
+  const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
+  ck('already-paid renewal says so and promises no new charge',
+    resp?.proposal?.payment?.already_paid === true && /no new charge/.test(resp.reply),
+    JSON.stringify({ p: resp?.proposal?.payment, reply: resp?.reply }));
+}
+
+// Injection cannot smuggle a payment amount: unknown intent keys never surface.
+{
+  const r2 = m.parseIntent(JSON.stringify({
+    action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '',
+    scope: 'one', days: null, amount_cents: 1, stripe_price_id: 'price_evil',
+  }));
+  ck('smuggled amount/price-id keys are dropped by the intent gate',
+    r2.ok && !('amount_cents' in r2.value) && !('stripe_price_id' in r2.value),
+    JSON.stringify(r2));
+}
+
 // Confirm-result phrasing (client-side sentences after ai_confirm_action).
 ck('confirm result: all renewed', m.confirmResultReply({ action: 'renew', ok_count: 3, payment_needed: 0 }) === '3 listings renewed.');
 ck('confirm result: payment split is honest',

@@ -247,6 +247,11 @@ export type ActionProposal = {
   count: number;
   expires_in_minutes: number;
   items: { id: string; title: string }[];
+  /** Renewal-class money facts, from my_overage_required — never from the model.
+   * required=true: confirming will come back payment_needed; the client should offer the
+   * existing $0.99 checkout. already_paid=true: a paid authorization is waiting; confirming
+   * consumes it with NO new charge. Absent for non-renewal actions. */
+  payment?: { required: boolean; already_paid: boolean; price_cents: number };
 };
 
 export type Disambiguation = {
@@ -469,15 +474,24 @@ export async function handleMarketAction(
 
   if (intent.action === 'restock' || intent.action === 'renew') {
     // Reactivation is a lifecycle event: canonical renew_listing behind a server-bound
-    // confirmation. Precheck the allowance so the summary states included vs $0.99 honestly.
+    // confirmation. Precheck the allowance so the summary states included vs $0.99 vs
+    // already-paid honestly — the model never touches these facts.
     let payNote = '';
+    let payment: ActionProposal['payment'];
     const { data: ov } = await deps.rpc('my_overage_required', { p_listing: listing.id });
-    const ovRow = (Array.isArray(ov) ? ov[0] : ov) as { required?: boolean } | null;
-    if (ovRow?.required === true) payNote = ' Your included renewals are used up, so this one is $0.99.';
-    else if (ovRow?.required === false) payNote = ' This uses one of your plan\'s included renewals.';
+    const ovRow = (Array.isArray(ov) ? ov[0] : ov) as { required?: boolean; reason?: string } | null;
+    if (ovRow?.required === true) {
+      payNote = ' Your included renewals are used up, so this one is $0.99.';
+      payment = { required: true, already_paid: false, price_cents: 99 };
+    } else if (ovRow?.reason === 'ALREADY_AUTHORIZED') {
+      payNote = ' You already paid for this one — confirming uses that payment, with no new charge.';
+      payment = { required: false, already_paid: true, price_cents: 0 };
+    } else if (ovRow?.required === false) {
+      payNote = ' This uses one of your plan\'s included renewals.';
+    }
     const verb = intent.action === 'restock' ? 'Restock' : 'Renew';
     return proposeAction(deps, intent.action === 'restock' ? 'restock' : 'renew', [listing],
-      `${verb} “${listing.title}”.${payNote}`);
+      `${verb} “${listing.title}”.${payNote}`, undefined, payment);
   }
 
   return null;
@@ -489,6 +503,7 @@ async function proposeAction(
   items: { id: string; title: string }[],
   summary: string,
   payload?: Record<string, unknown>,
+  payment?: ActionProposal['payment'],
 ): Promise<MarketActionResponse> {
   const { data, error } = await deps.rpc('ai_propose_action', {
     p_action: action,
@@ -509,6 +524,7 @@ async function proposeAction(
       count: items.length,
       expires_in_minutes: d.expires_in_minutes,
       items: items.map((i) => ({ id: i.id, title: i.title })),
+      ...(payment ? { payment } : {}),
     },
   };
 }
@@ -529,7 +545,7 @@ export function confirmResultReply(result: {
   const parts: string[] = [];
   if (ok > 0) parts.push(`${ok} listing${ok === 1 ? '' : 's'} ${did}.`);
   if (pay > 0) {
-    parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal (your plan's included renewals are used up) — handle that from the listing page.`);
+    parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`);
   }
   if (!parts.length) parts.push('Nothing needed doing — everything was already in that state.');
   return parts.join(' ');

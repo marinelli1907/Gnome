@@ -24,6 +24,7 @@ interface Turn {
    * with their own JWT; the model cannot make that call. */
   proposal?: Proposal | null;
   options?: DisambigOption[] | null;
+  paymentAsk?: PaymentAsk | null;
   sourceText?: string;
 }
 
@@ -34,8 +35,20 @@ interface Proposal {
   count: number;
   expires_in_minutes: number;
   items: { id: string; title: string }[];
+  payment?: { required: boolean; already_paid: boolean; price_cents: number };
 }
 interface DisambigOption { id: string; title: string; detail: string }
+
+/** A confirm came back payment_needed: these exact listings' renewals want $0.99.
+ * The card reuses the EXISTING overage checkout (billing-checkout → Stripe-hosted
+ * page in a new tab → webhook → my_overage_required polling); once the authorization
+ * lands, the renewal executes through a fresh server-bound proposal + confirm that
+ * consumes the payment bound to this exact listing. Server truth decides everything —
+ * a closed tab or duplicate return can never double-charge or double-renew. */
+interface PaymentAsk {
+  items: { id: string; title: string }[];
+  verb: 'Renew' | 'Restock';
+}
 
 const ACTIONS: { match: (p: string) => boolean; chips: string[] }[] = [
   {
@@ -60,7 +73,7 @@ const ACTIONS: { match: (p: string) => boolean; chips: string[] }[] = [
   },
   {
     match: (p) => p.startsWith('/my') || p.startsWith('/sell'),
-    chips: ['Help me write a listing', 'What should I charge?', 'Why isn’t my listing showing?'],
+    chips: ['Mark my cucumbers sold out', 'Change Roma Tomatoes to $5/quart', 'How many of my listings are expiring?', 'Which imported drafts still need prices?'],
   },
   {
     match: () => true,
@@ -143,10 +156,21 @@ export default function GnomeAssistant() {
         : p.action === 'restock' ? 'restocked' : 'renewed';
       const parts: string[] = [];
       if (ok) parts.push(`${ok} listing${ok === 1 ? '' : 's'} ${did}.`);
-      if (pay) parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up. You can renew from My Market.`);
+      if (pay) parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`);
       if (!parts.length) parts.push('Nothing needed doing — everything was already in that state.');
       setSettled((s) => ({ ...s, [p.action_id]: true }));
-      setTurns((t) => [...t, { role: 'assistant', content: parts.join(' ') }]);
+      // Per-listing server results say exactly which renewals want $0.99 — those become the
+      // payment card wired into the existing overage checkout, not a dead end.
+      const results: { ok?: boolean; error?: string; id?: string }[] = Array.isArray(data?.results) ? data.results : [];
+      const needPay = results
+        .filter((r) => r?.ok === false && r?.error === 'PAYMENT_REQUIRED')
+        .map((r) => ({ id: String(r.id ?? ''), title: p.items.find((it) => it.id === r.id)?.title ?? 'this listing' }))
+        .filter((it) => it.id);
+      setTurns((t) => [...t, {
+        role: 'assistant',
+        content: parts.join(' '),
+        paymentAsk: needPay.length ? { items: needPay, verb: p.action === 'restock' ? 'Restock' : 'Renew' } : null,
+      }]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : '';
       setNote(/ACTION_EXPIRED/.test(msg)
@@ -157,6 +181,93 @@ export default function GnomeAssistant() {
       if (/ACTION_EXPIRED|ACTION_ALREADY/.test(msg)) setSettled((s) => ({ ...s, [p.action_id]: true }));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // ---- the $0.99 leg: existing overage checkout in a new tab, poll for the webhook,
+  // then execute the EXACT paid renewal via a fresh server-bound proposal + confirm.
+  // paidFlow[listingId]: 'paying' | 'waiting' | 'processing' | 'done'
+  const [paidFlow, setPaidFlow] = useState<Record<string, string>>({});
+
+  async function finishPaidRenewal(item: { id: string; title: string }) {
+    const sb = supabaseBrowser();
+    try {
+      const { data: prop, error: pe } = await sb.rpc('ai_propose_action', {
+        p_action: 'renew', p_listing_ids: [item.id], p_payload: {},
+        p_summary: `Renew "${item.title}" using your $0.99 payment`, p_request: null,
+      });
+      if (pe) throw new Error(String(pe.message ?? ''));
+      const { data: res, error: ce } = await sb.rpc('ai_confirm_action', { p_action_id: prop.action_id });
+      if (ce) throw new Error(String(ce.message ?? ''));
+      if (Number(res?.ok_count ?? 0) >= 1) {
+        setPaidFlow((s) => ({ ...s, [item.id]: 'done' }));
+        setTurns((t) => [...t, {
+          role: 'assistant',
+          content: `Done — “${item.title}” is renewed and live for another 7 days. Your $0.99 payment covered exactly this renewal.`,
+        }]);
+        logWeb('gnome_ai_paid_renewal_completed');
+      } else {
+        // Not executed. Say what is actually true: paid-but-webhook-pending reads differently
+        // from never-paid. my_overage_required is the server truth for both.
+        const { data: ov } = await sb.rpc('my_overage_required', { p_listing: item.id });
+        const row = Array.isArray(ov) ? ov[0] : ov;
+        setPaidFlow((s) => ({ ...s, [item.id]: 'processing' }));
+        setTurns((t) => [...t, {
+          role: 'assistant',
+          content: row?.required === false
+            ? 'Stripe is still confirming your payment. Click “Finish renewal” again in a few seconds — you will not be charged twice.'
+            : 'I don’t see a completed payment yet. If you just paid, give it a few seconds and click “Finish renewal” again — you will never be charged twice. If you cancelled checkout, nothing was charged.',
+        }]);
+      }
+    } catch {
+      setPaidFlow((s) => ({ ...s, [item.id]: 'processing' }));
+      setNote('Couldn’t finish the renewal just now — your payment is safe. Click “Finish renewal” to try again.');
+    }
+  }
+
+  async function payAndRenew(item: { id: string; title: string }) {
+    const state = paidFlow[item.id];
+    if (state === 'paying' || state === 'waiting' || state === 'done') return;
+    setNote(null);
+    setPaidFlow((s) => ({ ...s, [item.id]: 'paying' }));
+    logWeb('gnome_ai_checkout_started');
+    const sb = supabaseBrowser();
+    try {
+      const { data, error } = await sb.functions.invoke('billing-checkout', {
+        body: { product_key: 'GNOME_LISTING_RENEWAL', listing_id: item.id, platform: 'web' },
+      });
+      if (error) {
+        const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+        if (body?.error === 'NO_PAYMENT_REQUIRED') {
+          // Already authorized (or allowance freed up) — just finish.
+          await finishPaidRenewal(item);
+          return;
+        }
+        throw new Error(String(body?.error ?? 'CHECKOUT_FAILED'));
+      }
+      if (!data?.url) throw new Error('NO_URL');
+      window.open(data.url, '_blank', 'noopener');
+      setPaidFlow((s) => ({ ...s, [item.id]: 'waiting' }));
+      // Poll for the webhook-confirmed authorization. Server truth only: a closed tab or a
+      // return without payment simply never flips ALREADY_AUTHORIZED, and nothing executes.
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const { data: ov } = await sb.rpc('my_overage_required', { p_listing: item.id });
+        const row = Array.isArray(ov) ? ov[0] : ov;
+        if (row && row.required === false && row.reason === 'ALREADY_AUTHORIZED') {
+          await finishPaidRenewal(item);
+          return;
+        }
+        if (row && row.required === false) { await finishPaidRenewal(item); return; }
+      }
+      setPaidFlow((s) => ({ ...s, [item.id]: 'processing' }));
+      setTurns((t) => [...t, {
+        role: 'assistant',
+        content: 'I haven’t seen the payment come through yet. If you finished checkout, click “Finish renewal” — you will not be charged twice. If you closed the checkout tab, nothing was charged.',
+      }]);
+    } catch {
+      setPaidFlow((s) => { const { [item.id]: _gone, ...rest } = s; return rest; });
+      setNote('The checkout could not start. Nothing was charged.');
     }
   }
 
@@ -237,6 +348,33 @@ export default function GnomeAssistant() {
                     </span>
                   </div>
                 )}
+                {!!t.paymentAsk && t.paymentAsk.items.map((item) => (
+                  paidFlow[item.id] === 'done' ? null : (
+                    <div key={item.id} className="gp-proposal" style={{
+                      margin: '6px 0 0', padding: '10px 12px', borderRadius: 12,
+                      border: '1px solid var(--leaf, #4a7c46)', display: 'grid', gap: 6,
+                    }}>
+                      <strong style={{ fontSize: 14 }}>{t.paymentAsk!.verb} {item.title}</strong>
+                      <span style={{ fontSize: 13, opacity: 0.75 }}>Another 7 days · $0.99 one time</span>
+                      <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        {paidFlow[item.id] === 'processing' ? (
+                          <button className="btn btn-primary btn-sm"
+                            onClick={() => void finishPaidRenewal(item)}>Finish renewal</button>
+                        ) : (
+                          <button className="btn btn-primary btn-sm"
+                            disabled={paidFlow[item.id] === 'paying' || paidFlow[item.id] === 'waiting'}
+                            onClick={() => void payAndRenew(item)}>
+                            {paidFlow[item.id] === 'paying' ? 'Opening checkout…'
+                              : paidFlow[item.id] === 'waiting' ? 'Waiting for checkout…'
+                              : `${t.paymentAsk!.verb} for $0.99`}
+                          </button>
+                        )}
+                        <button className="chip"
+                          onClick={() => setPaidFlow((s) => ({ ...s, [item.id]: 'done' }))}>Not now</button>
+                      </span>
+                    </div>
+                  )
+                ))}
               </div>
             ))}
             {busy && <div className="bubble assistant thinking">Checking the garden gates…</div>}

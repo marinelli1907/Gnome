@@ -45,6 +45,9 @@ export default function ListingDetailScreen() {
   // basis Browse uses, so detail and card always tell the same story. Never
   // prompts here; never persisted.
   const [myCoords, setMyCoords] = useState<Coords | null>(null);
+  // Hoisted above the loading/not-found returns: hooks must run in the same order on
+  // every render (react-hooks/rules-of-hooks).
+  const [renewing, setRenewing] = useState(false);
   useEffect(() => {
     void getCoordsIfGranted().then(setMyCoords);
   }, []);
@@ -93,7 +96,6 @@ export default function ListingDetailScreen() {
   // allowance trigger decides included vs paid as the status flips; PUBLISH_ALLOWANCE_EXHAUSTED
   // means this renewal costs $0.99, and after a confirmed purchase the same call runs again —
   // the payment authorized exactly this renewal, and consumption is once-only server-side.
-  const [renewing, setRenewing] = React.useState(false);
   const renewNow = async () => {
     setRenewing(true);
     try {

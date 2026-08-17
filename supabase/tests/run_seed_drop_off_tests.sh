@@ -38,8 +38,12 @@ const root = process.env.GNOME_ROOT;
 
 const CHECKOUT = path.join(root, 'supabase/functions/billing-checkout/index.ts');
 const GATE = path.join(root, 'supabase/functions/_shared/seed_drop_gate.ts');
-const MARKETPLACE = ['GNOME_FARM_MONTHLY', 'GNOME_GROWER_MONTHLY',
-                     'GNOME_LISTING_PROMOTION', 'GNOME_PICKUP_LOCATION_ADDON'];
+// The complete purchasable set: three plan subscriptions, the boost, the pickup
+// add-on, and the two $0.99 overage keys (0106). Anything else — above all any
+// seed key — must be refused by the checkout allowlist.
+const MARKETPLACE = ['GNOME_FARM_MONTHLY', 'GNOME_GROWER_MONTHLY', 'GNOME_SPONSOR_MONTHLY',
+                     'GNOME_LISTING_PROMOTION', 'GNOME_PICKUP_LOCATION_ADDON',
+                     'GNOME_LISTING_PUBLISH', 'GNOME_LISTING_RENEWAL'];
 
 const results = [];
 const check = (label, pass, detail) => results.push({ label, pass: !!pass, detail });
@@ -79,7 +83,7 @@ check('A-01 billing-checkout declares a checkout allowlist', Array.isArray(allow
 check('A-02 the allowlist contains no seed key',
       Array.isArray(allow) && !allow.some((k) => /SEED/i.test(k)),
       Array.isArray(allow) ? (allow.filter((k) => /SEED/i.test(k)).join(', ') || 'none') : 'unparsed');
-check('A-03 the allowlist is exactly the four marketplace keys', same(allow, MARKETPLACE),
+check('A-03 the allowlist is exactly the marketplace keys', same(allow, MARKETPLACE),
       Array.isArray(allow) ? allow.join(', ') : 'unparsed');
 check('A-04 the seed denylist names all five seed product keys',
       same(seedKeys, ['GNOME_SEED_DROP_SEASONAL', 'GNOME_SEED_DROP_ONE_TIME',
@@ -146,8 +150,8 @@ if (refusedBy && Array.isArray(allow)) {
         wrong.length ? `allowed: ${wrong.map(String).join(' | ')}` : 'all rejected');
 
   const blocked = MARKETPLACE.filter((k) => gateOf(k) !== 'ALLOWED');
-  check('A-13 the four marketplace keys still pass the gate', blocked.length === 0,
-        blocked.length ? `blocked: ${blocked.join(', ')}` : 'all four allowed');
+  check('A-13 the marketplace keys still pass the gate', blocked.length === 0,
+        blocked.length ? `blocked: ${blocked.join(', ')}` : 'all allowed');
 }
 
 // The inline copy is authoritative for the deployed single-file function; this
