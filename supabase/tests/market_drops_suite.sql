@@ -132,10 +132,28 @@ begin
     $q$ select public.create_market_drop('  ', now() + interval '1 day',
         now() + interval '2 days', array['dd110117-0000-0000-0000-000000000001']::uuid[]) $q$,
     'INVALID_TITLE');
-  perform pg_temp.ck_raises('a "Seed" title cannot masquerade as the Seed Drop',
+  perform pg_temp.ck_raises('a title reading as the branded Seed Drop is reserved',
     $q$ select public.create_market_drop('Seed Drop Special', now() + interval '1 day',
         now() + interval '2 days', array['dd110117-0000-0000-0000-000000000001']::uuid[]) $q$,
     'RESERVED_TITLE');
+  perform pg_temp.ck_raises('punctuation/spacing cannot smuggle the brand phrase',
+    $q$ select public.create_market_drop('SEED-DROP Saturday', now() + interval '1 day',
+        now() + interval '2 days', array['dd110117-0000-0000-0000-000000000001']::uuid[]) $q$,
+    'RESERVED_TITLE');
+  -- 0118 regression: the English word "seed" is legitimate seller inventory.
+  declare
+    seed_titles text[] := array['Fall Seed Sale', 'Seedling Saturday', 'Sunflower Seeds This Weekend'];
+    st text;
+    made jsonb;
+  begin
+    foreach st in array seed_titles loop
+      made := public.create_market_drop(st, now() + interval '1 day',
+        now() + interval '1 day 4 hours', array['dd110117-0000-0000-0000-000000000001']::uuid[]);
+      perform pg_temp.ck(format('honest seed title allowed: %s', st), (made ->> 'ok')::boolean);
+      delete from public.market_drop_items where drop_id = (made ->> 'id')::uuid;
+      delete from public.market_drops where id = (made ->> 'id')::uuid;
+    end loop;
+  end;
   perform pg_temp.ck_raises('no listings refused',
     $q$ select public.create_market_drop('Empty', now() + interval '1 day',
         now() + interval '2 days', array[]::uuid[]) $q$, 'NO_LISTINGS');

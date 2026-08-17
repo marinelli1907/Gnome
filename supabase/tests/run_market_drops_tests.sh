@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behavioural tests for 0117 (Market Drops V1), against a THROWAWAY local database.
+# Behavioural tests for 0117/0118 (Market Drops V1 + narrowed reserved title), against a THROWAWAY local database.
 #
 #   supabase/tests/run_market_drops_tests.sh
 #
@@ -27,7 +27,7 @@ applied=0; failed=0
 while IFS= read -r f; do
   n="$(basename "$f" | cut -c1-4)"
   case "$n" in ''|*[!0-9]*) continue ;; esac
-  [ "$n" -le 0117 ] || continue
+  [ "$n" -le 0118 ] || continue
   if psql -h "$HOST" -d "$DB" -q -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>&1; then
     applied=$((applied + 1))
   else

@@ -105,7 +105,7 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
       await refresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : '';
-      setNote(/RESERVED_TITLE/.test(msg) ? '“Seed” names are reserved — pick a different Drop name.'
+      setNote(/RESERVED_TITLE/.test(msg) ? '“Seed Drop” is Gnome’s own product name — pick a different Drop name (seed titles like “Fall Seed Sale” are fine).'
         : /WINDOW_IN_PAST/.test(msg) ? 'That window is already in the past.'
         : /WINDOW_TOO_LONG/.test(msg) ? 'Keep a Drop to two weeks or less.'
         : /DROP_ITEM_LIMIT/.test(msg) ? 'A Market Drop holds up to 30 items.'

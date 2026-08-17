@@ -264,6 +264,11 @@ export function translateActionError(err: string): string {
   if (e.includes('BULK_LIMIT')) return 'I can do up to 20 listings at once — narrow it down a bit.';
   if (e.includes('DRAFT_NOT_PENDING')) return 'That draft has already been published or discarded.';
   if (e.includes('DRAFT_NOT_FOUND')) return 'I couldn\'t find that draft.';
+  if (e.includes('RESERVED_TITLE')) return '“Seed Drop” is Gnome\'s own product name — pick a different Drop name (seed titles like “Fall Seed Sale” are fine).';
+  if (e.includes('WINDOW_IN_PAST')) return 'That window is already in the past — give me an upcoming day and time.';
+  if (e.includes('WINDOW_TOO_LONG')) return 'Keep a Market Drop to two weeks or less.';
+  if (e.includes('INVALID_WINDOW')) return 'The Drop has to end after it starts — give me the day and times again.';
+  if (e.includes('DROP_ITEM_LIMIT')) return 'A Market Drop holds up to 30 items — narrow the list a bit.';
   if (e.includes('PUBLISH_ALLOWANCE_EXHAUSTED') || e.includes('PAYMENT_REQUIRED')) {
     return 'Your plan\'s included renewals are used up — this one would be $0.99.';
   }
