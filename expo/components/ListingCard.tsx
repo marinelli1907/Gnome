@@ -102,6 +102,12 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
           {isWanted ? `Looking for ${listing.title}` : listing.title}
         </Text>
 
+        {listing.is_bundle ? (
+          <Text style={styles.bundle} numberOfLines={1}>
+            🎁 Gift basket
+          </Text>
+        ) : null}
+
         {listing.market?.name ? (
           <Text style={styles.market} numberOfLines={1}>
             🏡 {listing.market.name}
@@ -186,6 +192,7 @@ const styles = StyleSheet.create({
   body: { padding: 14, gap: 4 },
   title: { fontSize: 19, fontFamily: fonts.displayBold, color: Colors.text },
   market: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.secondary },
+  bundle: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.sell },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2, flexWrap: 'wrap' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary },

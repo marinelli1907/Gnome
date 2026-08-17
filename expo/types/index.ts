@@ -199,6 +199,7 @@ export interface Listing {
   screening_category?: string | null;
   delivery_available?: boolean; // future (V2 delivery), dormant in V1
   is_demo?: boolean | null; // sample content — always labeled "Preview" in the UI
+  is_bundle?: boolean | null; // 0121: a Gift Basket composed of other listings
   created_at: string;
   expires_at: string;
   // Joined / derived (not columns):

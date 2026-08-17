@@ -100,7 +100,7 @@ const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
   'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
   'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at,' +
-  'request_options,allow_custom_request,screening_status,screening_reason';
+  'request_options,allow_custom_request,screening_status,screening_reason,is_bundle';
 // The ONLY profile shape other users ever receive. Reads go through the
 // `public_profiles` view (0087), which enumerates its columns server-side, so a
 // column added to `profiles` cannot leak here. Administrative flags (can_*,
@@ -1860,6 +1860,116 @@ export function useMyFollowerCount(uid?: string) {
       const { data, error } = await supabase.rpc('my_market_follower_count');
       if (error) throw error;
       return typeof data === 'number' ? data : 0;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Gift Baskets / Bundles (0121). Composition is read-only for clients; all
+// creation goes through the canonical create_market_bundle RPC.
+// ---------------------------------------------------------------------------
+
+export type BundleComponent = {
+  id: string; title: string; price_cents: number | null; unit: string | null;
+  status: string;
+};
+
+/** What's inside a basket, plus whether the basket is currently available. */
+export function useBundleComponents(listingId?: string, isBundle?: boolean) {
+  return useQuery({
+    queryKey: ['bundleComponents', listingId] as const,
+    enabled: isSupabaseConfigured && !!listingId && !!isBundle,
+    queryFn: async (): Promise<{ components: BundleComponent[]; available: boolean }> => {
+      const { data: comps, error } = await supabase
+        .from('listing_components')
+        .select('component_listing_id, position')
+        .eq('listing_id', listingId as string)
+        .order('position', { ascending: true });
+      if (error) throw error;
+      const ids = (comps ?? []).map((c) => c.component_listing_id as string);
+      let components: BundleComponent[] = [];
+      if (ids.length) {
+        const { data: rows } = await supabase
+          .from('listings')
+          .select('id,title,price_cents,unit,status')
+          .in('id', ids);
+        const order = new Map(ids.map((id, i) => [id, i]));
+        components = ((rows ?? []) as BundleComponent[])
+          .sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+      }
+      const { data: avail } = await supabase
+        .rpc('bundle_components_available', { p_listing: listingId as string });
+      return { components, available: avail === true };
+    },
+  });
+}
+
+/** The seller's own baskets, with composition titles and live availability. */
+export function useMyBundles(marketId?: string) {
+  return useQuery({
+    queryKey: ['myBundles', marketId] as const,
+    enabled: isSupabaseConfigured && !!marketId,
+    queryFn: async () => {
+      const { data: bs, error } = await supabase
+        .from('listings')
+        .select('id,title,price_cents,status,inventory_count,expires_at')
+        .eq('market_id', marketId as string)
+        .eq('is_bundle', true)
+        .in('status', ['active', 'claimed', 'completed'])
+        .order('created_at', { ascending: false })
+        .limit(12);
+      if (error) throw error;
+      const out = [] as {
+        id: string; title: string; price_cents: number | null; status: string;
+        inventory_count: number | null; expires_at: string;
+        components: string[]; available: boolean;
+      }[];
+      for (const b of bs ?? []) {
+        const { data: comps } = await supabase
+          .from('listing_components')
+          .select('component_listing_id')
+          .eq('listing_id', b.id);
+        const ids = (comps ?? []).map((c) => c.component_listing_id as string);
+        let titles: string[] = [];
+        if (ids.length) {
+          const { data: cls } = await supabase.from('listings').select('id,title').in('id', ids);
+          titles = ((cls ?? []) as { title: string }[]).map((c) => c.title);
+        }
+        const { data: avail } = await supabase
+          .rpc('bundle_components_available', { p_listing: b.id });
+        out.push({ ...b, components: titles, available: avail === true && b.status === 'active' });
+      }
+      return out;
+    },
+  });
+}
+
+/** Create a basket through the canonical RPC. Surfaces server errors verbatim. */
+export function useCreateBundle(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      title: string; priceCents: number; componentIds: string[];
+      description?: string | null; inventory?: number | null;
+    }) => {
+      if (!uid) throw new Error('Not signed in.');
+      const { data, error } = await supabase.rpc('create_market_bundle', {
+        p_title: input.title,
+        p_price_cents: input.priceCents,
+        p_component_ids: input.componentIds,
+        p_description: input.description ?? null,
+        p_unit: null,
+        p_inventory: input.inventory ?? null,
+        p_request: null,
+      });
+      if (error) throw new Error(String(error.message ?? 'CREATE_FAILED'));
+      void logEvent('bundle_created_ui', { userId: uid });
+      return data as { ok: boolean; id: string; title: string; items: number };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['myBundles'] });
+      qc.invalidateQueries({ queryKey: ['myListings'] });
+      qc.invalidateQueries({ queryKey: ['marketListings'] });
     },
   });
 }

@@ -18,13 +18,13 @@ import { Avatar, Button, EmptyState } from '@/components/ui';
 import TypeBadge from '@/components/TypeBadge';
 import { Skeleton } from '@/components/Skeleton';
 import Reputation from '@/components/Reputation';
-import { ctaLabel, listingValueLabel } from '@/lib/listingType';
+import { ctaLabel, formatPrice, listingValueLabel } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
-import { useBlockUser, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { useBlockUser, useBundleComponents, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { safeErrorText } from '@/lib/screening';
 import { purchaseOverage } from '@/lib/billing';
@@ -58,6 +58,9 @@ export default function ListingDetailScreen() {
   const block = useBlockUser(userId ?? undefined);
   const verified = useListingVerifiedBadge(listing?.id);
   const taxonomy = useTaxonomy();
+  // Gift baskets (0121): what's inside + derived availability. The server is
+  // the real gate (claims/orders re-check); this only keeps the UI honest.
+  const bundle = useBundleComponents(listing?.id, !!listing?.is_bundle);
 
   useEffect(() => {
     if (listing) {
@@ -305,6 +308,29 @@ export default function ListingDetailScreen() {
 
           {listing.description ? <Text style={styles.description}>{listing.description}</Text> : null}
 
+          {listing.is_bundle && (bundle.data?.components.length ?? 0) > 0 ? (
+            <View style={styles.bundleBox}>
+              <Text style={styles.bundleTitle}>🎁 What’s inside this basket</Text>
+              {bundle.data!.components.map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={styles.bundleRow}
+                  onPress={() => router.push(`/listing/${c.id}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={c.title}
+                >
+                  <Text style={styles.bundleItem} numberOfLines={1}>• {c.title}</Text>
+                  {c.price_cents != null ? (
+                    <Text style={styles.bundlePrice}>usually {formatPrice(c.price_cents, c.unit)}</Text>
+                  ) : null}
+                </Pressable>
+              ))}
+              <Text style={styles.bundleNote}>
+                One basket, one price. A basket is available only while all items inside it are available.
+              </Text>
+            </View>
+          ) : null}
+
           <Pressable
             style={styles.owner}
             disabled={!listing.market_id}
@@ -369,6 +395,10 @@ export default function ListingDetailScreen() {
           </Text>
         ) : !isActive ? (
           <Text style={styles.footerNote}>This listing is no longer available.</Text>
+        ) : listing.is_bundle && bundle.data?.available === false ? (
+          <Text style={styles.footerNote}>
+            An item in this basket is spoken for — it’s unavailable until everything inside is back.
+          </Text>
         ) : existingClaim ? (
           <Button label={`Request ${cap(existingClaim.status)}`} onPress={() => router.push('/activity')} variant="secondary" />
         ) : type === 'free' ? (
@@ -419,6 +449,18 @@ const styles = StyleSheet.create({
   },
   previewNoteText: { fontSize: 12, color: Colors.text, lineHeight: 17, fontFamily: fonts.regular },
   description: { fontSize: 15, color: Colors.text, lineHeight: 22, marginTop: 18, fontFamily: fonts.regular },
+  bundleBox: {
+    marginTop: 18,
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+  },
+  bundleTitle: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
+  bundleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  bundleItem: { flex: 1, fontSize: 14, fontFamily: fonts.regular, color: Colors.text },
+  bundlePrice: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary },
+  bundleNote: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17, fontFamily: fonts.regular, marginTop: 4 },
   owner: {
     flexDirection: 'row',
     alignItems: 'center',
