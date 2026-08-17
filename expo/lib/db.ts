@@ -141,6 +141,32 @@ async function fetchMyBlockedSet(): Promise<Set<string>> {
   }
 }
 
+/**
+ * 0121: buyer feeds must never surface an unavailable basket. The canonical
+ * public view is the availability authority; these feed queries read the base
+ * table, so any basket rows are re-checked against the view in ONE extra query
+ * (skipped entirely when the page has no baskets). Fail-open on transport
+ * trouble — the feed keeps working, and the server still refuses to sell an
+ * unavailable basket at claim/order time regardless of what rendered.
+ */
+async function dropUnavailableBundles<T extends { id: string; is_bundle?: boolean | null }>(
+  rows: T[],
+): Promise<T[]> {
+  const bundleIds = rows.filter((r) => r.is_bundle).map((r) => r.id);
+  if (!bundleIds.length) return rows;
+  try {
+    const { data, error } = await supabase
+      .from('public_listings')
+      .select('id')
+      .in('id', bundleIds);
+    if (error) return rows;
+    const ok = new Set((data ?? []).map((r: { id: string }) => r.id));
+    return rows.filter((r) => !r.is_bundle || ok.has(r.id));
+  } catch {
+    return rows;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Browse listings (anonymous-friendly)
 // ---------------------------------------------------------------------------
@@ -189,7 +215,9 @@ export function useListings(filters: BrowseFilters) {
       const [{ data, error }, blocked] = await Promise.all([q, fetchMyBlockedSet()]);
       if (error) throw error;
 
-      let listings = (data ?? []).map(shapeListing).filter((l) => !blocked.has(l.owner_id));
+      let listings = await dropUnavailableBundles(
+        (data ?? []).map(shapeListing).filter((l) => !blocked.has(l.owner_id)),
+      );
 
       if (filters.coords) {
         // ONE distance source everywhere: buyer's current coords vs the
@@ -698,7 +726,7 @@ export function useMarketListings(marketId?: string) {
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data ?? []).map(shapeListing);
+      return dropUnavailableBundles((data ?? []).map(shapeListing));
     },
   });
 }
@@ -942,6 +970,7 @@ export function useFeaturedListings(filters: BrowseFilters) {
         seen.add(l.id);
         listings.push(shapeListing(l));
       }
+      listings = await dropUnavailableBundles(listings);
 
       if (filters.listingType !== 'all') {
         listings = listings.filter((l) => l.listing_type === filters.listingType);
@@ -1846,7 +1875,7 @@ export function useFollowedListings(uid?: string, marketIds?: string[]) {
         .order('created_at', { ascending: false })
         .limit(30);
       if (error) throw error;
-      return (data ?? []).map(shapeListing);
+      return dropUnavailableBundles((data ?? []).map(shapeListing));
     },
   });
 }
