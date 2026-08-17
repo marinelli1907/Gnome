@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
     const { data: ep } = await admin.rpc('market_effective_plan', { p_market: mkt.id });
     const eff = Array.isArray(ep) ? ep[0] : ep;
     if (!eff || eff.plan === 'free') {
-      return json({ error: 'PLAN_REQUIRED', message: 'The AI Listing Assistant is a Grower & Farm feature.' }, 403);
+      return json({ error: 'PLAN_REQUIRED', message: 'The AI Listing Assistant is included with the Pro, Max, and Farm plans.' }, 403);
     }
     effPlan = eff.plan;
 
