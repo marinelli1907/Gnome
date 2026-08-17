@@ -8,6 +8,10 @@
 // STRIPE_SECRET_KEY_TEST; live mode uses STRIPE_SECRET_KEY_LIVE and is only
 // reachable when the owner has flipped payments_live_enabled=true. Default is
 // TEST — Gnome will not create a live session otherwise, even with a live key.
+// That same resolved mode is stamped onto the pending authorization row
+// (listing_publish_authorizations.stripe_livemode, 0124), so which mode minted a
+// payment is recorded by the server at creation time and confirmed by the
+// webhook from event.livemode. No request field ever reaches that column.
 //
 // SEED DROP IS OFF. The Seed Drop ships as an announcement only — no price, no
 // date, no purchase. Every seed key is refused here before anything is read
@@ -306,6 +310,31 @@ Deno.serve(async (req: Request) => {
         p_session: session.id,
         p_amount_cents: product.unit_amount_cents ?? 99,
       });
+
+      // Which Stripe mode minted this authorization, recorded from the SERVER's
+      // own resolution above — the billing_config live gate that also chose the
+      // secret key and the price id — and never from a request field. There is
+      // no `mode` input to this function for exactly that reason: a client able
+      // to name the mode could have a 99-cent TEST payment mint an authorization
+      // that reads as live revenue, and 0124's consumption guard compares this
+      // value against the platform mode before the credit may be spent.
+      //
+      // A second statement rather than an argument because
+      // create_publish_authorization's signature (market, intent, listing,
+      // session, amount) predates the column and belongs to the SQL layer; 0124
+      // adds the column without changing the function. Scoped by the UNIQUE
+      // stripe_session_id of the session just created, and to rows still
+      // 'pending', so it can only touch the row written a line ago.
+      //
+      // Logged rather than fatal: the session already exists at Stripe, so
+      // failing the request here would strand a payable session with no URL
+      // returned, and the webhook re-stamps the same value from event.livemode
+      // while the row is still pending. The column defaults false, so the
+      // failure mode is "reads as test", never "reads as live".
+      const { error: modeErr } = await admin.from('listing_publish_authorizations')
+        .update({ stripe_livemode: live })
+        .eq('stripe_session_id', session.id).eq('status', 'pending');
+      if (modeErr) console.error(`billing-checkout: stamp stripe_livemode on ${session.id}:`, modeErr);
     }
 
     return json(200, { url: session.url, mode, product_key: key, intent: overageIntent });

@@ -6,10 +6,14 @@
 //     Stripe GET /v1/account and returns { account_id, business_name, livemode }
 //     so the operator can CONFIRM it is Gnome (and NOT live) before anything is
 //     created. The secret itself is never returned.
-//   { action: "ensure_products" }     create/reuse the 7 canonical TEST
+//   { action: "ensure_products" }     create/reuse the canonical TEST
 //     products+prices (metadata gnome_product_key + environment=test) and
-//     persist the test price ids into billing_products. Sets a tax_code, which
-//     this account requires because Stripe Tax / managed payments is enabled.
+//     persist the test price ids into billing_products — updating ONLY the id
+//     columns on existing rows (pricing stays the migrations' to own), and
+//     inserting the full migration-seed shape for a key never seeded, so a
+//     clean environment ends up configured instead of silently unchanged. Sets
+//     a tax_code, which this account requires because Stripe Tax / managed
+//     payments is enabled.
 //   { action: "webhook_status" }      read-only: which signing secrets are
 //     configured (booleans only, never values) and which endpoints exist.
 //   { action: "ensure_webhook" }      create/update the TEST endpoint with the
@@ -28,14 +32,40 @@
 import Stripe from 'npm:stripe';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const CANON: { key: string; amount: number; recurring?: 'month' | 'year' }[] = [
-  { key: 'GNOME_GROWER_MONTHLY', amount: 999, recurring: 'month' },
-  { key: 'GNOME_FARM_MONTHLY', amount: 2999, recurring: 'month' },
-  { key: 'GNOME_PICKUP_LOCATION_ADDON', amount: 500, recurring: 'month' },
-  { key: 'GNOME_LISTING_PROMOTION', amount: 399 }, // one-time
-  { key: 'GNOME_SEED_DROP_SEASONAL', amount: 2499, recurring: 'month' }, // Gnome enforces seasonal cadence
-  { key: 'GNOME_GROWER_SEED_BUNDLE', amount: 19900, recurring: 'year' },
-  { key: 'GNOME_FARM_SEED_BUNDLE', amount: 42900, recurring: 'year' },
+// The catalogue ensure_products provisions in TEST. Three keys were missing and
+// they were the ones that matter most: GNOME_LISTING_PUBLISH and
+// GNOME_LISTING_RENEWAL are the $0.99 overages billing-checkout resolves every
+// paid publish to, and GNOME_SPONSOR_MONTHLY is customer-facing "Farm" (internal
+// enum `sponsor`, which is why the name reads backwards). The paid-publishing
+// flow therefore had no test products at all, and the one QA tool meant to make
+// the round-trip possible could not set it up.
+//
+// kind/description/currency/active are carried here, not just the amount,
+// because a key that has never been seeded (a partially-built environment) is
+// INSERTED whole. They mirror the migration seeds verbatim (0083 §product keys,
+// 0124 §4 — including the bundles' active=false) so a rebuilt environment and a
+// migrated one describe the same SKU identically rather than drifting apart by
+// one word. On rows that already EXIST these fields are never written: the
+// migrations are the pricing authority, and this action's writes are limited to
+// the per-environment Stripe test ids it exists to provision.
+const CANON: {
+  key: string;
+  amount: number;
+  kind: 'subscription' | 'one_time' | 'addon';
+  description: string;
+  active: boolean;
+  recurring?: 'month' | 'year';
+}[] = [
+  { key: 'GNOME_GROWER_MONTHLY', amount: 999, kind: 'subscription', description: 'Grower plan, monthly', active: true, recurring: 'month' },
+  { key: 'GNOME_FARM_MONTHLY', amount: 2999, kind: 'subscription', description: 'Farm plan, monthly', active: true, recurring: 'month' },
+  { key: 'GNOME_SPONSOR_MONTHLY', amount: 9900, kind: 'subscription', description: 'Farm plan (internal enum sponsor), monthly', active: true, recurring: 'month' },
+  { key: 'GNOME_PICKUP_LOCATION_ADDON', amount: 500, kind: 'addon', description: 'Extra pickup location, per unit monthly', active: true, recurring: 'month' },
+  { key: 'GNOME_LISTING_PROMOTION', amount: 399, kind: 'one_time', description: 'Featured listing promotion, 7 days', active: true },
+  { key: 'GNOME_LISTING_PUBLISH', amount: 99, kind: 'one_time', description: 'Publish one additional listing beyond the monthly allowance', active: true },
+  { key: 'GNOME_LISTING_RENEWAL', amount: 99, kind: 'one_time', description: 'Renew one expired listing for a further 7 days', active: true },
+  { key: 'GNOME_SEED_DROP_SEASONAL', amount: 2499, kind: 'subscription', description: 'Seasonal Seed Drop, per season', active: true, recurring: 'month' }, // Gnome enforces seasonal cadence
+  { key: 'GNOME_GROWER_SEED_BUNDLE', amount: 19900, kind: 'subscription', description: 'Grower + Seed Drop bundle, annual', active: false, recurring: 'year' },
+  { key: 'GNOME_FARM_SEED_BUNDLE', amount: 42900, kind: 'subscription', description: 'Farm + Seed Drop bundle, annual', active: false, recurring: 'year' },
 ];
 
 Deno.serve(async (req: Request) => {
@@ -91,6 +121,12 @@ Deno.serve(async (req: Request) => {
       // product tax codes before going live.
       const TAX_CODE = 'txcd_10000000';
       const results: Record<string, string> = {};
+      // A failed DB write is reported, not swallowed. The bug this action had
+      // was precisely a write that failed to say so.
+      const dbErrors: Record<string, string> = {};
+      // Rows whose DB amount contradicts CANON (and therefore the test price
+      // just minted): reported, never rewritten. See the write comment below.
+      const priceDrift: Record<string, string> = {};
       for (const p of CANON) {
         // Reuse: find an existing test product tagged with this key.
         let productId: string | null = null;
@@ -119,10 +155,61 @@ Deno.serve(async (req: Request) => {
           });
           priceId = price.id;
         }
-        await admin.from('billing_products').update({ stripe_product_id_test: productId, stripe_price_id_test: priceId }).eq('key', p.key);
+        // Two-step, not a blanket UPSERT, because the two starting points call
+        // for different writes. An EXISTING row gets ONLY the test Stripe ids —
+        // pricing (kind/description/amount/currency) belongs to the migrations,
+        // and a blanket upsert would silently revert any DB-side correction to
+        // whatever this file said, making a QA tool a second pricing authority.
+        // A MISSING key (a partially-built environment; the original defect was
+        // `.update()` matching no row, recording nothing, and answering ok:true
+        // while checkout returned UNKNOWN_PRODUCT) is inserted whole, in the
+        // migration seed's exact shape — `active` included, so the bundles the
+        // migrations ship INACTIVE cannot come back active via the default.
+        //
+        // If the existing row's amount disagrees with CANON, that is REPORTED
+        // (price_drift below), never rewritten: the Stripe test price minted
+        // above matches CANON, so a drifted row now points at a price whose
+        // amount it contradicts — a fact the operator must resolve in a
+        // migration, not something this action may paper over.
+        //
+        // The live columns are never touched — this action is TEST-only by every
+        // guard above, and the service role is what carries the write privilege
+        // 0124 revoked from anon/authenticated.
+        const { data: updated, error: updErr } = await admin.from('billing_products')
+          .update({ stripe_product_id_test: productId, stripe_price_id_test: priceId })
+          .eq('key', p.key)
+          .select('key,unit_amount_cents');
+        if (updErr) { dbErrors[p.key] = updErr.message; continue; }
+        if (!updated || updated.length === 0) {
+          const { error: insErr } = await admin.from('billing_products').insert({
+            key: p.key,
+            kind: p.kind,
+            description: p.description,
+            unit_amount_cents: p.amount,
+            currency: 'usd',
+            active: p.active,
+            stripe_product_id_test: productId,
+            stripe_price_id_test: priceId,
+          });
+          if (insErr) { dbErrors[p.key] = insErr.message; continue; }
+        } else if (updated[0].unit_amount_cents !== p.amount) {
+          priceDrift[p.key] = `db=${updated[0].unit_amount_cents} canon=${p.amount}`;
+        }
         results[p.key] = priceId;
       }
-      return json(200, { ok: true, account_id: acct.id, configured: results });
+      // A failed DB write fails the RESPONSE, not just a field in it: every
+      // programmatic caller (res.ok, supabase-js functions.invoke) reads the
+      // status, and 200-with-errors is exactly the silent-success shape this
+      // action was fixed to stop producing. Keys whose write failed are absent
+      // from `configured` — a price id the DB does not carry is not configured.
+      const failed = Object.keys(dbErrors).length > 0;
+      return json(failed ? 500 : 200, {
+        ok: !failed,
+        account_id: acct.id,
+        configured: results,
+        ...(Object.keys(priceDrift).length ? { price_drift: priceDrift } : {}),
+        ...(failed ? { db_errors: dbErrors } : {}),
+      });
     }
 
     if (action === 'webhook_status') {

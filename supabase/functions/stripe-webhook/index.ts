@@ -13,6 +13,10 @@
 //  * Idempotency: insert-first on event id (stripe_events); every money effect
 //    also guards on the Stripe session/order id inside its RPC (Parts 22/23).
 //  * Price→product resolution reads billing_products test/live columns.
+//  * The API CLIENT follows the event (§13). Signature verification proves the
+//    event is genuine and tells us its mode; the secret key used for every
+//    subsequent Stripe REST call is then re-resolved from event.livemode, so a
+//    live event is never answered by the test account.
 //
 // Secrets: STRIPE_SECRET_KEY_TEST / STRIPE_SECRET_KEY_LIVE (mode-specific;
 //   STRIPE_SECRET_KEY legacy still honored). Signing: STRIPE_WEBHOOK_SECRET_TEST
@@ -51,32 +55,72 @@ function isSeedDropEvent(ref: string, meta: Record<string, string>): boolean {
 }
 
 Deno.serve(async (req: Request) => {
-  const secretKey = (
-    Deno.env.get('STRIPE_SECRET_KEY_TEST') ?? Deno.env.get('STRIPE_SECRET_KEY_LIVE') ??
-    Deno.env.get('STRIPE_SECRET_KEY') ?? Deno.env.get('Stripe_Secret_Key')
-  )?.trim();
+  const envKey = (name: string) => Deno.env.get(name)?.trim() || undefined;
+  const testKey = envKey('STRIPE_SECRET_KEY_TEST');
+  const liveKey = envKey('STRIPE_SECRET_KEY_LIVE');
+  const legacyKey = envKey('STRIPE_SECRET_KEY') ?? envKey('Stripe_Secret_Key');
+
+  // Which mode a key PROVES it belongs to. Stripe secret and restricted keys
+  // carry the mode in the prefix (sk_test_ / rk_test_ / sk_live_ / rk_live_);
+  // anything else proves nothing and is treated as unknown rather than assumed.
+  const modeOf = (k?: string): 'live' | 'test' | null =>
+    /^(sk|rk)_live_/.test(k ?? '') ? 'live' : /^(sk|rk)_test_/.test(k ?? '') ? 'test' : null;
+
+  // The key for ONE mode, or undefined. Deliberately never falls through to the
+  // other mode's key: the mode-specific variable is used unless its own prefix
+  // proves it holds the OPPOSITE mode's secret (a misfiled secret would put the
+  // crossover straight back), and the legacy single key — which predates the
+  // split and could be either mode — is only usable when its prefix proves it.
+  const keyForMode = (want: 'live' | 'test'): string | undefined => {
+    const named = want === 'live' ? liveKey : testKey;
+    if (named && modeOf(named) !== (want === 'live' ? 'test' : 'live')) return named;
+    if (legacyKey && modeOf(legacyKey) === want) return legacyKey;
+    return undefined;
+  };
+
+  // Verification does not care WHICH key this is: constructEventAsync is an HMAC
+  // over the raw body and the SIGNING secret and never consults the API key. So
+  // any configured key can build the verifier, and the mode-matched client is
+  // constructed afterwards, from the event's own livemode. Same precedence as
+  // before, so "Stripe not configured" still means exactly what it used to.
+  const anyKey = testKey ?? liveKey ?? legacyKey;
   // Test/live signing secrets are distinct (Parts 4/32). A test endpoint sends
   // events signed with the TEST secret and a live endpoint with the LIVE secret;
   // we try each CONFIGURED candidate and only the matching one verifies — so a
   // test event never validates against the live secret or vice-versa. The legacy
   // single STRIPE_WEBHOOK_SECRET stays honored for a zero-downtime transition.
-  const webhookSecrets = [
+  let webhookSecrets = [
     ['test', Deno.env.get('STRIPE_WEBHOOK_SECRET_TEST')],
     ['live', Deno.env.get('STRIPE_WEBHOOK_SECRET_LIVE')],
     ['legacy', Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? Deno.env.get('Stripe_Webhook_Secret')],
   ].map(([k, v]) => [k, v?.trim()] as const).filter(([, v]) => !!v) as [string, string][];
-  if (!secretKey || webhookSecrets.length === 0) return new Response('Stripe not configured', { status: 503 });
+  // The SAME value in both mode slots proves neither mode — the plausible
+  // migration mistake is copying the old single secret into both new variables.
+  // Left as-is, every genuine live event would verify at the first (test) slot
+  // and the consistency gate below would 400 it forever. Collapsed to one
+  // legacy-labeled entry, which verifies fine and constrains nothing.
+  {
+    const testSecret = webhookSecrets.find(([k]) => k === 'test')?.[1];
+    const liveSecret = webhookSecrets.find(([k]) => k === 'live')?.[1];
+    if (testSecret && testSecret === liveSecret) {
+      webhookSecrets = ([['legacy', testSecret]] as [string, string][])
+        .concat(webhookSecrets.filter(([k]) => k !== 'test' && k !== 'live'));
+    }
+  }
+  if (!anyKey || webhookSecrets.length === 0) return new Response('Stripe not configured', { status: 503 });
 
-  const stripe = new Stripe(secretKey);
+  const verifier = new Stripe(anyKey);
   const signature = req.headers.get('stripe-signature');
   if (!signature) return new Response('Missing signature', { status: 400 });
 
   const rawBody = await req.text();
   let event: Stripe.Event | null = null;
+  let verifiedBy: string | null = null;
   let lastErr: unknown = null;
-  for (const [, whsec] of webhookSecrets) {
+  for (const [label, whsec] of webhookSecrets) {
     try {
-      event = await stripe.webhooks.constructEventAsync(rawBody, signature, whsec, undefined, Stripe.createSubtleCryptoProvider());
+      event = await verifier.webhooks.constructEventAsync(rawBody, signature, whsec, undefined, Stripe.createSubtleCryptoProvider());
+      verifiedBy = label;
       break;
     } catch (e) { lastErr = e; }
   }
@@ -87,6 +131,46 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const livemode = event.livemode === true;
+
+  // event.livemode is only as trustworthy as the secret that verified it. Each
+  // signing secret is minted by ONE mode's endpoint, so an event verified by the
+  // TEST secret claiming livemode:true is not a Stripe event — it is a forgery
+  // or a swapped-secret misconfiguration, and either way acting on its word
+  // would let the LOW-trust test signing secret select the LIVE key and write
+  // live-flagged money rows. Refused as a bad signature is refused: 400, before
+  // anything is written. The legacy single secret predates the split and proves
+  // neither mode, so it constrains nothing — same standing as the legacy key.
+  if ((verifiedBy === 'test' && livemode) || (verifiedBy === 'live' && !livemode)) {
+    console.error(`event ${event.id} livemode=${livemode} contradicts the ${verifiedBy} signing secret that verified it — refused`);
+    return new Response('Event mode contradicts signing secret', { status: 400 });
+  }
+
+  // ---- the Stripe API client is chosen by the EVENT, not by what is configured
+  // Signature verification already proved this event came from Stripe and told
+  // us which mode minted it; that is the only trustworthy mode signal there is,
+  // and it is what every REST call below must be made with.
+  //
+  // Before this, the client was built from `TEST ?? LIVE ?? legacy`, so it was a
+  // TEST client whenever a test key existed at all. A genuine LIVE event still
+  // verified — the live signing secret is a separate secret, checked
+  // independently — and then entered the handler, where every branch that asks
+  // Stripe a question asked the WRONG ACCOUNT: listLineItems for a live session
+  // returns nothing in test, so a paid plan resolved to "unknown price" and the
+  // upgrade was dropped; cancelling a prior live subscription silently failed,
+  // leaving the seller billed twice. A wrong-account answer to a money question
+  // is worse than no answer, because it looks like an answer.
+  const secretKey = keyForMode(livemode ? 'live' : 'test');
+  // Nullable ON PURPOSE, and the refusal for a missing key does not live here.
+  // Exactly two statements in this handler ask Stripe a question — listLineItems
+  // and subscriptions.cancel, both inside the plan/bundle subscription branch —
+  // and every other branch works entirely from the signed event payload and our
+  // own database, with the event's own livemode written to every row. Refusing
+  // the WHOLE event up here would turn a two-call-site requirement into a
+  // kill switch: after go-live key hygiene (live key configured, test key
+  // retired) every TEST event — overage payments, refunds, subscription
+  // lifecycle — would be dropped for want of a key none of them use. The
+  // subscription branch performs its own refusal, before any of its writes.
+  const stripe = secretKey ? new Stripe(secretKey) : null;
 
   // Replay idempotency: insert-first on the event id.
   {
@@ -167,6 +251,26 @@ Deno.serve(async (req: Request) => {
             break;
           }
 
+          // Mode truth, from event.livemode and nothing else. billing-checkout
+          // stamped this row from the key it resolved when the session was
+          // created; this is Stripe's own confirmation of the same fact, and it
+          // is the value 0124's consumption guard compares against the platform
+          // mode before letting the authorization fund a publish.
+          //
+          // It is a separate statement because mark_authorization_paid's
+          // signature is (p_session, p_payment_intent) — 0124 adds the column
+          // without touching the function, and that function is owned by the SQL
+          // layer. Scoped by the UNIQUE stripe_session_id, so it can only reach
+          // this one row, and to rows still 'pending' — the same guard that makes
+          // mark_authorization_paid report false on a replay, so a replayed or
+          // out-of-order event cannot rewrite the mode of an authorization that
+          // has already been paid, consumed or refunded. That ordering is why the
+          // stamp runs BEFORE the row is moved to 'paid'.
+          const { error: modeErr } = await admin.from('listing_publish_authorizations')
+            .update({ stripe_livemode: livemode })
+            .eq('stripe_session_id', session.id).eq('status', 'pending');
+          if (modeErr) console.error(`stamp stripe_livemode on ${session.id}:`, modeErr);
+
           const { data: became } = await admin.rpc('mark_authorization_paid', {
             p_session: session.id,
             p_payment_intent: typeof session.payment_intent === 'string' ? session.payment_intent : null,
@@ -236,6 +340,35 @@ Deno.serve(async (req: Request) => {
 
         // ---- Plan / add-on / BUNDLE subscription
         if (session.mode === 'subscription' && ref) {
+          // The ONE branch that must ask Stripe a question (line items below,
+          // prior-subscription cancel further down), so the ONE branch a missing
+          // mode-matched key refuses. Order matters on all three counts:
+          //   - nothing in this branch has been written yet, so refusing here
+          //     leaves no partial effect;
+          //   - the dedupe row is DELETED before returning — same shape as the
+          //     handler-error path below — so the retry is not skipped as a
+          //     replay once the owner configures the key;
+          //   - 503, not 200: Stripe retries with backoff for days, which is
+          //     the automatic recovery a dropped plan purchase deserves. The
+          //     refusal is logged to billing_events either way, and that log
+          //     call's own failure is at least printed — a dropped live payment
+          //     must never be an empty log line.
+          if (!stripe) {
+            console.error(`no ${livemode ? 'live' : 'test'}-mode Stripe key configured — ${event.id} (${event.type}) refused for retry, NOT processed`);
+            const { error: logErr } = await log(event.type, meta.market_id || ref || null,
+              meta.gnome_user_id || null, meta.product_key || null, amount, 'refused:no_key_for_mode');
+            if (logErr) console.error(`billing_log_event(no_key_for_mode) for ${event.id}:`, logErr);
+            // The 503-retry design stands or falls on this delete: a surviving
+            // dedupe row turns the retry into `replay:true` 200 and the purchase
+            // is dropped for good. So the delete is checked, retried once, and a
+            // double failure is logged as loudly as this function can log —
+            // the 503 still goes out either way, because refusing to answer is
+            // strictly better than acknowledging an event that was not handled.
+            let { error: delErr } = await admin.from('stripe_events').delete().eq('id', event.id);
+            if (delErr) ({ error: delErr } = await admin.from('stripe_events').delete().eq('id', event.id));
+            if (delErr) console.error(`CRITICAL: dedupe row for ${event.id} could not be deleted after no_key_for_mode refusal — the Stripe retry will be skipped as a replay; resend the event manually once the key is configured:`, delErr);
+            return new Response('No Stripe key configured for this event mode', { status: 503 });
+          }
           const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 10 });
           const keys = items.data.map((i) => keyForPrice(i.price?.id)).filter(Boolean) as string[];
           const market = meta.market_id || ref;
@@ -268,10 +401,35 @@ Deno.serve(async (req: Request) => {
           await admin.from('markets').update(patch).eq('id', market);
           await admin.from('market_subscriptions').insert({ market_id: market, plan: plan ?? 'free', kind: plan ? 'plan' : 'addon', provider: 'stripe', customer_id: String(session.customer ?? ''), subscription_id: String(session.subscription ?? ''), status: 'active', stripe_livemode: livemode });
           if (plan) {
-            const { data: priors } = await admin.from('market_subscriptions').select('subscription_id').eq('market_id', market).eq('kind', 'plan').neq('subscription_id', String(session.subscription ?? '')).in('status', ['active', 'trialing', 'past_due']);
+            // Only priors minted in THIS event's mode: the client below can only
+            // cancel subscriptions in its own account, so a cross-mode row would
+            // fail the cancel and then be recorded as canceled anyway — the DB
+            // saying "stopped" about a subscription Stripe is still charging.
+            // Test events also match rows from before the column existed (NULL:
+            // this platform has never taken a live payment, so every legacy row
+            // is test-era); live events match only rows that PROVED live.
+            const priorsQ = admin.from('market_subscriptions').select('subscription_id')
+              .eq('market_id', market).eq('kind', 'plan')
+              .neq('subscription_id', String(session.subscription ?? ''))
+              .in('status', ['active', 'trialing', 'past_due']);
+            const { data: priors } = livemode
+              ? await priorsQ.eq('stripe_livemode', true)
+              : await priorsQ.or('stripe_livemode.eq.false,stripe_livemode.is.null');
             for (const prior of priors ?? []) {
-              try { await stripe.subscriptions.cancel(prior.subscription_id); } catch (err) { console.error(`cancel prior sub ${prior.subscription_id}:`, err); }
-              await admin.from('market_subscriptions').update({ status: 'canceled' }).eq('subscription_id', prior.subscription_id);
+              // 'canceled' is written when it is TRUE: the cancel succeeded, or
+              // Stripe says the subscription no longer exists. Any other failure
+              // leaves the row alone — a transient error must not record a
+              // subscription as stopped while Stripe keeps charging it; the
+              // customer.subscription.deleted event converges it later instead.
+              try {
+                await stripe.subscriptions.cancel(prior.subscription_id);
+                await admin.from('market_subscriptions').update({ status: 'canceled' }).eq('subscription_id', prior.subscription_id);
+              } catch (err) {
+                console.error(`cancel prior sub ${prior.subscription_id}:`, err);
+                if ((err as { code?: string })?.code === 'resource_missing') {
+                  await admin.from('market_subscriptions').update({ status: 'canceled' }).eq('subscription_id', prior.subscription_id);
+                }
+              }
             }
           }
           await admin.rpc('reconcile_pickup_locations', { p_market: market });
