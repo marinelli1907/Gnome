@@ -31,7 +31,28 @@ import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 import { purchaseOverage } from '@/lib/billing';
 
-type Msg = { role: 'user' | 'assistant'; content: string };
+/**
+ * Server-bound action payloads riding on an assistant reply (market management).
+ * A proposal executes ONLY when the seller taps Confirm here — that tap calls
+ * ai_confirm_action with their own JWT; the model cannot make that call.
+ */
+type Proposal = {
+  action_id: string;
+  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk';
+  summary: string;
+  count: number;
+  expires_in_minutes: number;
+  items: { id: string; title: string }[];
+};
+type DisambigOption = { id: string; title: string; detail: string };
+
+type Msg = {
+  role: 'user' | 'assistant'; content: string;
+  proposal?: Proposal | null;
+  options?: DisambigOption[] | null;
+  /** the user message that produced this reply — reused when a disambiguation chip is tapped */
+  sourceText?: string;
+};
 type Draft = {
   id: string; title: string | null; description: string | null;
   category: string | null; listing_type: string; price_cents: number | null;
@@ -103,13 +124,65 @@ export default function AiTab() {
       });
       if (e) throw e;
       if (data?.error) throw new Error(data.message ?? data.error);
-      setMessages((m) => [...m, { role: 'assistant', content: String(data.reply ?? '') }]);
+      setMessages((m) => [...m, {
+        role: 'assistant',
+        content: String(data.reply ?? ''),
+        proposal: data.proposal ?? null,
+        options: data.disambiguation?.options ?? null,
+        sourceText: text.trim(),
+      }]);
+      // A management action may have changed listings the rest of the app shows.
+      if (data.action_result?.ok) {
+        void qc.invalidateQueries({ queryKey: ['listings'] });
+        void qc.invalidateQueries({ queryKey: ['listing-drafts', userId] });
+      }
     } catch (err: any) {
       setError(err?.message ?? 'The gnome tripped over a root — try again.');
     } finally {
       setBusy(false);
     }
-  }, [busy, messages]);
+  }, [busy, messages, qc, userId]);
+
+  // action_id -> settled, so a card's buttons disappear once it is decided.
+  const [settled, setSettled] = useState<Record<string, boolean>>({});
+
+  const confirmProposal = useCallback(async (p: Proposal) => {
+    if (busy || settled[p.action_id]) return;
+    setBusy(true);
+    try {
+      const { data, error: e } = await supabase.rpc('ai_confirm_action', { p_action_id: p.action_id });
+      if (e) throw e;
+      const ok = Number(data?.ok_count ?? 0);
+      const pay = Number(data?.payment_needed ?? 0);
+      const did = p.action === 'mark_sold_bulk' ? 'marked sold'
+        : p.action === 'set_price_bulk' ? 'updated'
+        : p.action === 'restock' ? 'restocked' : 'renewed';
+      const parts: string[] = [];
+      if (ok) parts.push(`${ok} listing${ok === 1 ? '' : 's'} ${did}.`);
+      if (pay) parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up. Open the listing to renew it there.`);
+      if (!parts.length) parts.push('Nothing needed doing — everything was already in that state.');
+      setSettled((s) => ({ ...s, [p.action_id]: true }));
+      setMessages((m) => [...m, { role: 'assistant', content: parts.join(' ') }]);
+      void qc.invalidateQueries({ queryKey: ['listings'] });
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      setError(/ACTION_EXPIRED/.test(msg)
+        ? 'That confirmation expired — ask me again and I\'ll set it up fresh.'
+        : /ACTION_ALREADY/.test(msg)
+          ? 'That one\'s already been handled.'
+          : 'That confirmation didn\'t go through — nothing was changed. Try asking again.');
+      if (/ACTION_EXPIRED|ACTION_ALREADY/.test(msg)) setSettled((s) => ({ ...s, [p.action_id]: true }));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, settled, qc]);
+
+  const cancelProposal = useCallback(async (p: Proposal) => {
+    if (settled[p.action_id]) return;
+    setSettled((s) => ({ ...s, [p.action_id]: true }));
+    try { await supabase.rpc('ai_cancel_action', { p_action_id: p.action_id }); } catch { /* it expires on its own */ }
+    setMessages((m) => [...m, { role: 'assistant', content: 'Cancelled — nothing was changed.' }]);
+  }, [settled]);
 
   // Photos → one draft per photo. Uploaded first so the draft carries a real
   // image, then analyzed in memory server-side.
@@ -363,8 +436,41 @@ export default function AiTab() {
           )}
 
           {messages.map((m, i) => (
-            <View key={i} style={[styles.bubble, m.role === 'user' ? styles.mine : styles.theirs]}>
-              <Text style={m.role === 'user' ? styles.mineText : styles.theirsText}>{m.content}</Text>
+            <View key={i} style={m.role === 'user' ? styles.mineWrap : styles.theirsWrap}>
+              <View style={[styles.bubble, m.role === 'user' ? styles.mine : styles.theirs]}>
+                <Text style={m.role === 'user' ? styles.mineText : styles.theirsText}>{m.content}</Text>
+              </View>
+              {!!m.options?.length && (
+                <View style={styles.optionsWrap}>
+                  {m.options.map((o) => (
+                    <Pressable
+                      key={o.id}
+                      style={styles.starter}
+                      disabled={busy}
+                      onPress={() => ask(`${m.sourceText ?? ''} — the one called "${o.title}"`)}
+                    >
+                      <Text style={styles.starterText}>{o.detail}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              {!!m.proposal && !settled[m.proposal.action_id] && (
+                <View style={styles.proposalCard}>
+                  <Text style={styles.proposalTitle}>{m.proposal.summary}</Text>
+                  {m.proposal.count > 1 && (
+                    <Text style={styles.proposalMeta}>
+                      {m.proposal.items.slice(0, 6).map((it) => it.title).join(' · ')}
+                      {m.proposal.count > 6 ? ` +${m.proposal.count - 6} more` : ''}
+                    </Text>
+                  )}
+                  <View style={styles.cardActions}>
+                    <Button label="Confirm" onPress={() => void confirmProposal(m.proposal!)} />
+                    <Pressable onPress={() => void cancelProposal(m.proposal!)} hitSlop={6}>
+                      <Text style={styles.linkMuted}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
             </View>
           ))}
 
@@ -576,6 +682,15 @@ const styles = StyleSheet.create({
   },
   starterText: { fontFamily: fonts.regular, fontSize: 14, color: Colors.text },
   bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
+  mineWrap: { alignSelf: 'flex-end', maxWidth: '88%' },
+  theirsWrap: { alignSelf: 'flex-start', maxWidth: '88%', gap: 8 },
+  optionsWrap: { gap: 6 },
+  proposalCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 12, gap: 6,
+    borderWidth: 1, borderColor: Colors.primary,
+  },
+  proposalTitle: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.text, lineHeight: 20 },
+  proposalMeta: { fontFamily: fonts.regular, fontSize: 13, color: Colors.textSecondary },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   theirs: { alignSelf: 'flex-start', backgroundColor: Colors.surface },
   mine: { alignSelf: 'flex-end', backgroundColor: Colors.primary },

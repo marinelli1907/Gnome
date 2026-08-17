@@ -30,6 +30,7 @@ import {
   estCents, actualCents, RateLimitedError,
 } from './providers.ts';
 import { parseDraft, type DraftCandidate } from './listing_draft_schema.ts';
+import { handleMarketAction } from './market_actions.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -53,9 +54,10 @@ PLANS — the only plan facts; never invent others, and prefer the user's own nu
 STYLE: warm, plain text, no markdown, no asterisks or headers. Conversational. Usually 2–6 sentences; use a short plain list only when genuinely listing things. Sparing dry humor. Never childish, never salesy.
 
 WHAT YOU CAN DO: you can create listing DRAFTS from photos. If they want to list something, tell them to add photos in this tab and you will draft each one — one photo, one listing — for them to review. Say plainly that you prepare drafts and they approve them; you never publish anything by yourself.
+The app's market-management layer (separate from you) can also update a listing's price or quantity, mark it sold, restock or renew it, and answer inventory questions — when the seller says it as a direct request. If someone asks you to change a listing and you are reading their message as ordinary chat, the request wasn't recognized: tell them to say it plainly in one message, like "Change Roma Tomatoes to $5 a quart" or "Mark the cucumbers sold out", and note that restocks, renewals, and bulk changes always come back as a Confirm button — nothing happens until they tap it.
 
 HARD RULES:
-- Never claim to have changed, published, paused, or deleted anything. You only prepare drafts.
+- Never claim to have changed, published, paused, or deleted anything. You only prepare drafts; the action layer handles changes and always reports its own results.
 - Never reveal or guess another user's data, address, or contact details. Aggregate counts in MARKET INTEL are fine to discuss; individuals are not.
 - Pesticides, food safety, cottage-food and licensing questions: be careful, point to the product label, the Trust page, and their county extension office or state ag department. No definitive legal rulings.
 - Pricing advice: give a range and say it depends on local conditions. Gnome takes 0% of neighbor-to-neighbor sales.
@@ -277,6 +279,56 @@ Deno.serve(async (req: Request) => {
       return json(400, { error: 'EMPTY', message: 'Say something first.' });
     }
 
+    // -----------------------------------------------------------------------
+    // Market-management action layer (0116). Runs BEFORE free-form chat: if the
+    // last message is a recognizable management request, it is routed to the
+    // owner-scoped RPCs and answered from server results. The model's only role
+    // there is intent extraction; mutations and phrasing are deterministic.
+    // Anything unrecognized falls through to normal chat below.
+    // -----------------------------------------------------------------------
+    const lastUserMsg = turns[turns.length - 1].parts[0].text ?? '';
+    try {
+      const userClient = createClient(
+        Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } },
+      );
+      const { data: invRows } = await userClient.rpc('ai_my_inventory');
+      const sellerTitles = (Array.isArray(invRows) ? invRows : [])
+        .map((r: { title?: string }) => String(r.title ?? '')).filter(Boolean);
+      let itok = { provider: '', model: '', inTok: 0, outTok: 0 };
+      const actionResp = await handleMarketAction({
+        rpc: async (fn, args) => {
+          const { data, error } = await userClient.rpc(fn, args);
+          return { data, error: error ? { message: String(error.message ?? error.code ?? '') } : null };
+        },
+        extract: async (system, msg) => {
+          const r = await callWithFallback(chain, {
+            system, turns: [{ role: 'user', parts: [{ text: msg }] }], maxTokens: 250, json: true,
+          });
+          itok = { provider: r.provider, model: r.model, inTok: r.inTok, outTok: r.outTok };
+          return r.text;
+        },
+        requestId: crypto.randomUUID(),
+      }, lastUserMsg, sellerTitles);
+      if (actionResp) {
+        admin.from('ai_chat_messages').insert([
+          { user_id: uid, role: 'user', content: lastUserMsg.slice(0, 4000) },
+          { user_id: uid, role: 'assistant', content: actionResp.reply.slice(0, 4000) },
+        ]).then(() => {}, () => {});
+        admin.from('ai_usage_log').insert({
+          feature: 'assistant_action', user_id: uid, provider: itok.provider, model: itok.model,
+          input_tokens: itok.inTok, output_tokens: itok.outTok,
+          estimated_cost_cents: estCents(itok.model, itok.inTok, itok.outTok),
+          actual_cost_cents: actualCents(itok.provider as 'gemini' | 'openai' | 'anthropic', itok.model, itok.inTok, itok.outTok),
+          free_tier: itok.provider === 'gemini', duration_ms: Date.now() - t0, success: true,
+        }).then(() => {}, () => {});
+        return json(200, actionResp);
+      }
+    } catch (e) {
+      // The action layer must never take chat down with it; fall through.
+      console.error('gnome-assistant action layer:', e);
+    }
+
     const intel = await marketIntel(admin, uid, mkt2);
 
     let r;
@@ -296,7 +348,17 @@ Deno.serve(async (req: Request) => {
         maxTokens: 700,
       });
     } catch (e) {
-      if (e instanceof RateLimitedError) return json(503, { error: 'AI_BUSY', message: 'Gnome AI is busy. Try again shortly.' });
+      if (e instanceof RateLimitedError) {
+        admin.from('ai_usage_log').insert({
+          feature: 'assistant', user_id: uid, success: false,
+          failure_family: 'rate_limited', duration_ms: Date.now() - t0,
+        }).then(() => {}, () => {});
+        return json(503, { error: 'AI_BUSY', message: 'Gnome AI is busy. Try again shortly.' });
+      }
+      admin.from('ai_usage_log').insert({
+        feature: 'assistant', user_id: uid, success: false,
+        failure_family: 'provider_error', duration_ms: Date.now() - t0,
+      }).then(() => {}, () => {});
       throw e;
     }
     const reply = r.text.trim();

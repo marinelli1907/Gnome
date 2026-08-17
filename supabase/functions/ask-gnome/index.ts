@@ -21,6 +21,7 @@ import {
   MODELS, type ModelRef, type Turn as PTurn, providerKeys, callWithFallback,
   estCents, actualCents, RateLimitedError,
 } from './providers.ts';
+import { handleMarketAction } from './market_actions.ts';
 
 function userIdFrom(req: Request): string | null {
   try {
@@ -137,7 +138,7 @@ WHAT GNOME IS (answer product questions from this, don't invent):
 - Privacy: public locations are rounded to about a neighborhood-sized cell; home addresses are never shown. Trust & Safety page covers pickup guidance and food-safety basics (cottage-food laws vary by state; eggs/meat/dairy are regulated — point to the /trust page and their county extension office rather than giving definitive legal rulings).
 
 HARD RULES:
-- You are READ-ONLY. You cannot create, edit, pause, or delete listings, change plans, cancel subscriptions, or check orders beyond what USER CONTEXT states. Never claim you did. Instead, tell them exactly where to do it (e.g. "My Market → your listing → Mark sold", "Pricing page → Upgrade", "manage billing through the Stripe link in your receipt email").
+- You are READ-ONLY. You cannot create, edit, pause, or delete listings, change plans, cancel subscriptions, or check orders beyond what USER CONTEXT states. Never claim you did. The app's market-management layer (separate from you) CAN update prices and quantities, mark listings sold, restock or renew them — when the seller says it as one direct message, like "Change Roma Tomatoes to $5/quart" or "Mark the cucumbers sold out". If someone asks you to change a listing and you're reading it as ordinary chat, tell them to phrase it that way; restocks, renewals, and bulk changes always come back as a Confirm button, and nothing happens until they tap it. For everything else, tell them exactly where to do it in the app (e.g. "Pricing page → Upgrade", "manage billing through the Stripe link in your receipt email").
 - Never reveal or speculate about other users' data, private addresses, or anything not in this prompt or the user-context line.
 - Pesticides, food-safety, legal questions: careful language, recommend the label/local authority; no definitive rulings.
 - If USER CONTEXT includes a Seed Drop order, ground seed answers in those exact varieties and their numbers (depth, spacing, germination and maturity days). State order status ONLY from the context — never guess or promise shipping dates. Germination is never guaranteed.
@@ -193,9 +194,54 @@ Deno.serve(async (req: Request) => {
   }
 
   const page = typeof body.page === 'string' ? body.page.slice(0, 80) : '/';
-  const ctx = await userContext(userId);
 
   const t0 = Date.now();
+
+  // -------------------------------------------------------------------------
+  // Market-management action layer (0116) — same contract as the app's AI tab.
+  // The model only extracts intent; mutations run through owner-scoped RPCs
+  // under the caller's own JWT, and renewal-class/bulk work returns a proposal
+  // the client must confirm via ai_confirm_action. Unrecognized -> normal chat.
+  // -------------------------------------------------------------------------
+  try {
+    const jwt = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+    const userClient = createClient(
+      Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: `Bearer ${jwt}` } } },
+    );
+    const { data: invRows } = await userClient.rpc('ai_my_inventory');
+    const sellerTitles = (Array.isArray(invRows) ? invRows : [])
+      .map((r: { title?: string }) => String(r.title ?? '')).filter(Boolean);
+    let itok = { provider: '', model: '', inTok: 0, outTok: 0 };
+    const actionResp = await handleMarketAction({
+      rpc: async (fn, args) => {
+        const { data, error } = await userClient.rpc(fn, args);
+        return { data, error: error ? { message: String(error.message ?? error.code ?? '') } : null };
+      },
+      extract: async (system, msg) => {
+        const r = await callWithFallback(chain, {
+          system, turns: [{ role: 'user', parts: [{ text: msg }] }], maxTokens: 250, json: true,
+        });
+        itok = { provider: r.provider, model: r.model, inTok: r.inTok, outTok: r.outTok };
+        return r.text;
+      },
+      requestId: crypto.randomUUID(),
+    }, turns[turns.length - 1].content, sellerTitles);
+    if (actionResp) {
+      cfgClient.from('ai_usage_log').insert({
+        feature: 'assistant_action', user_id: userId, provider: itok.provider, model: itok.model,
+        input_tokens: itok.inTok, output_tokens: itok.outTok,
+        estimated_cost_cents: estCents(itok.model, itok.inTok, itok.outTok),
+        actual_cost_cents: actualCents(itok.provider as 'gemini' | 'openai' | 'anthropic', itok.model, itok.inTok, itok.outTok),
+        free_tier: itok.provider === 'gemini', duration_ms: Date.now() - t0, success: true,
+      }).then(() => {}, () => {});
+      return json(200, actionResp);
+    }
+  } catch (e) {
+    console.error('ask-gnome action layer:', e);
+  }
+
+  const ctx = await userContext(userId);
   try {
     const pTurns: PTurn[] = turns.map((t) => ({ role: t.role, parts: [{ text: t.content }] }));
     const r = await callWithFallback(chain, {
@@ -216,12 +262,19 @@ Deno.serve(async (req: Request) => {
     return json(200, { reply });
   } catch (e) {
     if (e instanceof RateLimitedError) {
+      try {
+        await cfgClient.from('ai_usage_log').insert({
+          feature: 'assistant', user_id: userId, success: false,
+          failure_family: 'rate_limited', duration_ms: Date.now() - t0,
+        });
+      } catch { /* best-effort */ }
       return json(503, { error: 'Gnome AI is temporarily busy. Try again shortly.' });
     }
     console.error('ask-gnome error:', e);
     try {
       await cfgClient.from('ai_usage_log').insert({
-        feature: 'assistant', user_id: userId, success: false, duration_ms: Date.now() - t0,
+        feature: 'assistant', user_id: userId, success: false,
+        failure_family: 'provider_error', duration_ms: Date.now() - t0,
       });
     } catch { /* best-effort */ }
     return json(502, {
