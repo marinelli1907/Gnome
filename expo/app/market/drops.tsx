@@ -15,6 +15,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyMarket, logEvent } from '@/lib/db';
+import { dropShareUrl } from '@/lib/links';
 import { supabase } from '@/lib/supabase';
 
 type DropRow = {
@@ -39,6 +40,15 @@ const phaseOf = (d: DropRow): string => {
   if (now < Date.parse(d.starts_at)) return 'upcoming';
   if (now >= Date.parse(d.ends_at)) return 'ended';
   return 'live';
+};
+
+// Chip copy — LIVE NOW keeps its shout; everything else reads like a person wrote it.
+const phaseLabel = (phase: string): string => {
+  if (phase === 'live') return 'LIVE NOW';
+  if (phase === 'draft') return 'Draft';
+  if (phase === 'upcoming') return 'Coming up';
+  if (phase === 'ended') return 'Ended';
+  return phase.charAt(0).toUpperCase() + phase.slice(1);
 };
 
 /** "YYYY-MM-DD" + "HH:MM" (device-local time) -> Date, or null. */
@@ -68,9 +78,13 @@ export default function MarketDropsScreen() {
 
   const refresh = useCallback(async () => {
     if (!marketId) return;
+    // Long-ended Drops (30+ days) stay out of the list — this screen is for
+    // what's coming up, not a full history.
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: ds } = await supabase.from('market_drops')
       .select('id,title,description,starts_at,ends_at,status')
       .eq('market_id', marketId).neq('status', 'cancelled')
+      .gte('ends_at', cutoff)
       .order('starts_at', { ascending: true });
     const rows = (ds ?? []) as DropRow[];
     if (rows.length) {
@@ -142,9 +156,21 @@ export default function MarketDropsScreen() {
 
   const share = async (d: DropRow) => {
     if (!marketSlug) return;
-    const url = `https://gnomefarmersmarket.com/market/${marketSlug}?drop=${d.id}`;
+    const url = dropShareUrl(marketSlug, d.id);
     void logEvent('drop_shared', { userId: userId ?? null });
     try { await Share.share({ message: `${d.title} — ${fmtWindow(d.starts_at, d.ends_at)}\n${url}` }); } catch { /* cancelled */ }
+  };
+
+  // Cancelling is immediate and (from here) one-way — make the seller say so.
+  const confirmCancel = (d: DropRow) => {
+    Alert.alert(
+      'Cancel this Drop?',
+      "Buyers will stop seeing it immediately — this can't be undone here.",
+      [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Cancel Drop', style: 'destructive', onPress: () => void setStatus(d, 'cancelled') },
+      ],
+    );
   };
 
   return (
@@ -164,7 +190,7 @@ export default function MarketDropsScreen() {
           <Text style={styles.cardTitle}>
             {d.title}{'  '}
             <Text style={styles.badge}>
-              {phaseOf(d) === 'live' ? 'LIVE NOW' : phaseOf(d)}
+              {phaseLabel(phaseOf(d))}
             </Text>
           </Text>
           <Text style={styles.cardMeta}>
@@ -177,7 +203,7 @@ export default function MarketDropsScreen() {
             {d.status === 'scheduled' && (
               <>
                 <Pressable onPress={() => void share(d)} hitSlop={6}><Text style={styles.link}>Share Drop</Text></Pressable>
-                <Pressable onPress={() => void setStatus(d, 'cancelled')} hitSlop={6}>
+                <Pressable onPress={() => confirmCancel(d)} hitSlop={6}>
                   <Text style={styles.linkMuted}>Cancel Drop</Text>
                 </Pressable>
               </>

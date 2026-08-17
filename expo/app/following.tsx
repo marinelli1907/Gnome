@@ -18,7 +18,7 @@ const fmtDropWindow = (startsAt: string, endsAt: string) => {
   const s = new Date(startsAt);
   const e = new Date(endsAt);
   const day = s.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   return `${day}, ${t(s)} – ${t(e)}`;
 };
 
@@ -156,8 +156,11 @@ export default function FollowingScreen() {
                 </Text>
               </Text>
               <Text style={styles.dropMeta}>
-                {marketName(d.market_id)} · {fmtDropWindow(d.starts_at, d.ends_at)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
+                {marketName(d.market_id)} · {fmtDropWindow(d.starts_at, d.ends_at)} · {(d.phase === 'live' || d.phase === 'upcoming') && d.available_items === 0
+                  ? 'Sold out'
+                  : `${d.available_items} item${d.available_items === 1 ? '' : 's'}`}
               </Text>
+              {d.description ? <Text style={styles.dropMeta} numberOfLines={2}>{d.description}</Text> : null}
             </Pressable>
           ))}
         </>

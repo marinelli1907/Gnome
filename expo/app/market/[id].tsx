@@ -26,7 +26,7 @@ const fmtDropWindow = (startsAt: string, endsAt: string) => {
   const s = new Date(startsAt);
   const e = new Date(endsAt);
   const day = s.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   return `${day}, ${t(s)} – ${t(e)}`;
 };
 
@@ -71,8 +71,14 @@ export default function MarketScreen() {
     void (async () => {
       const { data } = await supabase.from('public_market_drops')
         .select('id,title,description,starts_at,ends_at,phase,available_items')
-        .eq('market_id', id).order('starts_at', { ascending: true }).limit(4);
-      if (alive) setDrops((data ?? []) as typeof drops);
+        .eq('market_id', id).order('starts_at', { ascending: true }).limit(12);
+      // Live first, then upcoming, then just-ended — a run of recently-ended
+      // Drops never crowds a live one off the screen.
+      const rank = (phase: string) => (phase === 'live' ? 0 : phase === 'upcoming' ? 1 : 2);
+      const rows = ((data ?? []) as typeof drops).sort(
+        (a, b) => rank(a.phase) - rank(b.phase) || Date.parse(a.starts_at) - Date.parse(b.starts_at),
+      );
+      if (alive) setDrops(rows);
     })();
     return () => { alive = false; };
   }, [id]);
@@ -295,7 +301,9 @@ export default function MarketScreen() {
             </Text>
           </Text>
           <Text style={styles.dropMeta}>
-            {fmtDropWindow(d.starts_at, d.ends_at)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
+            {fmtDropWindow(d.starts_at, d.ends_at)} · {(d.phase === 'live' || d.phase === 'upcoming') && d.available_items === 0
+              ? 'Sold out'
+              : `${d.available_items} item${d.available_items === 1 ? '' : 's'}`}
           </Text>
           {d.description ? <Text style={styles.dropMeta}>{d.description}</Text> : null}
         </View>

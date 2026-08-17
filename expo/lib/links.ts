@@ -26,3 +26,8 @@ export function listingShareUrl(listing: Pick<Listing, 'id' | 'title'>): string 
 export function marketShareUrl(market: Pick<Market, 'slug'>): string | null {
   return market.slug ? `${WEB_BASE}/market/${market.slug}` : null;
 }
+
+/** A Market Drop deep link — the Market page, scrolled to the Drop. */
+export function dropShareUrl(marketSlug: string, dropId: string): string {
+  return `${WEB_BASE}/market/${marketSlug}?drop=${dropId}`;
+}
