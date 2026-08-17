@@ -20,6 +20,7 @@ import {
 } from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import AllowanceCard from '../components/AllowanceCard';
+import ShareMarketCard from '../components/ShareMarketCard';
 import { planDisplay } from '../../lib/allowance';
 import AppLink from '../components/AppLink';
 import { SignInCard, useSession } from '../components/auth';
@@ -565,6 +566,7 @@ export default function MyMarketClient() {
   return (
     <div>
       <AllowanceCard />
+      <ShareMarketCard />
       <div className="mm-head">
         <div>
           <h1>{market?.name ?? 'My Market'}</h1>
