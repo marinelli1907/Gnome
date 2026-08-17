@@ -94,6 +94,7 @@ export interface PlanLimit {
   monthly_publish_allowance?: number | null;
   included_renewals_per_period?: number | null;
   wanted_intros_per_day?: number | null;
+  qr_tools?: boolean;
   max_photos: number;
   analytics: boolean;
   featured: boolean;

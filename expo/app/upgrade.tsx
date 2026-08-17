@@ -30,6 +30,9 @@ const tierWanted = (l?: PlanLimit) =>
   l === undefined || l.wanted_intros_per_day === undefined ? null
     : l.wanted_intros_per_day === null ? 'Unlimited Wanted responses'
     : `${l.wanted_intros_per_day} Wanted response${l.wanted_intros_per_day === 1 ? '' : 's'}/day`;
+const tierQr = (l?: PlanLimit) =>
+  l === undefined || l.qr_tools === undefined ? null
+    : l.qr_tools ? 'Custom Market QR tools' : 'Market link included · QR tools locked';
 const tierCaveat = (l?: PlanLimit) => {
   if (l === undefined || l.included_renewals_per_period === undefined) return null;
   if (l.included_renewals_per_period === null) return 'No listing or renewal overage charges.';
@@ -150,6 +153,7 @@ export default function UpgradeScreen() {
                 {tierListings(l) ?? '—'}
                 {tierRenewals(l) ? ` · ${tierRenewals(l)}` : ''}
                 {tierWanted(l) ? ` · ${tierWanted(l)}` : ''}
+                {tierQr(l) ? ` · ${tierQr(l)}` : ''}
                 {l?.max_pickup_locations
                   ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}${l.extra_location_fee_cents ? ` (+${formatPrice(l.extra_location_fee_cents)}/mo each extra)` : ''}`
                   : ''}

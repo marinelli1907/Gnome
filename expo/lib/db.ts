@@ -731,6 +731,23 @@ export function useMyWantedAllowance(uid?: string) {
   });
 }
 
+export type MarketQr = { code: string | null; entitled: boolean; slug: string | null; market_name: string | null };
+/** Durable Market QR identity (0111). Issued server-side on first entitled access; a downgraded
+ *  seller keeps their code with entitled=false so printed signs stay honest. */
+export function useMyMarketQr(uid?: string) {
+  return useQuery({
+    queryKey: ['my-market-qr', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<MarketQr | null> => {
+      const { data, error } = await supabase.rpc('my_market_qr');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as MarketQr | null;
+    },
+  });
+}
+
 export function usePlanLimits() {
   return useQuery({
     queryKey: keys.planLimits(),

@@ -600,6 +600,8 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   const [allowState, setAllowState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
   const [wanted, setWanted] = useState<any | null>(null);
   const [wantedState, setWantedState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
+  const [qrInfo, setQr] = useState<any | null>(null);
+  const [qrState, setQrState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
 
   const search = async () => {
     const { data } = await supabase.from('profiles')
@@ -609,7 +611,7 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   };
   const open = async (p: any) => {
     setSel(p); setEnt(null); setMkt(null); setPromo(null); setAllow(null); setAllowState('loading');
-    setWanted(null); setWantedState('loading');
+    setWanted(null); setWantedState('loading'); setQr(null); setQrState('loading');
     const { data: m } = await supabase.from('markets').select('id,name,plan').eq('owner_id', p.id).limit(1).maybeSingle();
     setMkt(m);
     if (m) {
@@ -626,6 +628,11 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
       if (au.error) { setAllow(null); setAllowState('error'); }
       else if (!arow) { setAllow(null); setAllowState('none'); }
       else { setAllow(arow); setAllowState('ok'); }
+      const qq = await supabase.rpc('admin_market_qr', { p_market: m.id });
+      const qrow = Array.isArray(qq.data) ? qq.data[0] : qq.data;
+      if (qq.error) { setQr(null); setQrState('error'); }
+      else if (!qrow) { setQr(null); setQrState('none'); }
+      else { setQr(qrow); setQrState('ok'); }
       // Wanted usage hangs off the USER, not the market — introductions are claims by claimer_id.
       const wq = await supabase.rpc('admin_wanted_usage', { p_user: p.id });
       const wrow = Array.isArray(wq.data) ? wq.data[0] : wq.data;
@@ -773,6 +780,27 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
                     · “{r.title}” — {String(r.created_at).slice(0, 10)} ({r.status})
                   </Text>
                 ))}
+              </View>
+            )}
+            {qrState === 'error' && (
+              <Text style={[s.cardSub, { color: C.red }]}>
+                Market QR: unable to load (0111 may not be applied). Not the same as no QR.
+              </Text>
+            )}
+            {qrState === 'ok' && qrInfo && (
+              <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8 }}>
+                <Text style={[s.cardSub, { fontWeight: '600' }]}>MARKET QR</Text>
+                <Text style={s.cardSub}>
+                  Public URL: gnomefarmersmarket.com/market/{qrInfo.market_slug ?? '—'}
+                </Text>
+                <Text style={s.cardSub}>
+                  {qrInfo.code
+                    ? `QR: /q/${qrInfo.code} · issued ${String(qrInfo.created_at).slice(0, 10)} · scans ${qrInfo.scans_total} (30d: ${qrInfo.scans_30d})`
+                    : 'QR: not issued'}
+                  {'  ·  tools: '}{qrInfo.entitled ? 'entitled' : 'locked'}
+                </Text>
+                {/* Recovery = re-render the asset from this same durable code, on web or mobile.
+                    There is deliberately no rotate-code control here or anywhere. */}
               </View>
             )}
             {promo && (
