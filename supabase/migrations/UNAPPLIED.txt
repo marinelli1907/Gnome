@@ -37,7 +37,5 @@
 
 # Monetization round 0104-0112: applied to production 2026-08-16/17 (see APPLIED.tsv).
 
-# AI market import round. 0114 (the 30-day draft-publish bug fix) was APPLIED to production
-# 2026-08-16 with owner approval — see APPLIED.tsv. 0115 stays here until the Build My Market
-# UX ships as a coordinated release.
-0115_market_import_drafts.sql  create_import_drafts + listing_drafts import columns; applied together with the import UX release
+# AI market import round: 0114 and 0115 are both APPLIED to production (see APPLIED.tsv) —
+# 0114 on owner approval as a bug fix, 0115 as the coordinated Build My Market release.
