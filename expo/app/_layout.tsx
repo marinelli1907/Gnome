@@ -162,6 +162,10 @@ export default function RootLayout() {
                 options={{ title: 'Delivery', ...headerStyle }}
               />
               <Stack.Screen
+                name="market/drops"
+                options={{ title: 'Market Drops', ...headerStyle }}
+              />
+              <Stack.Screen
                 name="ai-listing"
                 options={{ title: 'Gnome AI', ...headerStyle }}
               />

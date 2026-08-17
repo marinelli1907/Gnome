@@ -14,6 +14,16 @@ import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/l
 import { usePickupSettings } from '@/lib/marketops';
 import { useDeliverySettings } from '@/lib/delivery';
 import { marketShareUrl } from '@/lib/links';
+import { supabase } from '@/lib/supabase';
+
+// A Market Drop's window in the device's local time.
+const fmtDropWindow = (startsAt: string, endsAt: string) => {
+  const s = new Date(startsAt);
+  const e = new Date(endsAt);
+  const day = s.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${day}, ${t(s)} – ${t(e)}`;
+};
 
 /**
  * A Market's distance: buyer's transient foreground fix vs the median of the
@@ -46,6 +56,21 @@ export default function MarketScreen() {
     void getCoordsIfGranted().then(setMyCoords);
   }, []);
   const rep = useMarketReputation(id);
+  // Market Drops (NOT the Seed Drop): upcoming/live/just-ended, from the public view.
+  const [drops, setDrops] = React.useState<{
+    id: string; title: string; description: string | null;
+    starts_at: string; ends_at: string; phase: string; available_items: number;
+  }[]>([]);
+  React.useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const { data } = await supabase.from('public_market_drops')
+        .select('id,title,description,starts_at,ends_at,phase,available_items')
+        .eq('market_id', id).order('starts_at', { ascending: true }).limit(4);
+      if (alive) setDrops((data ?? []) as typeof drops);
+    })();
+    return () => { alive = false; };
+  }, [id]);
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
   const pickupSettings = usePickupSettings(id);
@@ -178,6 +203,20 @@ export default function MarketScreen() {
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
         />
       )}
+      {drops.map((d) => (
+        <View key={d.id} style={styles.dropCard}>
+          <Text style={styles.dropTitle}>
+            🧺 {d.title}{'  '}
+            <Text style={styles.dropBadge}>
+              {d.phase === 'live' ? 'LIVE NOW' : d.phase === 'ended' ? 'Just ended' : 'Coming up'}
+            </Text>
+          </Text>
+          <Text style={styles.dropMeta}>
+            {fmtDropWindow(d.starts_at, d.ends_at)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
+          </Text>
+          {d.description ? <Text style={styles.dropMeta}>{d.description}</Text> : null}
+        </View>
+      ))}
       <Text style={styles.countLine}>
         {items.length} active listing{items.length === 1 ? '' : 's'}
       </Text>
@@ -233,6 +272,13 @@ export default function MarketScreen() {
 }
 
 const styles = StyleSheet.create({
+  dropCard: {
+    marginTop: 12, alignSelf: 'stretch', backgroundColor: Colors.surface,
+    borderRadius: 14, padding: 12, gap: 4, borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  dropTitle: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.text },
+  dropBadge: { fontFamily: fonts.semibold, fontSize: 11, color: Colors.primary },
+  dropMeta: { fontFamily: fonts.regular, fontSize: 13, color: Colors.textSecondary },
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   list: { paddingBottom: 32 },

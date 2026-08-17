@@ -4,9 +4,18 @@ import AppLink from '../../components/AppLink';
 import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
 import { areaLabel, LISTING_TYPES, TYPE_LABEL } from '@/lib/format';
-import { getMarketBySlug, getMarketDelivery, getMarketListings } from '@/lib/gnome';
+import { getDropItemIds, getMarketBySlug, getMarketDelivery, getMarketDrops, getMarketListings } from '@/lib/gnome';
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// A Market Drop's window, rendered in the Drop's own timezone.
+const dropWindow = (d: { starts_at: string; ends_at: string; timezone: string }) => {
+  const opts: Intl.DateTimeFormatOptions = { timeZone: d.timezone || 'America/New_York' };
+  const s = new Date(d.starts_at);
+  const e = new Date(d.ends_at);
+  const day = s.toLocaleDateString('en-US', { ...opts, weekday: 'short', month: 'short', day: 'numeric' });
+  const t = (x: Date) => x.toLocaleTimeString('en-US', { ...opts, hour: 'numeric', minute: '2-digit' });
+  return `${day}, ${t(s)} – ${t(e)}`;
+};
 const fee = (c: number) => (c === 0 ? 'free' : `$${(c / 100).toFixed(2).replace(/\.00$/, '')}`);
 const clock = (t: string) => {
   const [h, m] = t.split(':').map(Number);
@@ -39,7 +48,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   };
 }
 
-export default async function MarketPage({ params }: Params) {
+export default async function MarketPage({ params, searchParams }: Params & {
+  searchParams?: Promise<{ drop?: string }>;
+}) {
   const { slug } = await params;
   const m = await getMarketBySlug(slug);
   if (!m) {
@@ -49,10 +60,18 @@ export default async function MarketPage({ params }: Params) {
       </main>
     );
   }
-  const [listings, delivery] = await Promise.all([
+  const [listings, delivery, drops] = await Promise.all([
     getMarketListings(m.id, 60),
     getMarketDelivery(m.id),
+    getMarketDrops(m.id),
   ]);
+  // A shared Drop link (?drop=<id>) pins that Drop open with its own item grid.
+  const requestedDrop = (await searchParams)?.drop ?? null;
+  const openDrop = requestedDrop ? drops.find((d) => d.id === requestedDrop) ?? null : null;
+  const openDropItemIds = openDrop ? await getDropItemIds(openDrop.id) : [];
+  const openDropListings = openDrop
+    ? listings.filter((l) => openDropItemIds.includes(l.id))
+    : [];
   const counts = listings.reduce<Record<string, number>>((acc, l) => {
     acc[l.listing_type] = (acc[l.listing_type] ?? 0) + 1;
     return acc;
@@ -112,6 +131,47 @@ export default async function MarketPage({ params }: Params) {
           counts[t] ? <span key={t} className={`tag type-${t}`}>{counts[t]} {TYPE_LABEL[t]}</span> : null,
         )}
       </div>
+
+      {drops.length > 0 && (
+        <div className="preview-note" style={{ maxWidth: 720, display: 'grid', gap: 8 }}>
+          {drops.map((d) => (
+            <div key={d.id}>
+              <strong>
+                🧺 {d.title}
+                {' '}
+                {d.phase === 'live' ? <span className="chip" style={{ fontSize: 11 }}>LIVE NOW</span>
+                  : d.phase === 'ended' ? <span className="chip" style={{ fontSize: 11 }}>Just ended</span>
+                  : <span className="chip" style={{ fontSize: 11 }}>Coming up</span>}
+              </strong>
+              <p style={{ margin: '4px 0 0' }}>
+                {dropWindow(d)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
+                {d.phase !== 'ended' && d.available_items > 0 && (
+                  <>
+                    {' · '}
+                    <Link href={`/market/${m.slug}?drop=${d.id}`}>See what’s in it</Link>
+                  </>
+                )}
+              </p>
+              {d.description ? <p style={{ margin: '4px 0 0' }}>{d.description}</p> : null}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {openDrop && (
+        <section className="section">
+          <div className="section-head">
+            <h2>🧺 {openDrop.title} — {openDrop.phase === 'live' ? 'live now' : openDrop.phase === 'ended' ? 'ended' : dropWindow(openDrop)}</h2>
+          </div>
+          {openDropListings.length > 0 ? (
+            <div className="grid">
+              {openDropListings.map((l) => <ListingCard key={l.id} listing={l} promoted={!!l.has_active_promotion} />)}
+            </div>
+          ) : (
+            <div className="empty"><div className="emoji">🧺</div><h2>Nothing available in this Drop right now</h2><p>Items appear here while their listings are live.</p></div>
+          )}
+        </section>
+      )}
 
       {delivery && (
         <div className="preview-note" style={{ maxWidth: 720 }}>

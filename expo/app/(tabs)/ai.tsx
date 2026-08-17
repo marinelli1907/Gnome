@@ -38,7 +38,7 @@ import { purchaseOverage } from '@/lib/billing';
  */
 type Proposal = {
   action_id: string;
-  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk';
+  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk' | 'create_drop';
   summary: string;
   count: number;
   expires_in_minutes: number;
@@ -166,6 +166,16 @@ export default function AiTab() {
     try {
       const { data, error: e } = await supabase.rpc('ai_confirm_action', { p_action_id: p.action_id });
       if (e) throw e;
+      if (p.action === 'create_drop') {
+        const t = String(data?.drop?.title ?? 'Market Drop');
+        const n = Number(data?.drop?.items ?? 0);
+        setSettled((s) => ({ ...s, [p.action_id]: true }));
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          content: `Done — “${t}” is scheduled with ${n} item${n === 1 ? '' : 's'}. It goes live automatically at the start time and appears on your public Market.`,
+        }]);
+        return;
+      }
       const ok = Number(data?.ok_count ?? 0);
       const pay = Number(data?.payment_needed ?? 0);
       const did = p.action === 'mark_sold_bulk' ? 'marked sold'

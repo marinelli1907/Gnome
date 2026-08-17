@@ -250,6 +250,72 @@ function fakeDeps({ intent, listings = [], rpcLog = [], rpcResults = {} }) {
     JSON.stringify(r2));
 }
 
+// ---- Market Drop creation (create_drop) ------------------------------------
+{
+  const r3 = m.parseIntent(JSON.stringify({
+    action: 'create_drop', query: '', price_cents: null, unit: '', quantity: '',
+    scope: 'one', days: null, drop_title: 'Saturday Drop',
+    drop_starts_at: '2030-01-05T08:00:00-05:00', drop_ends_at: '2030-01-05T13:00:00-05:00',
+    drop_products: ['roma tomatoes', 'peppers'],
+  }));
+  ck('a clean create_drop intent parses with products and window',
+    r3.ok && r3.value.action === 'create_drop' && r3.value.drop_products.length === 2
+    && !!r3.value.drop_starts_at, JSON.stringify(r3));
+  const r4 = m.parseIntent(JSON.stringify({
+    action: 'create_drop', drop_title: 'X', drop_starts_at: 'whenever works',
+    drop_ends_at: '2030-01-05T13:00:00Z', drop_products: ['a'],
+  }));
+  ck('a junk timestamp is dropped, not trusted', r4.ok && r4.value.drop_starts_at === '');
+}
+ck('drop words open the pre-gate',
+  m.couldBeMarketAction('make a saturday drop with my tomatoes', ['Roma Tomatoes']) === true);
+
+// Missing schedule asks instead of inventing one.
+{
+  const { deps, log } = fakeDeps({
+    intent: { action: 'create_drop', query: '', price_cents: null, unit: '', quantity: '', scope: 'one', days: null,
+      drop_title: 'Saturday Drop', drop_starts_at: '', drop_ends_at: '', drop_products: ['roma tomatoes'] },
+    listings: [L('a', 'Roma Tomatoes', 3)],
+  });
+  const resp = await m.handleMarketAction(deps, 'make a saturday drop with my roma tomatoes', ['Roma Tomatoes']);
+  ck('a drop without a schedule asks for day and times',
+    /day and times/i.test(resp?.reply ?? '') && !log.some((c) => c.fn === 'ai_propose_action'),
+    JSON.stringify(resp));
+}
+
+// Ambiguous product asks; "all tomatoes" includes them all.
+{
+  const twoTomatoes = [L('a', 'Roma Tomatoes', 2), L('b', 'Heirloom Tomatoes', 2)];
+  const { deps: d1 } = fakeDeps({
+    intent: { action: 'create_drop', query: '', price_cents: null, unit: '', quantity: '', scope: 'one', days: null,
+      drop_title: 'Saturday Drop', drop_starts_at: '2030-01-05T08:00:00Z', drop_ends_at: '2030-01-05T13:00:00Z',
+      drop_products: ['tomatoes'] },
+    listings: twoTomatoes,
+  });
+  const r5 = await m.handleMarketAction(d1, 'saturday drop with tomatoes 8 to 1', ['Roma Tomatoes', 'Heirloom Tomatoes']);
+  ck('an ambiguous drop product asks and offers "all"',
+    /all tomatoes/i.test(r5?.reply ?? '') && !r5?.proposal, JSON.stringify(r5));
+
+  const { deps: d2, log: log2 } = fakeDeps({
+    intent: { action: 'create_drop', query: '', price_cents: null, unit: '', quantity: '', scope: 'one', days: null,
+      drop_title: 'Saturday Drop', drop_starts_at: '2030-01-05T08:00:00Z', drop_ends_at: '2030-01-05T13:00:00Z',
+      drop_products: ['all tomatoes'] },
+    listings: twoTomatoes,
+  });
+  const r6 = await m.handleMarketAction(d2, 'saturday drop with all tomatoes 8 to 1', ['Roma Tomatoes', 'Heirloom Tomatoes']);
+  ck('an explicit "all tomatoes" proposes BOTH, confirm-first, with the window in the payload',
+    r6?.proposal?.action === 'create_drop' && r6.proposal.count === 2
+    && log2.some((c) => c.fn === 'ai_propose_action'
+        && c.args.p_payload?.title === 'Saturday Drop' && !!c.args.p_payload?.starts_at),
+    JSON.stringify(r6));
+  ck('the drop proposal reply says nothing happened yet',
+    /Nothing is changed yet/.test(r6?.reply ?? ''), r6?.reply);
+}
+
+ck('confirm result: created drop reads back title and count',
+  m.confirmResultReply({ action: 'create_drop', ok_count: 1, drop: { title: 'Saturday Drop', items: 3 } })
+    .includes('“Saturday Drop” is scheduled with 3 items'));
+
 // Confirm-result phrasing (client-side sentences after ai_confirm_action).
 ck('confirm result: all renewed', m.confirmResultReply({ action: 'renew', ok_count: 3, payment_needed: 0 }) === '3 listings renewed.');
 ck('confirm result: payment split is honest',

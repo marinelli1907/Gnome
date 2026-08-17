@@ -151,6 +151,15 @@ export default function EditMarketScreen() {
           <Text style={styles.toolLinkText}>Pickups</Text>
           <ChevronRight size={18} color={Colors.textSecondary} />
         </Pressable>
+        <Pressable
+          style={[styles.toolLink, { marginTop: 10 }]}
+          onPress={() => router.push('/market/drops')}
+          accessibilityRole="button"
+          accessibilityLabel="Market Drops"
+        >
+          <Text style={styles.toolLinkText}>Market Drops</Text>
+          <ChevronRight size={18} color={Colors.textSecondary} />
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );

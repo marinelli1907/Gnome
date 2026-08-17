@@ -146,6 +146,41 @@ export async function getMarketListings(marketId: string, limit = 60): Promise<W
   }, 300);
 }
 
+// --- Market Drops (NOT the Seed Drop) --------------------------------------
+// Time-boxed collections of a market's existing listings. The view already
+// filters to scheduled drops that are upcoming, live, or freshly ended, and
+// counts items against public_listings so canonical state wins.
+export interface WebMarketDrop {
+  id: string;
+  market_id: string;
+  title: string;
+  description: string | null;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  phase: 'upcoming' | 'live' | 'ended';
+  available_items: number;
+}
+
+export async function getMarketDrops(marketId: string): Promise<WebMarketDrop[]> {
+  return rest<WebMarketDrop>('public_market_drops', {
+    select: 'id,market_id,title,description,starts_at,ends_at,timezone,phase,available_items',
+    market_id: `eq.${marketId}`,
+    order: 'starts_at.asc',
+    limit: '6',
+  }, 60);
+}
+
+export async function getDropItemIds(dropId: string): Promise<string[]> {
+  const rows = await rest<{ listing_id: string }>('market_drop_items', {
+    select: 'listing_id',
+    drop_id: `eq.${dropId}`,
+    order: 'position.asc',
+    limit: '30',
+  }, 60);
+  return rows.map((r) => r.listing_id);
+}
+
 // --- Markets --------------------------------------------------------------
 const MARKET_COLS =
   'id,slug,name,description,market_type,status,avatar_url,banner_url,city,county,state,verified,sponsor_visible,website_url,instagram_url,facebook_url,created_at,active_listing_count,member_since,listings_shared,listings_sold,trades_completed,response_rate,verified_email,tagline,theme';
