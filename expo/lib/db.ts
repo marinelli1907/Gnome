@@ -1732,7 +1732,10 @@ export function useToggleFollow(uid?: string) {
   });
 }
 
-export type FollowedMarket = PublicMarket & { active_count: number };
+export type FollowedMarket = PublicMarket & {
+  active_count: number;
+  drop_alerts_enabled: boolean;
+};
 
 export function useFollowedMarkets(uid?: string) {
   return useQuery({
@@ -1741,12 +1744,15 @@ export function useFollowedMarkets(uid?: string) {
     queryFn: async (): Promise<FollowedMarket[]> => {
       const { data: follows, error } = await supabase
         .from('market_follows')
-        .select('market_id')
+        .select('market_id, drop_alerts_enabled')
         .eq('follower_id', uid as string)
         .limit(50);
       if (error) throw error;
       const ids = (follows ?? []).map((f) => f.market_id as string);
       if (!ids.length) return [];
+      const alertsById = new Map(
+        (follows ?? []).map((f) => [f.market_id as string, !!f.drop_alerts_enabled]),
+      );
       // Canonical visibility: only active markets render — a followed market
       // that got suspended simply disappears from the surface.
       const { data: mkts, error: merr } = await supabase
@@ -1765,7 +1771,40 @@ export function useFollowedMarkets(uid?: string) {
           .gt('expires_at', new Date().toISOString());
         return count ?? 0;
       }));
-      return rows.map((m, i) => ({ ...m, active_count: counts[i] }));
+      return rows.map((m, i) => ({
+        ...m,
+        active_count: counts[i],
+        drop_alerts_enabled: alertsById.get(m.id) ?? false,
+      }));
+    },
+  });
+}
+
+/**
+ * The Drop-alert toggle (explicit consent, §1/§4): flips ONLY the caller's own
+ * follow row. The select-back detects an RLS-rejected update so the UI never
+ * shows a preference the server refused.
+ */
+export function useSetDropAlerts(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ marketId, enabled }: { marketId: string; enabled: boolean }) => {
+      if (!uid) throw new Error('Not signed in.');
+      const { data, error } = await supabase
+        .from('market_follows')
+        .update({ drop_alerts_enabled: enabled })
+        .eq('market_id', marketId)
+        .eq('follower_id', uid)
+        .select('market_id');
+      if (error) throw error;
+      if (!data?.length) throw new Error('NOT_FOLLOWING');
+      void logEvent(enabled ? 'drop_alerts_enabled' : 'drop_alerts_disabled', {
+        userId: uid, metadata: { market: marketId },
+      });
+      return enabled;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['followedMarkets'] });
     },
   });
 }

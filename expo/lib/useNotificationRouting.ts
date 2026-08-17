@@ -18,6 +18,9 @@ type PushData = {
   claimId?: string;
   offerId?: string;
   orderId?: string;
+  // Drop alerts (0120): safe identifiers only — market + drop, nothing else.
+  marketId?: string;
+  dropId?: string;
 };
 
 function routeFor(data: PushData): void {
@@ -50,6 +53,11 @@ function routeFor(data: PushData): void {
       case 'grow_log_update':
       case 'plot_owner_note':
         if (data.claimId) router.push(`/growlog/${data.claimId}`);
+        break;
+      // Drop LIVE alert: open the Market — its Drop card sits at the top, and
+      // the screen re-resolves canonical visibility on open (§14/§15).
+      case 'drop_live':
+        if (data.marketId) router.push(`/market/${data.marketId}`);
         break;
       default:
         break;

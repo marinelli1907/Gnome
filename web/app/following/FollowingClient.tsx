@@ -47,6 +47,9 @@ export default function FollowingClient() {
   const [markets, setMarkets] = useState<WebMarket[] | null>(null);
   const [listings, setListings] = useState<WebListing[]>([]);
   const [drops, setDrops] = useState<FollowedDrop[]>([]);
+  // Drop-alert status is DISPLAY-ONLY on web: push delivery exists only in the
+  // app, so the toggle lives where it can actually do something (Expo).
+  const [alertsOn, setAlertsOn] = useState<Set<string>>(new Set());
   const viewLogged = useRef(false);
 
   useEffect(() => {
@@ -55,8 +58,9 @@ export default function FollowingClient() {
     void (async () => {
       const sb = supabaseBrowser();
       const { data: follows } = await sb
-        .from('market_follows').select('market_id').eq('follower_id', uid);
+        .from('market_follows').select('market_id, drop_alerts_enabled').eq('follower_id', uid);
       const ids = (follows ?? []).map((f) => f.market_id);
+      setAlertsOn(new Set((follows ?? []).filter((f) => f.drop_alerts_enabled).map((f) => f.market_id)));
       if (ids.length === 0) { setMarkets([]); return; }
       const [m, l, d] = await Promise.all([
         sb.from('public_markets').select(MARKET_COLS).in('id', ids),
@@ -101,7 +105,16 @@ export default function FollowingClient() {
       <section className="section" style={{ paddingTop: 0 }}>
         <div className="section-head"><h2>Your Markets <span className="mm-count">{markets.length}</span></h2></div>
         <div className="grid" onClickCapture={() => logFollowingEvent('followed_market_opened')}>
-          {markets.map((m) => <MarketCard key={m.id} market={m} />)}
+          {markets.map((m) => (
+            <div key={m.id}>
+              <MarketCard market={m} />
+              {alertsOn.has(m.id) && (
+                <p className="sub" style={{ margin: '6px 2px 0', fontSize: 13 }}>
+                  🔔 Drop alerts on — manage in the Gnome app
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       </section>
 

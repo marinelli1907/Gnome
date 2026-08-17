@@ -11,8 +11,10 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   consumePendingFollow, logEvent, setPendingFollow, useBlockUser, useIsFollowing,
-  useMarket, useMarketListings, useMarketReputation, useReport, useToggleFollow,
+  useMarket, useMarketListings, useMarketReputation, useReport, useSetDropAlerts,
+  useToggleFollow,
 } from '@/lib/db';
+import { ensurePushPermission } from '@/lib/notifications';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { usePickupSettings } from '@/lib/marketops';
 import { useDeliverySettings } from '@/lib/delivery';
@@ -85,10 +87,42 @@ export default function MarketScreen() {
   // stale intent can never follow a market that went non-public in between.
   const isFollowing = useIsFollowing(id, userId ?? undefined);
   const toggleFollow = useToggleFollow(userId ?? undefined);
+  const setDropAlerts = useSetDropAlerts(userId ?? undefined);
+
+  // §3: after a successful follow, a lightweight non-blocking offer. Explicit
+  // consent — the OS permission sheet appears only if they say yes, and a
+  // denial keeps Following intact with alerts OFF.
+  const offerDropAlerts = (marketId: string) => {
+    if (!userId) return;
+    Alert.alert(
+      'Followed 🌱',
+      'Want an alert when this Market has a Drop go live?',
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Turn on Drop alerts',
+          onPress: () => {
+            void (async () => {
+              const perm = await ensurePushPermission(userId);
+              if (perm !== 'granted') {
+                Alert.alert('Drop alerts', 'Alerts need notification permission. You can turn them on any time from Markets you follow.');
+                return;
+              }
+              setDropAlerts.mutate({ marketId, enabled: true }, {
+                onError: () => Alert.alert('Drop alerts', 'That didn’t stick — try again from Markets you follow.'),
+              });
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   useEffect(() => {
     if (!userId || !id) return;
     if (!consumePendingFollow(id)) return;
     toggleFollow.mutate({ marketId: id, follow: true }, {
+      onSuccess: () => offerDropAlerts(id),
       onError: (e: unknown) => {
         const msg = e instanceof Error && e.message === 'MARKET_UNAVAILABLE'
           ? 'This Market isn’t available right now.'
@@ -104,7 +138,9 @@ export default function MarketScreen() {
       router.push('/sign-in');
       return;
     }
-    toggleFollow.mutate({ marketId: id, follow: !isFollowing.data }, {
+    const willFollow = !isFollowing.data;
+    toggleFollow.mutate({ marketId: id, follow: willFollow }, {
+      onSuccess: () => { if (willFollow) offerDropAlerts(id); },
       onError: (e: unknown) => {
         const msg = e instanceof Error && e.message === 'MARKET_UNAVAILABLE'
           ? 'This Market isn’t available right now.'

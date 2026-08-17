@@ -52,6 +52,28 @@ export async function registerForPushNotifications(userId: string): Promise<void
 }
 
 /**
+ * Explicit-consent gate for Drop alerts (§5): request OS permission only when
+ * the buyer just asked to enable alerts. 'granted' also (best-effort) registers
+ * this device's token; 'denied' means the caller must keep the preference OFF
+ * and explain gently — never nag.
+ */
+export async function ensurePushPermission(userId: string): Promise<'granted' | 'denied'> {
+  try {
+    if (Platform.OS === 'web') return 'denied';
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let status = existing;
+    if (existing !== 'granted') {
+      status = (await Notifications.requestPermissionsAsync()).status;
+    }
+    if (status !== 'granted') return 'denied';
+    void registerForPushNotifications(userId);
+    return 'granted';
+  } catch {
+    return 'denied';
+  }
+}
+
+/**
  * Unbind this device before signing out.
  *
  * Rebinding happens on the next sign-in, but without this the row keeps

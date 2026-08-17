@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Avatar, Button, EmptyState, ErrorState } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
@@ -9,7 +9,9 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   logEvent, useFollowedDrops, useFollowedListings, useFollowedMarkets,
+  useSetDropAlerts,
 } from '@/lib/db';
+import { ensurePushPermission } from '@/lib/notifications';
 
 // A Market Drop's window in the device's local time (same shape as market/[id]).
 const fmtDropWindow = (startsAt: string, endsAt: string) => {
@@ -32,6 +34,25 @@ export default function FollowingScreen() {
   const marketIds = (markets.data ?? []).map((m) => m.id);
   const drops = useFollowedDrops(userId ?? undefined, marketIds);
   const listings = useFollowedListings(userId ?? undefined, marketIds);
+  const setDropAlerts = useSetDropAlerts(userId ?? undefined);
+
+  // §4/§5: the durable per-Market toggle. Turning ON asks for OS permission
+  // first; a denial keeps the preference OFF with one gentle explanation.
+  const onToggleAlerts = (marketId: string, next: boolean) => {
+    if (!userId) return;
+    void (async () => {
+      if (next) {
+        const perm = await ensurePushPermission(userId);
+        if (perm !== 'granted') {
+          Alert.alert('Drop alerts', 'Alerts need notification permission for Gnome in your phone settings.');
+          return;
+        }
+      }
+      setDropAlerts.mutate({ marketId, enabled: next }, {
+        onError: () => Alert.alert('Drop alerts', 'That didn’t stick — try again.'),
+      });
+    })();
+  };
 
   useEffect(() => {
     if (userId) void logEvent('following_screen_viewed', { userId });
@@ -94,19 +115,33 @@ export default function FollowingScreen() {
     <View style={styles.header}>
       <Text style={styles.sectionTitle}>Your Markets</Text>
       {rows.map((m) => (
-        <Pressable key={m.id} style={styles.marketRow} onPress={() => openMarket(m.id, 'market')}>
-          <Avatar uri={m.avatar_url} name={m.name} size={44} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.marketName}>{m.name}</Text>
-            {m.tagline ? <Text style={styles.marketMeta} numberOfLines={1}>“{m.tagline}”</Text> : null}
-            <Text style={styles.marketMeta}>
-              {[m.city, m.state].filter(Boolean).join(', ') || 'Nearby'}
-              {' · '}{m.active_count} fresh listing{m.active_count === 1 ? '' : 's'}
-              {(drops.data ?? []).some((d) => d.market_id === m.id && d.phase === 'live') ? ' · 🧺 LIVE NOW' :
-                (drops.data ?? []).some((d) => d.market_id === m.id && d.phase === 'upcoming') ? ' · 🧺 Drop coming up' : ''}
-            </Text>
+        <View key={m.id} style={styles.marketRow}>
+          <Pressable style={styles.marketMain} onPress={() => openMarket(m.id, 'market')}>
+            <Avatar uri={m.avatar_url} name={m.name} size={44} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.marketName}>{m.name}</Text>
+              {m.tagline ? <Text style={styles.marketMeta} numberOfLines={1}>“{m.tagline}”</Text> : null}
+              <Text style={styles.marketMeta}>
+                {[m.city, m.state].filter(Boolean).join(', ') || 'Nearby'}
+                {' · '}{m.active_count} fresh listing{m.active_count === 1 ? '' : 's'}
+                {(drops.data ?? []).some((d) => d.market_id === m.id && d.phase === 'live') ? ' · 🧺 LIVE NOW' :
+                  (drops.data ?? []).some((d) => d.market_id === m.id && d.phase === 'upcoming') ? ' · 🧺 Drop coming up' : ''}
+              </Text>
+            </View>
+          </Pressable>
+          <View style={styles.alertRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.alertLabel}>Drop alerts: {m.drop_alerts_enabled ? 'On' : 'Off'}</Text>
+              <Text style={styles.alertHint}>Get a notification when this Market’s Drops go live.</Text>
+            </View>
+            <Switch
+              value={m.drop_alerts_enabled}
+              disabled={setDropAlerts.isPending}
+              onValueChange={(next) => onToggleAlerts(m.id, next)}
+              accessibilityLabel={`Drop alerts for ${m.name}`}
+            />
           </View>
-        </Pressable>
+        </View>
       ))}
 
       {(drops.data ?? []).length > 0 && (
@@ -160,10 +195,16 @@ const styles = StyleSheet.create({
   header: { padding: 16, gap: 10 },
   sectionTitle: { fontSize: 17, fontFamily: fonts.bold, color: Colors.text, marginTop: 10 },
   marketRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 12,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 12, gap: 10,
     borderWidth: 1, borderColor: Colors.borderLight,
   },
+  marketMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  alertRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: 10,
+  },
+  alertLabel: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.text },
+  alertHint: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
   marketName: { fontSize: 15, fontFamily: fonts.semibold, color: Colors.text },
   marketMeta: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
   dropCard: {
