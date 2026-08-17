@@ -30,7 +30,7 @@ interface Turn {
 
 interface Proposal {
   action_id: string;
-  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk' | 'create_drop';
+  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk' | 'create_drop' | 'create_bundle';
   summary: string;
   count: number;
   expires_in_minutes: number;
@@ -149,6 +149,24 @@ export default function GnomeAssistant() {
     try {
       const { data, error } = await supabaseBrowser().rpc('ai_confirm_action', { p_action_id: p.action_id });
       if (error) throw new Error(String(error.message ?? ''));
+      if (p.action === 'create_bundle') {
+        setSettled((s) => ({ ...s, [p.action_id]: true }));
+        const bpay = Number(data?.payment_needed ?? 0);
+        if (bpay > 0) {
+          setTurns((t2) => [...t2, {
+            role: 'assistant',
+            content: 'Your plan’s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created — you can build it from My Market → Gift Baskets when you’re ready.',
+          }]);
+          return;
+        }
+        const bt = String(data?.bundle?.title ?? 'Gift Basket');
+        const bn = Number(data?.bundle?.items ?? 0);
+        setTurns((t2) => [...t2, {
+          role: 'assistant',
+          content: `Done — “${bt}” is live with ${bn} item${bn === 1 ? '' : 's'} inside. It runs like any Sell listing and buyers can see exactly what’s in it.`,
+        }]);
+        return;
+      }
       if (p.action === 'create_drop') {
         const t = String(data?.drop?.title ?? 'Market Drop');
         const n = Number(data?.drop?.items ?? 0);

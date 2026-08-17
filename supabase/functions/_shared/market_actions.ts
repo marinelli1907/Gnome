@@ -26,7 +26,7 @@ import { IMPORT_UNITS } from './market_import_schema.ts';
 export const INTENT_ACTIONS = [
   'none', 'find', 'inventory', 'expiring', 'drafts_missing_price',
   'set_price', 'set_quantity', 'mark_sold', 'hide', 'restock', 'renew', 'set_draft_price',
-  'create_drop',
+  'create_drop', 'create_bundle',
 ] as const;
 export type IntentAction = typeof INTENT_ACTIONS[number];
 
@@ -44,6 +44,10 @@ export type MarketIntent = {
   drop_ends_at: string;
   /** create_drop only: the seller's words for EACH product, comma-separated by the model. */
   drop_products: string[];
+  /** create_bundle only: basket name + the seller's words for each item.
+   *  The basket price rides in price_cents. */
+  bundle_title: string;
+  bundle_products: string[];
 };
 
 export type IntentOutcome =
@@ -67,7 +71,9 @@ Reply with ONLY this JSON object (no markdown):
  "drop_title": "Saturday Harvest",
  "drop_starts_at": "2026-08-22T08:00:00-04:00",
  "drop_ends_at": "2026-08-22T13:00:00-04:00",
- "drop_products": ["roma tomatoes", "peppers", "cucumbers"]
+ "drop_products": ["roma tomatoes", "peppers", "cucumbers"],
+ "bundle_title": "Sunday Breakfast Basket",
+ "bundle_products": ["eggs", "sourdough", "jam"]
 }
 
 Actions:
@@ -80,6 +86,7 @@ Actions:
 - find / inventory / expiring / drafts_missing_price: questions about their own market.
 - set_draft_price: set a price on an UNPUBLISHED imported draft.
 - create_drop: make a Market Drop — a named, time-boxed collection of their existing listings ("make a Saturday drop with my tomatoes and peppers, 8 to 1"). Fill drop_title (invent a natural short name ONLY from what they said, e.g. "Saturday Drop"), drop_starts_at/drop_ends_at as full ISO timestamps resolved against the current date (e.g. "Saturday 8 to 1" = the NEXT Saturday, 08:00 to 13:00 local), and drop_products with the seller's words for each product. Leave the timestamps empty if the seller gave no usable day or time — never invent a schedule.
+- create_bundle: combine several of the seller's existing listings into ONE sellable gift basket / bundle ("make a breakfast basket with my eggs, bread and jam for $25"). Fill bundle_title (a natural short name from their words, e.g. "Breakfast Basket"), bundle_products with the seller's words for each item, and price_cents with the BASKET price the seller stated. Leave price_cents null if they gave no basket price — never invent one.
 - none: anything else (growing advice, app questions, smalltalk).
 
 Rules:
@@ -135,6 +142,11 @@ export function parseIntent(raw: string): IntentOutcome {
   };
   const dropStarts = isoOrEmpty(obj.drop_starts_at);
   const dropEnds = isoOrEmpty(obj.drop_ends_at);
+  const bundleTitle = typeof obj.bundle_title === 'string' ? obj.bundle_title.trim().slice(0, 80) : '';
+  const bundleProducts = Array.isArray(obj.bundle_products)
+    ? obj.bundle_products.filter((p): p is string => typeof p === 'string' && !!p.trim())
+        .map((p) => p.trim().slice(0, MAX_QUERY)).slice(0, 12)
+    : [];
   const dropProducts = Array.isArray(obj.drop_products)
     ? obj.drop_products.filter((p): p is string => typeof p === 'string' && !!p.trim())
         .map((p) => p.trim().slice(0, MAX_QUERY)).slice(0, 30)
@@ -146,6 +158,7 @@ export function parseIntent(raw: string): IntentOutcome {
       action: action as IntentAction, query, price_cents: price, unit, quantity, scope, days,
       drop_title: dropTitle, drop_starts_at: dropStarts, drop_ends_at: dropEnds,
       drop_products: dropProducts,
+      bundle_title: bundleTitle, bundle_products: bundleProducts,
     },
   };
 }
@@ -161,6 +174,7 @@ const GATE = new RegExp(
     'renew', 'expir', 'inventory', 'listing', 'draft', 'quantity', 'pause', 'hide',
     'mark ', 'take down', 'relist', 'reactivat', 'my market',
     '\\bdrop\\b', 'saturday', 'sunday', 'weekend', 'harvest box', 'bundle',
+    'basket', '\\bbox\\b',
   ].join('|'), 'i',
 );
 
@@ -269,6 +283,11 @@ export function translateActionError(err: string): string {
   if (e.includes('WINDOW_TOO_LONG')) return 'Keep a Market Drop to two weeks or less.';
   if (e.includes('INVALID_WINDOW')) return 'The Drop has to end after it starts — give me the day and times again.';
   if (e.includes('DROP_ITEM_LIMIT')) return 'A Market Drop holds up to 30 items — narrow the list a bit.';
+  if (e.includes('BUNDLE_NEEDS_ITEMS')) return 'A basket needs at least two of your listings.';
+  if (e.includes('BUNDLE_ITEM_LIMIT')) return 'A basket holds up to 12 items — narrow the list a bit.';
+  if (e.includes('BUNDLE_DUPLICATE_COMPONENT')) return 'Each listing can only be in the basket once.';
+  if (e.includes('COMPONENT_NOT_AVAILABLE')) return 'One of those listings isn\'t live in your market right now, so it can\'t go in a basket.';
+  if (e.includes('BUNDLE_UNAVAILABLE')) return 'That basket isn\'t available right now — one of its items is spoken for.';
   if (e.includes('PUBLISH_ALLOWANCE_EXHAUSTED') || e.includes('PAYMENT_REQUIRED')) {
     return 'Your plan\'s included renewals are used up — this one would be $0.99.';
   }
@@ -281,7 +300,7 @@ export function translateActionError(err: string): string {
 
 export type ActionProposal = {
   action_id: string;
-  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk' | 'create_drop';
+  action: 'renew' | 'restock' | 'mark_sold_bulk' | 'set_price_bulk' | 'create_drop' | 'create_bundle';
   summary: string;
   count: number;
   expires_in_minutes: number;
@@ -498,6 +517,57 @@ export async function handleMarketAction(
       { title, starts_at: starts.toISOString(), ends_at: ends.toISOString() });
   }
 
+  // ---- Gift Basket / Bundle creation: resolve every item, then a server-bound proposal ----
+  if (intent.action === 'create_bundle') {
+    const terms = intent.bundle_products.length
+      ? intent.bundle_products
+      : (intent.query ? [intent.query] : []);
+    if (terms.length < 2) {
+      return { handled: true, reply: 'Which of your listings should go in the basket? Name at least two ("my eggs, sourdough and jam").' };
+    }
+    if (intent.price_cents == null) {
+      return { handled: true, reply: 'What should the whole basket cost? Give me one price, like "$25 for the basket".' };
+    }
+
+    // Every item term must resolve cleanly — same ambiguity rules as Drops.
+    const items: { id: string; title: string }[] = [];
+    const seenIds = new Set<string>();
+    for (const raw of terms) {
+      const wantAll = /^all\s+/i.test(raw);
+      const bare = raw.replace(/^all\s+/i, '').trim();
+      const matches = await findMine(deps, bare);
+      if (!matches.length) return { handled: true, reply: notFoundReply(bare) };
+      let chosen: FoundListing[];
+      if (wantAll || matches.length === 1) {
+        chosen = wantAll ? matches : [matches[0]];
+      } else {
+        const m = pickMatch(matches);
+        if (m.kind === 'one') chosen = [m.listing];
+        else {
+          return {
+            handled: true,
+            reply: ambiguousReply(bare, (m as { options: FoundListing[] }).options)
+              + `\nName the one you mean, or say “all ${bare}” to include them all.`,
+          };
+        }
+      }
+      for (const c of chosen) {
+        if (!seenIds.has(c.id)) { seenIds.add(c.id); items.push({ id: c.id, title: c.title }); }
+      }
+    }
+    if (items.length < 2) {
+      return { handled: true, reply: 'A basket needs at least two different listings — name another item to include.' };
+    }
+    if (items.length > 12) {
+      return { handled: true, reply: `That's ${items.length} listings — a basket holds up to 12. Narrow the list a bit.` };
+    }
+
+    const title = intent.bundle_title || 'Gift Basket';
+    return proposeAction(deps, 'create_bundle', items,
+      `Gift Basket “${title}” — ${fmtPrice(intent.price_cents)} — ${items.length} items: ${items.map((i) => i.title).join(', ')}`,
+      { title, price_cents: intent.price_cents, ...(intent.unit ? { unit: intent.unit } : {}) });
+  }
+
   // ---- bulk scopes: always a server-bound proposal -------------------------
   if (intent.action === 'renew' && intent.scope === 'expiring') {
     const { data, error } = await deps.rpc('ai_my_expiring', { p_within_days: intent.days ?? 2 });
@@ -638,7 +708,16 @@ async function proposeAction(
 export function confirmResultReply(result: {
   action?: string; ok_count?: number; payment_needed?: number;
   drop?: { title?: string; items?: number };
+  bundle?: { title?: string; items?: number };
 }): string {
+  if (result.action === 'create_bundle') {
+    if ((result.payment_needed ?? 0) > 0) {
+      return 'Your plan\'s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created.';
+    }
+    const t = result.bundle?.title ?? 'Gift Basket';
+    const n = Number(result.bundle?.items ?? 0);
+    return `Done — “${t}” is live with ${n} item${n === 1 ? '' : 's'} inside. It runs like any Sell listing (7 days) and buyers can see exactly what's in it.`;
+  }
   if (result.action === 'create_drop') {
     const t = result.drop?.title ?? 'Market Drop';
     const n = Number(result.drop?.items ?? 0);

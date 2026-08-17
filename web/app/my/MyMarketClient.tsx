@@ -30,6 +30,7 @@ import PaymentMethodsEditor from './PaymentMethodsEditor';
 import PickupAvailabilityEditor from './PickupAvailabilityEditor';
 import DeliverySettingsEditor from './DeliverySettingsEditor';
 import MarketDropsEditor from './MarketDropsEditor';
+import BundleEditor from './BundleEditor';
 import PickupOrdersManager from './PickupOrdersManager';
 
 // Explicit column list — post-0010 the base table rejects select=* for
@@ -166,6 +167,7 @@ export default function MyMarketClient() {
   const [pickupOpen, setPickupOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [dropsOpen, setDropsOpen] = useState(false);
+  const [bundlesOpen, setBundlesOpen] = useState(false);
   // Resolved plan entitlements — the backend's single source (0064). No more
   // hardcoded caps in this file. The RPC still returns max_active_listings for
   // legacy readers, but that column is the RETIRED cap model (0104): this
@@ -705,8 +707,11 @@ export default function MyMarketClient() {
               <button className="btn btn-secondary btn-sm" onClick={() => { setDeliveryOpen(!deliveryOpen); setPickupOpen(false); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
                 🚚 Delivery
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setDropsOpen(!dropsOpen); setDeliveryOpen(false); setPickupOpen(false); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setDropsOpen(!dropsOpen); setBundlesOpen(false); setDeliveryOpen(false); setPickupOpen(false); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
                 🧺 Market Drops
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setBundlesOpen(!bundlesOpen); setDropsOpen(false); setDeliveryOpen(false); setPickupOpen(false); setPaymentsOpen(false); setSaleOpen(false); setExpenseOpen(false); setCustomizeOpen(false); }}>
+                🎁 Gift Baskets
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => { setCustomizeOpen(!customizeOpen); setSaleOpen(false); setExpenseOpen(false); setPaymentsOpen(false); setPickupOpen(false); setDeliveryOpen(false); setDropsOpen(false); }}>
                 🎨 Customize Market
@@ -813,6 +818,7 @@ export default function MyMarketClient() {
             {pickupOpen && <PickupAvailabilityEditor marketId={market.id} />}
             {deliveryOpen && <DeliverySettingsEditor marketId={market.id} plan={market.plan ?? 'free'} />}
             {dropsOpen && <MarketDropsEditor marketId={market.id} marketSlug={market.slug} />}
+            {bundlesOpen && <BundleEditor marketId={market.id} />}
 
             {ledgerOpen && (
               <div className="preview-note" style={{ marginTop: 12 }}>

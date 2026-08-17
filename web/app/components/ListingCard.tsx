@@ -31,6 +31,9 @@ export default function ListingCard({ listing, promoted }: { listing: WebListing
       </div>
       <div className="body">
         <div className="title">{t === 'wanted' ? `Looking for ${listing.title}` : listing.title}</div>
+        {listing.is_bundle ? (
+          <div className="market">🎁 Gift basket · {listing.component_count ?? 0} items inside</div>
+        ) : null}
         {listing.market_name ? <div className="market">🏡 {listing.market_name}</div> : null}
         <div className="meta">
           {areaLabel(listing.city, listing.state)} · {timeLeft(listing.expires_at)}

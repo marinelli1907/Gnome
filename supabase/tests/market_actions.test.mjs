@@ -323,6 +323,85 @@ ck('confirm result: payment split is honest',
 ck('confirm result: idempotent no-op reads calmly',
   m.confirmResultReply({ action: 'renew', ok_count: 0, payment_needed: 0 }).includes('already'));
 
+// ---------------------------------------------------------------------------
+// Gift Basket / Bundle creation
+// ---------------------------------------------------------------------------
+ck('basket words open the pre-gate',
+  m.couldBeMarketAction('make a breakfast basket with my eggs and jam', ['Fresh Eggs']) === true);
+
+// Missing basket price asks instead of inventing one.
+{
+  const { deps, log } = fakeDeps({
+    intent: { action: 'create_bundle', query: '', price_cents: null, unit: '', quantity: '', scope: 'one', days: null,
+      bundle_title: 'Breakfast Basket', bundle_products: ['eggs', 'sourdough'] },
+    listings: [L('a', 'Fresh Eggs', 3), L('b', 'Sourdough Loaf', 3)],
+  });
+  const resp = await m.handleMarketAction(deps, 'make a breakfast basket with eggs and sourdough', ['Fresh Eggs', 'Sourdough Loaf']);
+  ck('a basket without a price asks for one',
+    /one price/i.test(resp?.reply ?? '') && !log.some((c) => c.fn === 'ai_propose_action'),
+    JSON.stringify(resp));
+}
+
+// One item is not a basket.
+{
+  const { deps } = fakeDeps({
+    intent: { action: 'create_bundle', query: '', price_cents: 2500, unit: '', quantity: '', scope: 'one', days: null,
+      bundle_title: 'Basket', bundle_products: ['eggs'] },
+    listings: [L('a', 'Fresh Eggs', 3)],
+  });
+  const resp = await m.handleMarketAction(deps, 'basket with my eggs for $25', ['Fresh Eggs']);
+  ck('a one-item basket asks for at least two items',
+    /at least two/i.test(resp?.reply ?? ''), JSON.stringify(resp));
+}
+
+// The happy path: resolves items, proposes confirm-first with price payload.
+// (query-aware fake: each term finds only its own listing, like the real RPC)
+{
+  const inventory = [L('a', 'Fresh Eggs', 3), L('b', 'Sourdough Loaf', 3)];
+  const log = [];
+  const deps = {
+    requestId: 'req-test',
+    extract: async () => JSON.stringify({
+      action: 'create_bundle', query: '', price_cents: 2500, unit: '', quantity: '', scope: 'one', days: null,
+      bundle_title: 'Breakfast Basket', bundle_products: ['eggs', 'sourdough'] }),
+    rpc: async (fn, args) => {
+      log.push({ fn, args });
+      if (fn === 'ai_find_my_listings') {
+        return { data: inventory.filter((l) => l.title.toLowerCase().includes(String(args.p_query).toLowerCase())), error: null };
+      }
+      return { data: { ok: true, action_id: 'act-1', expires_in_minutes: 15 }, error: null };
+    },
+  };
+  const resp = await m.handleMarketAction(deps, 'make a breakfast basket with eggs and sourdough for $25', ['Fresh Eggs', 'Sourdough Loaf']);
+  const call = log.find((c) => c.fn === 'ai_propose_action');
+  ck('a full basket request proposes create_bundle confirm-first',
+    resp?.proposal?.action === 'create_bundle' && resp.proposal.count === 2
+    && call?.args.p_action === 'create_bundle'
+    && call?.args.p_payload?.title === 'Breakfast Basket'
+    && call?.args.p_payload?.price_cents === 2500
+    && /Nothing is changed yet/.test(resp?.reply ?? ''),
+    JSON.stringify(resp));
+}
+
+// Ambiguity still asks inside baskets.
+{
+  const twoTomatoes = [L('a', 'Roma Tomatoes', 2), L('b', 'Heirloom Tomatoes', 2)];
+  const { deps } = fakeDeps({
+    intent: { action: 'create_bundle', query: '', price_cents: 2000, unit: '', quantity: '', scope: 'one', days: null,
+      bundle_title: 'Tomato Box', bundle_products: ['tomatoes', 'basil'] },
+    listings: twoTomatoes.concat([L('c', 'Basil', 2)]),
+  });
+  const resp = await m.handleMarketAction(deps, 'tomato box with tomatoes and basil for $20', ['Roma Tomatoes', 'Heirloom Tomatoes', 'Basil']);
+  ck('an ambiguous basket item asks and offers "all"',
+    /all tomatoes/i.test(resp?.reply ?? '') && !resp?.proposal, JSON.stringify(resp));
+}
+
+ck('confirm result: created basket reads back title and count',
+  m.confirmResultReply({ action: 'create_bundle', ok_count: 1, bundle: { title: 'Breakfast Basket', items: 3 } })
+    .includes('“Breakfast Basket” is live with 3 items'));
+ck('confirm result: basket over allowance points at the $0.99 path',
+  m.confirmResultReply({ action: 'create_bundle', ok_count: 0, payment_needed: 1 }).includes('$0.99'));
+
 console.log('');
 console.log(`market actions: ${n - failed}/${n} passed`);
 if (failed) process.exit(1);

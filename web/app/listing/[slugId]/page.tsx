@@ -4,8 +4,8 @@ import AppLink from '../../components/AppLink';
 import ListingCard from '../../components/ListingCard';
 import ReservePlot from '../../components/ReservePlot';
 import { categoryFor } from '@/lib/categories';
-import { appCtaLabel, areaLabel, idFromSlugId, listingValue, marketPath, TYPE_LABEL } from '@/lib/format';
-import { getActiveListings, getListingById, getMarketBySlug } from '@/lib/gnome';
+import { appCtaLabel, areaLabel, formatPrice, idFromSlugId, listingPath, listingValue, marketPath, TYPE_LABEL } from '@/lib/format';
+import { getActiveListings, getBundleComponents, getListingById, getMarketBySlug } from '@/lib/gnome';
 
 export const revalidate = 60;
 
@@ -34,6 +34,7 @@ export default async function ListingPage({ params }: Params) {
   const { slugId } = await params;
   const id = idFromSlugId(slugId);
   const listing = id ? await getListingById(id) : null;
+  const components = listing?.is_bundle ? await getBundleComponents(listing.id) : [];
 
   // Not active (expired/removed/never existed) → unavailable + related.
   if (!listing) {
@@ -108,6 +109,30 @@ export default async function ListingPage({ params }: Params) {
               {' · '}{where} · {fulfillment}
             </div>
             {l.description ? <p className="desc">{l.description}</p> : null}
+            {l.is_bundle ? (
+              <div className="preview-note" style={{ marginTop: 10 }}>
+                <strong>🎁 What’s inside this basket</strong>
+                {components.length > 0 ? (
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {components.map((c) => (
+                      <li key={c.id} style={{ fontSize: 14 }}>
+                        <Link href={listingPath(c.id, c.slug ?? c.title)}>{c.title}</Link>
+                        {c.price_cents != null && (
+                          <span style={{ opacity: 0.65 }}>
+                            {' '}· usually {formatPrice(c.price_cents, c.unit)} on its own
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p style={{ margin: '6px 0 0' }}>This basket isn’t available right now — an item inside it is spoken for.</p>
+                )}
+                <p style={{ margin: '6px 0 0', fontSize: 13, opacity: 0.75 }}>
+                  One basket, one price — everything listed above comes together.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           {l.market_id && l.market_slug && (

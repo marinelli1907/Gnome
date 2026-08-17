@@ -37,6 +37,8 @@ export interface WebListing {
   featured_until: string | null;
   has_active_promotion: boolean | null;
   is_demo?: boolean | null;
+  is_bundle?: boolean | null;
+  component_count?: number | null;
   inventory_count?: number | null;
   market_position?: number | null;
   market_featured?: boolean | null;
@@ -76,7 +78,7 @@ export interface WebMarket {
 }
 
 const LISTING_COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured,inventory_count,request_options,allow_custom_request';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured,inventory_count,request_options,allow_custom_request,is_bundle,component_count';
 
 async function rest<T>(view: string, params: Record<string, string>, revalidate: number): Promise<T[]> {
   if (!SUPABASE_URL || !ANON) return [];
@@ -126,6 +128,29 @@ export async function getCategoryListings(category: string, limit = 60): Promise
     order: 'created_at.desc',
     limit: String(limit),
   }, 300);
+}
+
+export type BundleComponent = {
+  id: string; slug: string | null; title: string;
+  price_cents: number | null; unit: string | null;
+};
+
+/** What's inside a public basket — canonical reads only (0121). */
+export async function getBundleComponents(listingId: string): Promise<BundleComponent[]> {
+  const comps = await rest<{ component_listing_id: string }>(
+    'listing_components',
+    { select: 'component_listing_id,position', listing_id: `eq.${listingId}`, order: 'position.asc' },
+    300,
+  );
+  const ids = comps.map((c) => c.component_listing_id);
+  if (!ids.length) return [];
+  const rows = await rest<BundleComponent>(
+    'public_listings',
+    { select: 'id,slug,title,price_cents,unit', id: `in.(${ids.join(',')})` },
+    300,
+  );
+  const order = new Map(ids.map((id, i) => [id, i]));
+  return rows.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
 }
 
 export async function getListingById(id: string): Promise<WebListing | null> {
