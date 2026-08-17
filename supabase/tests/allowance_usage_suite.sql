@@ -191,6 +191,51 @@ begin
                          and p.pronargs = 0) = 1);
 end $$;
 
+-- ---- renew_listing on an already-fresh listing (0112) --------------------
+-- The RPC used to run its UPDATE unconditionally; because the trigger ignores active→active,
+-- that reset expires_at for free. Renewing an active listing must now be an idempotent no-op.
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-0000000000d9';
+  m uuid;
+  lid uuid;
+  before_exp timestamptz;
+  r record;
+  n int;
+begin
+  insert into auth.users (id) values (u) on conflict do nothing;
+  insert into public.markets (owner_id, plan) values (u, 'grower') returning id into m;
+  insert into public.listings (owner_id, market_id, title, category, price_cents, listing_type, status, expires_at)
+  values (u, m, 'Fresh item', 'vegetables', 500, 'sale', 'active', now() + interval '3 days')
+  returning id, expires_at into lid, before_exp;
+
+  -- renew_listing checks ownership through auth.uid(); impersonate the seller.
+  perform set_config('request.jwt.claims', json_build_object('sub', u, 'role', 'authenticated')::text, true);
+
+  select * into r from public.renew_listing(lid);
+  perform pg_temp.ck('renewing an active listing answers ok', r.ok, r.ok::text);
+  perform pg_temp.ck('renewing an active listing does not extend it',
+                     r.expires_at = before_exp, r.expires_at::text);
+  select l.expires_at into before_exp from public.listings l where l.id = lid;
+  perform pg_temp.ck('the stored expiry is untouched',
+                     before_exp <= now() + interval '3 days', before_exp::text);
+  select count(*)::int into n from public.listing_publish_events
+   where listing_id = lid and kind = 'renewal';
+  perform pg_temp.ck('an idempotent renew writes no ledger row', n = 0, n::text);
+
+  -- The real renewal path still works: expire it, renew it, the clock restarts.
+  update public.listings set status = 'expired', expires_at = now() - interval '1 hour' where id = lid;
+  select * into r from public.renew_listing(lid);
+  perform pg_temp.ck('renewing an expired listing still renews', r.ok, r.ok::text);
+  perform pg_temp.ck('an expired renew restarts the 7-day clock',
+                     r.expires_at > now() + interval '6 days', r.expires_at::text);
+  select count(*)::int into n from public.listing_publish_events
+   where listing_id = lid and kind = 'renewal';
+  perform pg_temp.ck('the expired renew wrote exactly one ledger row', n = 1, n::text);
+
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+
 \echo ''
 select format('%s  %-60s %s', lpad(n::text,3,' '), name,
               case when ok then 'PASS' else 'FAIL  '||detail end)
