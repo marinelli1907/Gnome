@@ -35,6 +35,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyCredentials, useMyMarket, logEvent } from '@/lib/db';
 import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
+import { purchaseOverage } from '@/lib/billing';
 import { getCurrentCoords } from '@/lib/location';
 import type { ListingType } from '@/types';
 
@@ -244,6 +245,21 @@ export default function PostScreen() {
   const blocked = !isPlot && !!selectedNode && eligibility.data ? !eligibility.data.allowed : false;
   const prohibited = blocked && eligibility.data?.reason === 'PROHIBITED';
 
+  // $0.99 overage: server-priced, server-authorized. On 'paid' the SAME submit runs again with
+  // the form state untouched — that is the draft-preservation guarantee. 'pending' means the
+  // webhook is still landing; the seller retries publish, never payment.
+  const payAndRetryPublish = async () => {
+    const outcome = await purchaseOverage(null);
+    if (outcome === 'paid' || outcome === 'not_needed') {
+      await submit();
+    } else if (outcome === 'pending') {
+      Alert.alert('Payment received', 'Stripe is confirming your payment. Tap Publish again in a few seconds — you will not be charged twice.');
+    } else if (outcome === 'error') {
+      Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged — your draft is safe. Please try again.');
+    }
+    // 'cancelled': silent — the seller backed out on purpose, the draft is untouched.
+  };
+
   const submit = async () => {
     if (!title.trim()) {
       Alert.alert(isWanted ? 'What are you looking for?' : 'Add a title', 'Give your listing a short title.');
@@ -346,14 +362,16 @@ export default function PostScreen() {
         Alert.alert(err.title, err.message);
       } else if (err?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
         // 0104 model: a monthly publish allowance that expiry does not refund. The draft is
-        // preserved by construction — the insert was refused, and the form state is untouched.
+        // preserved by construction — the insert was refused, and the form state is untouched,
+        // so a successful $0.99 purchase can simply run the same submit again.
         void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'allowance' } });
         Alert.alert(
           'Included listings used up',
-          'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more every month — your draft is saved right here either way.',
+          'You’ve used your included Sell listings for this period. Your draft is saved right here either way.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'See plans', onPress: () => router.push('/upgrade') },
+            { text: 'Publish for $0.99', onPress: () => void payAndRetryPublish() },
           ],
         );
       } else if (err?.code === 'PLAN_LIMIT_REACHED') {

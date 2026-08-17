@@ -29,6 +29,7 @@ import { fetchListingScreening } from '@/lib/db';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
+import { purchaseOverage } from '@/lib/billing';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Draft = {
@@ -203,14 +204,28 @@ export default function AiTab() {
       alertScreeningError(r.error);
       return;
     }
-    const limitCode = r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED' || r.error?.code === 'PLAN_LIMIT_REACHED';
+    if (r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
+      // Draft rows persist server-side, so the retry after purchase is just publishing again.
+      Alert.alert(
+        'Included listings used up',
+        'You’ve used your included Sell listings for this period. The draft stays saved.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Publish for $0.99', onPress: async () => {
+            const outcome = await purchaseOverage(null);
+            if (outcome === 'paid' || outcome === 'not_needed') void publish(d);
+            else if (outcome === 'pending') Alert.alert('Payment received', 'Stripe is confirming. Tap publish again in a few seconds — you will not be charged twice.');
+            else if (outcome === 'error') Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged.');
+          } },
+        ],
+      );
+      return;
+    }
     Alert.alert(
-      limitCode ? 'Included listings used up' : 'Couldn’t publish',
-      r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED'
-        ? 'You’ve used your included Sell listings for this period. Publish for $0.99, or upgrade for more each month — the draft stays saved.'
-        : r.error?.code === 'PLAN_LIMIT_REACHED'
-          ? 'You’re at your plan’s listing limit right now. Upgrade for more room — the draft stays saved.'
-          : safeErrorText(r.message, 'Something went wrong publishing that draft.'),
+      r.error?.code === 'PLAN_LIMIT_REACHED' ? 'Listing limit reached' : 'Couldn’t publish',
+      r.error?.code === 'PLAN_LIMIT_REACHED'
+        ? 'You’re at your plan’s listing limit right now. Upgrade for more room — the draft stays saved.'
+        : safeErrorText(r.message, 'Something went wrong publishing that draft.'),
     );
   };
 

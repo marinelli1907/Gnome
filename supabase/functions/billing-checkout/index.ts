@@ -42,6 +42,10 @@ type Body = {
   listing_id?: string; // GNOME_LISTING_PROMOTION, and the overage keys
   quantity?: number;   // GNOME_PICKUP_LOCATION_ADDON
   promo_code?: string; // subscription keys only
+  // 'app' asks for the mobile deep-link return pair instead of the web URLs. The VALUES are
+  // server constants either way — the client chooses between two fixed pairs and can never
+  // supply a URL of its own, so checkout cannot be pointed anywhere Gnome does not control.
+  platform?: 'app' | 'web';
 };
 
 // Deny-by-default. Only these keys may reach Stripe; anything else is refused
@@ -251,8 +255,18 @@ Deno.serve(async (req: Request) => {
       // /account does not exist and never has — a customer who paid landed on a
       // 404 the instant the charge went through. /my is the seller dashboard and
       // the only page where the thing they just bought becomes visible.
-      success_url: `${base}/my?checkout=success`,
-      cancel_url: `${base}/my?checkout=cancelled`,
+      ...(body.platform === 'app'
+        ? {
+            // The Expo client opens checkout in an auth session that closes on this scheme.
+            // Return is a SIGNAL, never proof: the app reconciles by re-asking the server
+            // whether payment is still owed before publishing anything.
+            success_url: 'gnome://checkout-success',
+            cancel_url: 'gnome://checkout-cancelled',
+          }
+        : {
+            success_url: `${base}/my?checkout=success`,
+            cancel_url: `${base}/my?checkout=cancelled`,
+          }),
       // Stripe refuses allow_promotion_codes and discounts in the same request —
       // verified against the API, and it refuses even when the flag is FALSE:
       //   "You may only specify one of these parameters: allow_promotion_codes, discounts."
