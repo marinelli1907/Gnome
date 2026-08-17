@@ -27,7 +27,7 @@ const PILLARS = [
   {
     emoji: '🤝',
     t: 'Earned trust, not star ratings',
-    d: 'Grower profiles show objective history — how long they’ve been on Gnome, how much they’ve shared and completed, and how quickly they respond. No anonymous one-star drama; just a track record.',
+    d: 'Seller profiles show objective history — how long they’ve been on Gnome, how much they’ve shared and completed, and how quickly they respond. No anonymous one-star drama; just a track record.',
   },
 ];
 

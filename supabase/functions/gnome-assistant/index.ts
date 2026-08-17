@@ -45,8 +45,10 @@ const CHAT_SYSTEM = `You are Gnome — a knowledgeable, warm garden gnome inside
 You help with four things:
 1. GROWING — vegetables, fruit, herbs, eggs, honey, preserves, soil, pests, timing, harvest and storage. Be genuinely useful and specific. Give real numbers (spacing, depth, days to maturity, pH) when you know them.
 2. THEIR MARKET — what is actually happening around them. Use MARKET INTEL below; it is real data. Never invent counts, prices, or trends. If the intel is thin, say so plainly.
-3. WHAT TO SELL AND WHY — give a clear opinion, with the reason. Lean on demand signals (open Wanted posts), supply gaps (categories few neighbors list), the season, and their plan's listing headroom. Say the reasoning out loud so they can judge it.
+3. WHAT TO SELL AND WHY — give a clear opinion, with the reason. Lean on demand signals (open Wanted posts), supply gaps (categories few neighbors list), the season, and how much of their plan's Sell publish allowance is left. Say the reasoning out loud so they can judge it.
 4. USING THE APP — how to post, promote, set pickup, handle requests, delivery, Seed Drop, plans.
+
+PLANS — the only plan facts; never invent others, and prefer the user's own numbers in MARKET INTEL when present: Free $0 — 3 Sell publishes a month, no included renewals, 1 Wanted intro a day, QR tools locked. Pro $9.99/mo — 20 Sell publishes a period, 3 included renewals, 5 Wanted intros a day, premium QR tools. Max $29.99/mo — 40 Sell publishes a period, 10 included renewals, 15 Wanted intros a day, premium QR tools. Farm $99/mo — unlimited publishes, renewals, and Wanted intros (subject to anti-abuse controls), premium QR tools. Every Sell listing runs 7 days, then expires; renewing past the included renewals costs $0.99 (on Free, every renewal is $0.99), and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do; offering a plot needs a paid plan. Every Market has a free public link; the premium QR tools are the paid part.
 
 STYLE: warm, plain text, no markdown, no asterisks or headers. Conversational. Usually 2–6 sentences; use a short plain list only when genuinely listing things. Sparing dry humor. Never childish, never salesy.
 
@@ -131,7 +133,7 @@ Deno.serve(async (req: Request) => {
       const { data: ep } = await admin.rpc('market_effective_plan', { p_market: mkt.id });
       const eff = Array.isArray(ep) ? ep[0] : ep;
       if (!eff || eff.plan === 'free') {
-        return json(403, { error: 'PLAN_REQUIRED', message: 'Drafting listings from photos is a Grower & Farm feature.' });
+        return json(403, { error: 'PLAN_REQUIRED', message: 'Drafting listings from photos is included with the Pro, Max, and Farm plans.' });
       }
       const chain = chainFor(true);
       if (!chain.length) return json(503, { error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet.' });
@@ -339,10 +341,43 @@ async function marketIntel(
         .select('id', { count: 'exact', head: true }).eq('market_id', mkt.id).eq('status', 'active');
       const { data: ent } = await admin.rpc('market_effective_plan', { p_market: mkt.id });
       const eff = Array.isArray(ent) ? ent[0] : ent;
-      const { data: lim } = await admin.from('plan_limits')
-        .select('max_active_listings').eq('plan', eff?.plan ?? mkt.plan).maybeSingle();
-      const capTxt = lim?.max_active_listings == null ? 'unlimited' : String(lim.max_active_listings);
-      lines.push(`The user's Market "${mkt.name}" is on the ${eff?.plan ?? mkt.plan} plan with ${active ?? 0} active listing(s); their plan allows ${capTxt}.`);
+      const plan = String(eff?.plan ?? mkt.plan ?? 'free');
+      // Canonical allowance columns (migration 0104). plan_limits.display_name is
+      // the customer-facing name — the enum is internal and maps
+      // counter-intuitively (farm → "Max", sponsor → "Farm"), so the raw enum
+      // must never reach the prompt. In an environment where 0104 has not been
+      // applied yet this select errors and `lim` is null; we then say the
+      // details are unavailable — we never fall back to the retired
+      // max_active_listings cap model.
+      const { data: limRow } = await admin.from('plan_limits')
+        .select('display_name, monthly_publish_allowance, included_renewals_per_period, wanted_intros_per_day, qr_tools')
+        .eq('plan', plan).maybeSingle();
+      const lim = limRow as {
+        display_name: string | null;
+        monthly_publish_allowance: number | null;
+        included_renewals_per_period: number | null;
+        wanted_intros_per_day: number | null;
+        qr_tools: boolean | null;
+      } | null;
+      const display = lim?.display_name
+        ?? ({ free: 'Free', grower: 'Pro', farm: 'Max', sponsor: 'Farm' } as Record<string, string>)[plan]
+        ?? 'Free';
+      if (lim) {
+        const n = (v: unknown, unit: string) =>
+          v == null ? `unlimited ${unit} (subject to anti-abuse controls)` : `${v} ${unit}`;
+        lines.push(
+          `The user's Market "${mkt.name}" is on the ${display} plan with ${active ?? 0} active listing(s). `
+          + `Their plan includes ${n(lim.monthly_publish_allowance, 'Sell publishes')} per period, `
+          + `${n(lim.included_renewals_per_period, 'included renewals')} per period, and `
+          + `${n(lim.wanted_intros_per_day, 'Wanted intros')} per day; premium QR tools are ${lim.qr_tools ? 'included' : 'locked'}. `
+          + `Only For Sale listings use the publish allowance, and every Sell listing expires after 7 days.`,
+        );
+      } else {
+        lines.push(
+          `The user's Market "${mkt.name}" is on the ${display} plan with ${active ?? 0} active listing(s); `
+          + `their plan's allowance details are unavailable right now, so don't quote allowance numbers.`,
+        );
+      }
     } else {
       lines.push('The user has no Market yet — they create one by posting their first item from the Post tab.');
     }
