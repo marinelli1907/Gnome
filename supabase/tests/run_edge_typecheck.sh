@@ -67,6 +67,32 @@ for name in "${targets[@]}"; do
     printf '  SKIP  %-26s providers.ts is bundled at deploy\n' "$name"; skip=$((skip + 1)); continue
   fi
 
+  # Functions that import OTHER _shared siblings (market-import pulls in the extraction schema,
+  # which pulls in the draft schema) get the real treatment instead of a wider blind spot: stage
+  # the deploy layout — index.ts beside copies of every _shared file — and check THAT. Taken when
+  # every unresolved module is one _shared actually provides; other errors may be cascade noise
+  # from the missing imports, and the STAGED result is what decides — a genuine type error still
+  # fails there, in the exact layout the function deploys with.
+  unresolved="$(printf '%s' "$real" | grep -oE "Cannot find module 'file://[^']*/([a-z_]+\.ts)'" | grep -oE '[a-z_]+\.ts' | sort -u || true)"
+  if [ -n "$unresolved" ]; then
+    all_shared=1
+    while IFS= read -r m; do
+      [ -f "$FN/_shared/$m" ] || { all_shared=0; break; }
+    done <<< "$unresolved"
+    if [ "$all_shared" -eq 1 ]; then
+      stage="$(mktemp -d)"
+      cp "$entry" "$stage/index.ts"
+      cp "$FN/_shared/"*.ts "$stage/" 2>/dev/null
+      out2="$(deno check --no-lock "$stage/index.ts" 2>&1 | strip_ansi)"
+      rc2=$?
+      rm -rf "$stage"
+      if [ $rc2 -eq 0 ] && ! printf '%s' "$out2" | grep -q 'TS[0-9]'; then
+        printf '  PASS  %-26s (staged with _shared siblings)\n' "$name"; pass=$((pass + 1)); continue
+      fi
+      real="$(printf '%s' "$out2" | grep -E 'TS[0-9]+' || true)"
+    fi
+  fi
+
   detail="$(printf '%s' "$real" | head -1 | tr -d '\r' | cut -c1-70)"
   case " $KNOWN_FAILING " in
     *" $name "*)

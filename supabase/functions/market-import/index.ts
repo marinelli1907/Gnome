@@ -73,7 +73,7 @@ Reply with ONLY one JSON object, no markdown, shaped exactly:
  "candidates":[{"product_name":"...","variety":"","category_terms":["..."],"proposed_listing_type":"sale","price_cents":1200,"unit":"peck","quantity":"","availability":"","pickup":"","location_text":"","description":"...","seller_notes":"","compliance_attention_required":false,"confidence":{"product":"high","price":"high","unit":"high","quantity":"missing"},"evidence":"..."}],
  "missing_information":["..."],"conflicts":[{"product_name":"...","field":"price","values":["$10","$12"],"note":"..."}],
  "overall_confidence":"high","recommended_next_action":"build_my_market"}
-Include every key shown; add none. At most ${MAX_CANDIDATES} candidates.`;
+Include every key shown; add none. At most ${MAX_CANDIDATES} candidates. When the source holds MANY products, stay compact so the whole inventory fits: one short sentence per description, evidence under 60 characters — completeness of the product list beats prose.`;
 
 const RETRY_SUFFIX = `
 
@@ -143,10 +143,13 @@ Deno.serve(async (req: Request) => {
     let failReason = 'BAD_MODEL_OUTPUT';
     let inTok = 0; let outTok = 0;
     for (const attempt of [0, 1] as const) {
+      // A 16-product inventory needs real room: ~180 output tokens per candidate plus the
+      // model's own thinking tokens, which count against the same budget. The first eval run
+      // proved 4000 truncates exactly the source this feature exists for.
       const r = await callWithFallback(chain, {
         system: attempt === 0 ? SYSTEM : SYSTEM + RETRY_SUFFIX,
         turns: [{ role: 'user', parts }],
-        maxTokens: attempt === 0 ? 4000 : 2500,
+        maxTokens: attempt === 0 ? 8000 : 5000,
         json: true,
       });
       provider = r.provider; model = r.model;
