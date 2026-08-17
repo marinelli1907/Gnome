@@ -20,7 +20,7 @@ create sequence if not exists _tn start 1;
 create or replace function pg_temp.ck(p_name text, p_ok boolean, p_detail text default '')
 returns void language plpgsql as $$
 begin
-  insert into _t values (nextval('_tn')::int, p_name, p_ok, p_detail);
+  insert into _t values (nextval('_tn')::int, p_name, coalesce(p_ok, false), p_detail);
 end $$;
 
 -- Assert that a statement fails with a specific SQLERRM fragment.

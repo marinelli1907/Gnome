@@ -20,7 +20,7 @@ create temporary table _t (n int, name text, ok boolean, detail text);
 create sequence if not exists _tn start 1;
 create or replace function pg_temp.ck(p_name text, p_ok boolean, p_detail text default '')
 returns void language plpgsql as $$
-begin insert into _t values (nextval('_tn')::int, p_name, p_ok, p_detail); end $$;
+begin insert into _t values (nextval('_tn')::int, p_name, coalesce(p_ok, false), p_detail); end $$;
 
 create or replace function pg_temp.ck_raises(p_name text, p_sql text, p_fragment text)
 returns void language plpgsql as $$
