@@ -393,6 +393,7 @@ h1, h2, .hero2-copy h1, .section h2, .section-head h2, .band-copy h2,
 .hero2-copy h1 { font-size: 56px; font-weight: 550; line-height: 1.04; }
 .hero2-copy h1 em { font-style: italic; font-weight: 600; }
 .section h2, .section-head h2 { font-size: 28px; }
+@media (max-width: 560px) { .section-head h2 { font-size: 20px; } }
 .brand, .footer-brand { display: inline-flex; align-items: center; gap: 8px; }
 .brand-mark { flex: none; }
 .brand-badge { flex: none; width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 2px 8px rgba(20,48,35,.14); }

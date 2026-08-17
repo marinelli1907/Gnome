@@ -42,6 +42,10 @@ const phaseOf = (d: DropRow): string => {
   return 'live';
 };
 
+// Chip copy per phase — the raw enum never reaches the screen.
+const PHASE_LABEL: Record<string, string> = { live: 'LIVE NOW', upcoming: 'Coming up', ended: 'Ended', draft: 'Draft' };
+const phaseLabel = (phase: string) => PHASE_LABEL[phase] ?? phase.charAt(0).toUpperCase() + phase.slice(1);
+
 export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: string; marketSlug: string }) {
   const [drops, setDrops] = useState<DropRow[]>([]);
   const [listings, setListings] = useState<OwnListing[]>([]);
@@ -57,10 +61,14 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
 
   const refresh = useCallback(async () => {
     const sb = supabaseBrowser();
+    // Old Drops age out of the panel — anything that ended more than 30 days
+    // ago is history, not something left to manage.
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: ds } = await sb.from('market_drops')
       .select('id,title,description,starts_at,ends_at,status')
       .eq('market_id', marketId)
       .neq('status', 'cancelled')
+      .gte('ends_at', cutoff)
       .order('starts_at', { ascending: true });
     const rows = (ds ?? []) as DropRow[];
     if (rows.length) {
@@ -116,6 +124,10 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
   };
 
   const setStatus = async (d: DropRow, status: 'scheduled' | 'cancelled') => {
+    // Cancelling takes effect right away and this panel can't bring it back —
+    // make the seller say so first.
+    if (status === 'cancelled'
+      && !window.confirm('Cancel this Drop? Buyers will stop seeing it immediately — this can’t be undone here.')) return;
     setBusy(true);
     try {
       const sb = supabaseBrowser();
@@ -166,7 +178,7 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
             {d.title}
             {' '}
             <span className="chip" style={{ fontSize: 11 }}>
-              {phaseOf(d) === 'live' ? 'LIVE NOW' : phaseOf(d)}
+              {phaseLabel(phaseOf(d))}
             </span>
           </strong>
           <span style={{ fontSize: 13, opacity: 0.75 }}>
@@ -180,7 +192,10 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
             )}
             {d.status === 'scheduled' && (
               <>
-                <button className="chip" disabled={busy} onClick={() => void copyLink(d)}>Copy Drop link</button>
+                {/* No slug means no public URL to copy — hide the button rather than share a dead link. */}
+                {marketSlug && (
+                  <button className="chip" disabled={busy} onClick={() => void copyLink(d)}>Copy Drop link</button>
+                )}
                 <button className="chip" disabled={busy} onClick={() => void setStatus(d, 'cancelled')}>Cancel Drop</button>
               </>
             )}
@@ -198,11 +213,13 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
             onChange={(e) => setTitle(e.target.value)} />
           <input value={description} maxLength={400} placeholder="Short description (optional)"
             onChange={(e) => setDescription(e.target.value)} />
-          <label style={{ fontSize: 13 }}>Starts
-            <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} style={{ marginLeft: 8 }} />
+          {/* Stacked, not side-by-side — the full-width inputs would overflow a
+              375px screen with a margin pushing them sideways. */}
+          <label style={{ fontSize: 13, display: 'grid', gap: 6 }}>Starts
+            <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
           </label>
-          <label style={{ fontSize: 13 }}>Ends
-            <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} style={{ marginLeft: 8 }} />
+          <label style={{ fontSize: 13, display: 'grid', gap: 6 }}>Ends
+            <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
           </label>
           <span style={{ fontSize: 13 }}>Pick from your live listings:</span>
           <div style={{ display: 'grid', gap: 4, maxHeight: 220, overflowY: 'auto' }}>

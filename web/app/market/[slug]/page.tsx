@@ -4,16 +4,17 @@ import AppLink from '../../components/AppLink';
 import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
 import { areaLabel, LISTING_TYPES, TYPE_LABEL } from '@/lib/format';
-import { getDropItemIds, getMarketBySlug, getMarketDelivery, getMarketDrops, getMarketListings } from '@/lib/gnome';
+import { getDropItemIds, getListingsByIds, getMarketBySlug, getMarketDelivery, getMarketDrops, getMarketListings, sortDropsLiveFirst } from '@/lib/gnome';
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-// A Market Drop's window, rendered in the Drop's own timezone.
+// A Market Drop's window, rendered in the Drop's own timezone — labelled, so a
+// viewer elsewhere knows whose clock "10:00 AM EDT" is on.
 const dropWindow = (d: { starts_at: string; ends_at: string; timezone: string }) => {
   const opts: Intl.DateTimeFormatOptions = { timeZone: d.timezone || 'America/New_York' };
   const s = new Date(d.starts_at);
   const e = new Date(d.ends_at);
   const day = s.toLocaleDateString('en-US', { ...opts, weekday: 'short', month: 'short', day: 'numeric' });
-  const t = (x: Date) => x.toLocaleTimeString('en-US', { ...opts, hour: 'numeric', minute: '2-digit' });
+  const t = (x: Date) => x.toLocaleTimeString('en-US', { ...opts, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   return `${day}, ${t(s)} – ${t(e)}`;
 };
 const fee = (c: number) => (c === 0 ? 'free' : `$${(c / 100).toFixed(2).replace(/\.00$/, '')}`);
@@ -24,7 +25,8 @@ const clock = (t: string) => {
   return m ? `${hh}:${String(m).padStart(2, '0')} ${ampm}` : `${hh} ${ampm}`;
 };
 
-export const revalidate = 300;
+// 60s, not 300 — the LIVE NOW / Coming up chip shouldn't lag a Drop by minutes.
+export const revalidate = 60;
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -60,18 +62,22 @@ export default async function MarketPage({ params, searchParams }: Params & {
       </main>
     );
   }
-  const [listings, delivery, drops] = await Promise.all([
+  const [listings, delivery, dropsRaw] = await Promise.all([
     getMarketListings(m.id, 60),
     getMarketDelivery(m.id),
     getMarketDrops(m.id),
   ]);
+  const drops = sortDropsLiveFirst(dropsRaw);
   // A shared Drop link (?drop=<id>) pins that Drop open with its own item grid.
   const requestedDrop = (await searchParams)?.drop ?? null;
   const openDrop = requestedDrop ? drops.find((d) => d.id === requestedDrop) ?? null : null;
-  const openDropItemIds = openDrop ? await getDropItemIds(openDrop.id) : [];
-  const openDropListings = openDrop
-    ? listings.filter((l) => openDropItemIds.includes(l.id))
-    : [];
+  // The view only carries upcoming/live/freshly-ended Drops, so a stale link
+  // (cancelled, or ended more than a day ago) resolves to nothing.
+  const staleDropLink = !!requestedDrop && !openDrop;
+  // Fetched by id — the market's top-60 grid may not hold all of a Drop's
+  // items. An ended Drop shows no grid, so it skips the fetch entirely.
+  const openDropItemIds = openDrop && openDrop.phase !== 'ended' ? await getDropItemIds(openDrop.id) : [];
+  const openDropListings = await getListingsByIds(openDropItemIds);
   const counts = listings.reduce<Record<string, number>>((acc, l) => {
     acc[l.listing_type] = (acc[l.listing_type] ?? 0) + 1;
     return acc;
@@ -144,7 +150,9 @@ export default async function MarketPage({ params, searchParams }: Params & {
                   : <span className="chip" style={{ fontSize: 11 }}>Coming up</span>}
               </strong>
               <p style={{ margin: '4px 0 0' }}>
-                {dropWindow(d)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
+                {dropWindow(d)} · {d.phase !== 'ended' && d.available_items === 0
+                  ? 'Sold out'
+                  : `${d.available_items} item${d.available_items === 1 ? '' : 's'}`}
                 {d.phase !== 'ended' && d.available_items > 0 && (
                   <>
                     {' · '}
@@ -163,7 +171,9 @@ export default async function MarketPage({ params, searchParams }: Params & {
           <div className="section-head">
             <h2>🧺 {openDrop.title} — {openDrop.phase === 'live' ? 'live now' : openDrop.phase === 'ended' ? 'ended' : dropWindow(openDrop)}</h2>
           </div>
-          {openDropListings.length > 0 ? (
+          {openDrop.phase === 'ended' ? (
+            <p className="sub">This Drop has ended — here’s what’s still fresh from this Market.</p>
+          ) : openDropListings.length > 0 ? (
             <div className="grid">
               {openDropListings.map((l) => <ListingCard key={l.id} listing={l} promoted={!!l.has_active_promotion} />)}
             </div>
@@ -217,6 +227,9 @@ export default async function MarketPage({ params, searchParams }: Params & {
 
       <section className="section">
         <div className="section-head"><h2>From this Market</h2></div>
+        {staleDropLink && (
+          <p className="sub">That Drop isn’t running anymore — here’s what this Market has right now.</p>
+        )}
         {listings.some((l) => l.market_featured) && (
           <>
             <div className="section-head" style={{ marginTop: 4 }}><h2>⭐ Featured</h2></div>

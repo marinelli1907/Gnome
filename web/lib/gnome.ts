@@ -162,6 +162,17 @@ export async function getListingById(id: string): Promise<WebListing | null> {
   return rows[0] ?? null;
 }
 
+/** Listings by id, returned in the order the ids were given. */
+export async function getListingsByIds(ids: string[]): Promise<WebListing[]> {
+  if (!ids.length) return [];
+  const rows = await rest<WebListing>('public_listings', {
+    select: LISTING_COLS,
+    id: `in.(${ids.join(',')})`,
+  }, 60);
+  const order = new Map(ids.map((id, i) => [id, i]));
+  return rows.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+}
+
 export async function getMarketListings(marketId: string, limit = 60): Promise<WebListing[]> {
   return rest<WebListing>('public_listings', {
     select: LISTING_COLS,
@@ -192,8 +203,17 @@ export async function getMarketDrops(marketId: string): Promise<WebMarketDrop[]>
     select: 'id,market_id,title,description,starts_at,ends_at,timezone,phase,available_items',
     market_id: `eq.${marketId}`,
     order: 'starts_at.asc',
-    limit: '6',
+    limit: '12',
   }, 60);
+}
+
+// Card order wherever drops render: live first, then coming up, then just
+// ended — a recently-ended Drop never crowds a live one out of the row.
+export function sortDropsLiveFirst<T extends { phase: string; starts_at: string }>(drops: T[]): T[] {
+  const order: Record<string, number> = { live: 0, upcoming: 1, ended: 2 };
+  return [...drops].sort(
+    (a, b) => (order[a.phase] ?? 3) - (order[b.phase] ?? 3) || Date.parse(a.starts_at) - Date.parse(b.starts_at),
+  );
 }
 
 export async function getDropItemIds(dropId: string): Promise<string[]> {

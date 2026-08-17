@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import ListingCard from '../components/ListingCard';
 import MarketCard from '../components/MarketCard';
-import type { WebListing, WebMarket } from '../../lib/gnome';
+import { sortDropsLiveFirst, type WebListing, type WebMarket } from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
 
@@ -17,12 +17,13 @@ type FollowedDrop = {
   available_items: number;
 };
 
+// Client component, so the window renders on the viewer's own clock — labelled
+// with the zone so there's no guessing whose "10:00 AM" it is.
 const dropWindow = (d: FollowedDrop) => {
-  const opts: Intl.DateTimeFormatOptions = { timeZone: d.timezone || 'America/New_York' };
   const s = new Date(d.starts_at);
   const e = new Date(d.ends_at);
-  const day = s.toLocaleDateString('en-US', { ...opts, weekday: 'short', month: 'short', day: 'numeric' });
-  const t = (x: Date) => x.toLocaleTimeString('en-US', { ...opts, hour: 'numeric', minute: '2-digit' });
+  const day = s.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const t = (x: Date) => x.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   return `${day}, ${t(s)} – ${t(e)}`;
 };
 
@@ -72,7 +73,7 @@ export default function FollowingClient() {
       ]);
       setMarkets((m.data as unknown as WebMarket[]) ?? []);
       setListings((l.data as unknown as WebListing[]) ?? []);
-      setDrops((d.data as unknown as FollowedDrop[]) ?? []);
+      setDrops(sortDropsLiveFirst((d.data as unknown as FollowedDrop[]) ?? []));
     })();
   }, [uid]);
 
@@ -133,8 +134,10 @@ export default function FollowingClient() {
                       : <span className="chip" style={{ fontSize: 11 }}>Coming up</span>}
                   </strong>
                   <p style={{ margin: '4px 0 0' }}>
-                    {m ? `${m.name} · ` : ''}{dropWindow(d)} · {d.available_items} item{d.available_items === 1 ? '' : 's'}
-                    {m && d.phase !== 'ended' && (
+                    {m ? `${m.name} · ` : ''}{dropWindow(d)} · {d.phase !== 'ended' && d.available_items === 0
+                      ? 'Sold out'
+                      : `${d.available_items} item${d.available_items === 1 ? '' : 's'}`}
+                    {m && d.phase !== 'ended' && d.available_items > 0 && (
                       <>
                         {' · '}
                         <Link
