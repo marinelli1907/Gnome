@@ -208,7 +208,10 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
           <div style={{ display: 'grid', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
             {listings.map((l) => (
               <label key={l.id} style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* The global `input { width:100% }` rule would stretch a bare
+                    checkbox across the row (the launch-audit cosmetic) — pin it. */}
                 <input type="checkbox" checked={!!picked[l.id]}
+                  style={{ width: 18, height: 18, padding: 0, flex: 'none', accentColor: 'var(--green)' }}
                   onChange={(e) => setPicked((p) => ({ ...p, [l.id]: e.target.checked }))} />
                 {l.title}
                 {l.price_cents != null && (
