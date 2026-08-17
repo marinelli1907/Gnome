@@ -181,13 +181,21 @@ declare
   res jsonb;
   a_phone_status text; a_tablet_status text;
   del_status text;
+  phone_pos int; tablet_pos int;
+  tickets jsonb;
 begin
   select id into req from net._sent limit 1;
-  -- Synthetic Expo response: position 0 (a-phone) gets a ticket, position 1
-  -- (a-tablet) is permanently DeviceNotRegistered. HTTP is 200 for BOTH —
-  -- proving a 200 never blankets the batch.
+  -- Synthetic Expo response built POSITION-AWARE (batch order tie-breaks on
+  -- random uuids): a-phone gets a ticket, a-tablet is permanently
+  -- DeviceNotRegistered. HTTP is 200 for BOTH — proving a 200 never blankets
+  -- the batch.
+  select batch_position into phone_pos from public.drop_alert_messages where token = 'ExponentPushToken[a-phone]';
+  select batch_position into tablet_pos from public.drop_alert_messages where token = 'ExponentPushToken[a-tablet]';
+  tickets := jsonb_build_array('{}'::jsonb, '{}'::jsonb);
+  tickets := jsonb_set(tickets, array[phone_pos::text], '{"status":"ok","id":"TICKET-A-PHONE"}'::jsonb);
+  tickets := jsonb_set(tickets, array[tablet_pos::text], '{"status":"error","message":"gone","details":{"error":"DeviceNotRegistered"}}'::jsonb);
   insert into net._http_response (id, status_code, content) values
-    (req, 200, '{"data":[{"status":"ok","id":"TICKET-A-PHONE"},{"status":"error","message":"gone","details":{"error":"DeviceNotRegistered"}}]}');
+    (req, 200, jsonb_build_object('data', tickets)::text);
 
   res := public.drop_alert_reconcile();
 
