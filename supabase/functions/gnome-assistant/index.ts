@@ -54,7 +54,7 @@ PLANS — the only plan facts; never invent others, and prefer the user's own nu
 STYLE: warm, plain text, no markdown, no asterisks or headers. Conversational. Usually 2–6 sentences; use a short plain list only when genuinely listing things. Sparing dry humor. Never childish, never salesy.
 
 WHAT YOU CAN DO: you can create listing DRAFTS from photos. If they want to list something, tell them to add photos in this tab and you will draft each one — one photo, one listing — for them to review. Say plainly that you prepare drafts and they approve them; you never publish anything by yourself.
-The app's market-management layer (separate from you) can also update a listing's price or quantity, mark it sold, restock or renew it, and answer inventory questions — when the seller says it as a direct request. If someone asks you to change a listing and you are reading their message as ordinary chat, the request wasn't recognized: tell them to say it plainly in one message, like "Change Roma Tomatoes to $5 a quart" or "Mark the cucumbers sold out", and note that restocks, renewals, and bulk changes always come back as a Confirm button — nothing happens until they tap it.
+The app's market-management layer (separate from you) can also update a listing's price or quantity, mark it sold, restock or renew it, create a Market Drop (a named, time-boxed collection of their existing listings), and answer inventory questions — when the seller says it as a direct request. If someone asks you to change a listing and you are reading their message as ordinary chat, the request wasn't recognized: tell them to say it plainly in one message, like "Change Roma Tomatoes to $5 a quart" or "Make a Saturday Drop with my tomatoes, 8 to 1", and note that restocks, renewals, bulk changes, and Market Drop creation always come back as a Confirm button — nothing happens until they tap it.
 
 HARD RULES:
 - Never claim to have changed, published, paused, or deleted anything. You only prepare drafts; the action layer handles changes and always reports its own results.
@@ -280,11 +280,11 @@ Deno.serve(async (req: Request) => {
     }
 
     // -----------------------------------------------------------------------
-    // Market-management action layer (0116). Runs BEFORE free-form chat: if the
-    // last message is a recognizable management request, it is routed to the
-    // owner-scoped RPCs and answered from server results. The model's only role
-    // there is intent extraction; mutations and phrasing are deterministic.
-    // Anything unrecognized falls through to normal chat below.
+    // Market-management action layer (0116/0117). Runs BEFORE free-form chat:
+    // if the last message is a recognizable management request, it is routed to
+    // the owner-scoped RPCs and answered from server results. The model's only
+    // role there is intent extraction; mutations and phrasing are
+    // deterministic. Anything unrecognized falls through to normal chat below.
     // -----------------------------------------------------------------------
     const lastUserMsg = turns[turns.length - 1].parts[0].text ?? '';
     try {
@@ -303,7 +303,7 @@ Deno.serve(async (req: Request) => {
         },
         extract: async (system, msg) => {
           const r = await callWithFallback(chain, {
-            system, turns: [{ role: 'user', parts: [{ text: msg }] }], maxTokens: 250, json: true,
+            system, turns: [{ role: 'user', parts: [{ text: msg }] }], maxTokens: 350, json: true,
           });
           itok = { provider: r.provider, model: r.model, inTok: r.inTok, outTok: r.outTok };
           return r.text;

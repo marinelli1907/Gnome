@@ -138,7 +138,7 @@ WHAT GNOME IS (answer product questions from this, don't invent):
 - Privacy: public locations are rounded to about a neighborhood-sized cell; home addresses are never shown. Trust & Safety page covers pickup guidance and food-safety basics (cottage-food laws vary by state; eggs/meat/dairy are regulated — point to the /trust page and their county extension office rather than giving definitive legal rulings).
 
 HARD RULES:
-- You are READ-ONLY. You cannot create, edit, pause, or delete listings, change plans, cancel subscriptions, or check orders beyond what USER CONTEXT states. Never claim you did. The app's market-management layer (separate from you) CAN update prices and quantities, mark listings sold, restock or renew them — when the seller says it as one direct message, like "Change Roma Tomatoes to $5/quart" or "Mark the cucumbers sold out". If someone asks you to change a listing and you're reading it as ordinary chat, tell them to phrase it that way; restocks, renewals, and bulk changes always come back as a Confirm button, and nothing happens until they tap it. For everything else, tell them exactly where to do it in the app (e.g. "Pricing page → Upgrade", "manage billing through the Stripe link in your receipt email").
+- You are READ-ONLY. You cannot create, edit, pause, or delete listings, change plans, cancel subscriptions, or check orders beyond what USER CONTEXT states. Never claim you did. The app's market-management layer (separate from you) CAN update prices and quantities, mark listings sold, restock or renew them, and create Market Drops (time-boxed collections of existing listings) — when the seller says it as one direct message, like "Change Roma Tomatoes to $5/quart" or "Make a Saturday Drop with my tomatoes, 8 to 1". If someone asks you to change a listing and you're reading it as ordinary chat, tell them to phrase it that way; restocks, renewals, bulk changes, and Market Drop creation always come back as a Confirm button, and nothing happens until they tap it. For everything else, tell them exactly where to do it in the app (e.g. "Pricing page → Upgrade", "manage billing through the Stripe link in your receipt email").
 - Never reveal or speculate about other users' data, private addresses, or anything not in this prompt or the user-context line.
 - Pesticides, food-safety, legal questions: careful language, recommend the label/local authority; no definitive rulings.
 - If USER CONTEXT includes a Seed Drop order, ground seed answers in those exact varieties and their numbers (depth, spacing, germination and maturity days). State order status ONLY from the context — never guess or promise shipping dates. Germination is never guaranteed.
@@ -198,10 +198,11 @@ Deno.serve(async (req: Request) => {
   const t0 = Date.now();
 
   // -------------------------------------------------------------------------
-  // Market-management action layer (0116) — same contract as the app's AI tab.
-  // The model only extracts intent; mutations run through owner-scoped RPCs
-  // under the caller's own JWT, and renewal-class/bulk work returns a proposal
-  // the client must confirm via ai_confirm_action. Unrecognized -> normal chat.
+  // Market-management action layer (0116/0117) — same contract as the app's AI
+  // tab. The model only extracts intent; mutations run through owner-scoped
+  // RPCs under the caller's own JWT, and renewal-class/bulk/drop work returns
+  // a proposal the client must confirm via ai_confirm_action. Unrecognized ->
+  // normal chat.
   // -------------------------------------------------------------------------
   try {
     const jwt = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
@@ -220,7 +221,7 @@ Deno.serve(async (req: Request) => {
       },
       extract: async (system, msg) => {
         const r = await callWithFallback(chain, {
-          system, turns: [{ role: 'user', parts: [{ text: msg }] }], maxTokens: 250, json: true,
+          system, turns: [{ role: 'user', parts: [{ text: msg }] }], maxTokens: 350, json: true,
         });
         itok = { provider: r.provider, model: r.model, inTok: r.inTok, outTok: r.outTok };
         return r.text;
