@@ -36,3 +36,8 @@
 # Admin console round: 0094-0099 are now APPLIED (see APPLIED.tsv).
 
 # Monetization round 0104-0112: applied to production 2026-08-16/17 (see APPLIED.tsv).
+
+# AI market import round: built and tested locally (run_import_drafts_tests.sh 49/49 + concurrency
+# race), NOT applied to production — awaiting Daniel's go-ahead at the bulk-draft checkpoint.
+0114_draft_publish_lifetime.sql  fixes the confirmed 30-day draft-publish bug; proven locally, awaiting approval to apply
+0115_market_import_drafts.sql  create_import_drafts + listing_drafts import columns; ships with 0114
