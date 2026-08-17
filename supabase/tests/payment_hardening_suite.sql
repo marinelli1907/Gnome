@@ -419,6 +419,11 @@ begin
   perform pg_temp.ck('C8c: authenticated cannot EXECUTE listing_overage_required(uuid, uuid)',
     not has_function_privilege('authenticated', 'public.listing_overage_required(uuid, uuid)', 'execute')
     and not has_function_privilege('anon', 'public.listing_overage_required(uuid, uuid)', 'execute'));
+
+  -- The sweep rewrites payment statuses. No client role may ever call it.
+  perform pg_temp.ck('C8d: no client role can EXECUTE expire_stale_publish_authorizations(interval)',
+    not has_function_privilege('anon', 'public.expire_stale_publish_authorizations(interval)', 'execute')
+    and not has_function_privilege('authenticated', 'public.expire_stale_publish_authorizations(interval)', 'execute'));
 end $$;
 
 -- ============================================================================
