@@ -114,7 +114,9 @@ Deno.serve(async (req: Request) => {
   if (env('STRIPE_PRICE_LOCATION_ADDON')) priceKey.set(env('STRIPE_PRICE_LOCATION_ADDON')!, 'GNOME_PICKUP_LOCATION_ADDON');
   if (env('STRIPE_PRICE_SEED_SUB')) priceKey.set(env('STRIPE_PRICE_SEED_SUB')!, 'GNOME_SEED_DROP_SEASONAL');
   const keyForPrice = (id?: string | null) => (id ? priceKey.get(id) : undefined);
-  const planForKey = (k?: string) => (k === 'GNOME_GROWER_MONTHLY' ? 'grower' : k === 'GNOME_FARM_MONTHLY' ? 'farm' : null) as 'grower' | 'farm' | null;
+  // Internal enum values, which are NOT the customer-facing names: 'farm' is
+  // customer-facing "Max" and 'sponsor' is customer-facing "Farm".
+  const planForKey = (k?: string) => (k === 'GNOME_GROWER_MONTHLY' ? 'grower' : k === 'GNOME_FARM_MONTHLY' ? 'farm' : k === 'GNOME_SPONSOR_MONTHLY' ? 'sponsor' : null) as 'grower' | 'farm' | 'sponsor' | null;
   const bundlePlan = (k?: string) => (k === 'GNOME_GROWER_SEED_BUNDLE' ? 'grower' : k === 'GNOME_FARM_SEED_BUNDLE' ? 'farm' : null) as 'grower' | 'farm' | null;
   const log = (type: string, market: string | null, user: string | null, product: string | null, amount: number | null, effect: string, meta?: unknown) =>
     admin.rpc('billing_log_event', { p_event: event.id, p_type: type, p_livemode: livemode, p_market: market, p_user: user, p_product: product, p_amount: amount, p_effect: effect, p_meta: meta ?? null });
@@ -132,6 +134,46 @@ Deno.serve(async (req: Request) => {
         if (SEED_DROP_COMING_SOON && isSeedDropEvent(ref, meta)) {
           await log(event.type, null, meta.gnome_user_id || null,
                     meta.product_key || 'SEED_DROP', amount, 'refused:coming_soon');
+          break;
+        }
+
+        // ---- $0.99 listing overage (publish or renewal) --------------------
+        // Placed ahead of every other payment branch because it is the only one
+        // whose effect is an ENTITLEMENT rather than an immediate mutation: the
+        // authorization is marked paid, and the listing itself is published
+        // later by the seller, when the 0104 trigger consumes it.
+        //
+        // Idempotency is mark_authorization_paid's job, not this branch's — it
+        // only matches a row still 'pending', so a replayed event updates
+        // nothing and reports false. Two guards sit on top of the outer
+        // stripe_events replay check because a delayed webhook and a retry can
+        // arrive by different paths.
+        if (session.mode === 'payment' && meta.overage_intent) {
+          const { data: auth } = await admin.from('listing_publish_authorizations')
+            .select('id,market_id,intent,status').eq('stripe_session_id', session.id).maybeSingle();
+
+          if (!auth) {
+            // The pending row is written at checkout time, so its absence means
+            // this session did not originate here. Never create one now: an
+            // authorization conjured from webhook metadata alone would let
+            // anyone who can forge a session grant themselves a publish.
+            await log(event.type, meta.market_id || null, meta.gnome_user_id || null,
+                      meta.product_key || null, amount, 'overage:unknown_session');
+            break;
+          }
+          if (auth.status === 'consumed') {
+            await log(event.type, auth.market_id, meta.gnome_user_id || null,
+                      meta.product_key || null, amount, 'overage:already_consumed');
+            break;
+          }
+
+          const { data: became } = await admin.rpc('mark_authorization_paid', {
+            p_session: session.id,
+            p_payment_intent: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+          });
+          await log(event.type, auth.market_id, meta.gnome_user_id || null,
+                    meta.product_key || null, amount,
+                    became === true ? `overage_paid:${auth.intent}` : 'overage:replay_ignored');
           break;
         }
 
@@ -234,6 +276,34 @@ Deno.serve(async (req: Request) => {
           }
           await admin.rpc('reconcile_pickup_locations', { p_market: market });
           await log(event.type, market, userId, planKey ?? 'GNOME_PICKUP_LOCATION_ADDON', session.amount_total ?? null, `plan:${plan ?? 'unchanged'} addons:${addonQty}`);
+
+          // ---- promo redemption ------------------------------------------
+          // Recorded HERE, on Stripe's confirmation, rather than optimistically
+          // at checkout: an abandoned session would otherwise burn a redemption
+          // and, for a capped campaign, deny it to somebody who would have paid.
+          //
+          // The campaign id comes from server-authored session metadata, never
+          // from anything the customer supplied, and record_promo_redemption is
+          // ON CONFLICT (stripe_session_id) DO NOTHING, so a replay inserts
+          // nothing. amount_total is 0 during a 100%-off period, so the discount
+          // is taken from Stripe's own total_details rather than inferred.
+          if (meta.promo_campaign_id && userId) {
+            const discounted = session.total_details?.amount_discount ?? null;
+            const { data: recorded } = await admin.rpc('record_promo_redemption', {
+              p_campaign: meta.promo_campaign_id,
+              p_user: userId,
+              p_market: market,
+              p_plan: plan,
+              p_session: session.id,
+              p_subscription: String(session.subscription ?? '') || null,
+              p_customer: String(session.customer ?? '') || null,
+              p_discount_cents: discounted,
+            });
+            await log(event.type, market, userId, planKey ?? null, discounted,
+                      recorded === true
+                        ? `promo_redeemed:${meta.promo_code ?? meta.promo_campaign_id}`
+                        : 'promo_redemption:replay_ignored');
+          }
         }
         break;
       }

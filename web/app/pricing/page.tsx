@@ -4,7 +4,7 @@ import PricingCTA from './PricingCTA';
 export const metadata: Metadata = {
   title: 'Pricing — grow your Market',
   description:
-    'Gnome is free for neighbors. Growers and farms can upgrade for more listings, monthly boosts, and full AI access.',
+    'Gnome is free to start. Upgrade to Pro, Max, or Farm for more Sell listings, included renewals, premium QR tools, and full AI access.',
   alternates: { canonical: '/pricing' },
 };
 
@@ -17,12 +17,24 @@ export const revalidate = 3600;
 
 // Plan numbers come from plan_limits — the same rows the backend enforces —
 // so this page can never drift from reality (Part 1: one source of truth).
+//
+// The allowance columns (display_name, monthly_publish_allowance,
+// included_renewals_per_period, wanted_intros_per_day, qr_tools) arrive with
+// migration 0104. Production may not have them yet, so the fetch selects `*`
+// and every helper checks for `undefined` — column not deployed — and falls
+// back to the canonical copy below. It NEVER reads max_active_listings; that
+// column is the retired cap model, kept only for legacy readers, and must not
+// resurface here.
 interface PlanRow {
   plan: string;
-  max_active_listings: number | null;
+  price_cents: number;
   max_pickup_locations: number;
   extra_location_fee_cents: number | null;
-  price_cents: number;
+  // 0104 allowance columns — undefined until the migration applies, null = unlimited.
+  monthly_publish_allowance?: number | null;
+  included_renewals_per_period?: number | null;
+  wanted_intros_per_day?: number | null;
+  qr_tools?: boolean | null;
 }
 
 async function fetchPlanLimits(): Promise<Record<string, PlanRow>> {
@@ -30,10 +42,13 @@ async function fetchPlanLimits(): Promise<Record<string, PlanRow>> {
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) return {};
   try {
-    const res = await fetch(
-      `${url}/rest/v1/plan_limits?select=plan,max_active_listings,max_pickup_locations,extra_location_fee_cents,price_cents`,
-      { headers: { apikey: anon, Authorization: `Bearer ${anon}` }, next: { revalidate: 3600 } },
-    );
+    // select=* rather than naming the 0104 columns: naming a column PostgREST
+    // does not have yet fails the whole request, and this page should degrade
+    // per-line, not all-or-nothing.
+    const res = await fetch(`${url}/rest/v1/plan_limits?select=*`, {
+      headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+      next: { revalidate: 3600 },
+    });
     if (!res.ok) return {};
     const rows = (await res.json()) as PlanRow[];
     return Object.fromEntries(rows.map((r) => [r.plan, r]));
@@ -42,25 +57,57 @@ async function fetchPlanLimits(): Promise<Record<string, PlanRow>> {
   }
 }
 
-const listingsLine = (r?: PlanRow, fallback = '') =>
-  r ? (r.max_active_listings == null ? 'Unlimited active listings' : `${r.max_active_listings} active listings`) : fallback;
-const locationsLine = (r?: PlanRow, fallback = '') => {
-  if (!r) return fallback;
+// Each helper degrades to the canonical fallback string when the row is
+// missing OR the 0104 column is undefined (not yet migrated). `null` is a
+// real server value meaning unlimited — the two must not be conflated.
+const publishesLine = (r: PlanRow | undefined, fallback: string) => {
+  if (!r || r.monthly_publish_allowance === undefined) return fallback;
+  return r.monthly_publish_allowance === null
+    ? 'Unlimited Sell listings'
+    : `${r.monthly_publish_allowance} Sell listings included per month`;
+};
+const renewalsLine = (r: PlanRow | undefined, fallback: string) => {
+  if (!r || r.included_renewals_per_period === undefined) return fallback;
+  if (r.included_renewals_per_period === null) return 'Unlimited free renewals';
+  if (r.included_renewals_per_period === 0) return 'Renewals $0.99 each — none included';
+  return `${r.included_renewals_per_period} free renewals included — then $0.99 each`;
+};
+const wantedLine = (r: PlanRow | undefined, fallback: string) => {
+  if (!r || r.wanted_intros_per_day === undefined) return fallback;
+  if (r.wanted_intros_per_day === null) return 'Unlimited Wanted responses';
+  return `${r.wanted_intros_per_day} Wanted response${r.wanted_intros_per_day === 1 ? '' : 's'} per day`;
+};
+const qrLine = (r: PlanRow | undefined, fallback: string) => {
+  if (!r || r.qr_tools === undefined) return fallback;
+  return r.qr_tools
+    ? 'Premium QR tools for your Market'
+    : 'Free public Market link — QR tools on paid plans';
+};
+const locationsLine = (r: PlanRow | undefined, fallback: string) => {
+  if (!r || r.max_pickup_locations === undefined) return fallback;
   const base = `${r.max_pickup_locations} pickup location${r.max_pickup_locations === 1 ? '' : 's'}`;
   return r.extra_location_fee_cents != null
     ? `${base} — add more for $${(r.extra_location_fee_cents / 100).toFixed(0)}/mo each`
     : base;
 };
 
+// Customer-facing names ONLY. The internal enum values behind them are
+// deliberately different (grower → "Pro", farm → "Max", sponsor → "Farm" —
+// see PLAN_KEY below and migration 0104) and must never render.
 const TIERS = [
   {
-    name: 'Neighbor',
+    name: 'Free',
     price: 'Free',
     cadence: 'forever',
     blurb: 'For browsing, sharing occasionally, and posting wanted asks.',
     features: [
-      '@LISTINGS',
+      '@PUBLISHES',
+      '@RENEWALS',
+      'Extra Sell listing: $0.99',
+      '@WANTED',
+      '@QR',
       '@LOCATIONS',
+      'Share Free, Trade & Wanted posts — always free, never counted',
       'Your own Market page',
       'Local delivery — up to 15 miles, one flat fee',
       'AI listing drafts — 5/day',
@@ -70,13 +117,17 @@ const TIERS = [
     cta: null,
   },
   {
-    name: 'Grower',
+    name: 'Pro',
     price: '$9.99',
     cadence: '/month',
     blurb: 'For serious gardeners who sell regularly — the natural next step.',
     highlight: true,
     features: [
-      '@LISTINGS',
+      '@PUBLISHES',
+      '@RENEWALS',
+      'Extra Sell listing: $0.99',
+      '@WANTED',
+      '@QR',
       '@LOCATIONS',
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — neighbors reserve, you grow',
@@ -84,43 +135,98 @@ const TIERS = [
       'Full AI access — 25 drafts, 40 planner questions/day',
       'Featured eligibility on the homepage rail',
     ],
-    cta: { productKey: 'GNOME_GROWER_MONTHLY', label: 'Upgrade to Grower' },
+    cta: { productKey: 'GNOME_GROWER_MONTHLY', label: 'Upgrade to Pro' },
   },
   {
-    name: 'Farm',
+    name: 'Max',
     price: '$29.99',
     cadence: '/month',
     blurb: 'For high-volume sellers, farm stands, and established producers.',
     features: [
-      '@LISTINGS',
+      '@PUBLISHES',
+      '@RENEWALS',
+      'Extra Sell listing: $0.99',
+      '@WANTED',
+      '@QR',
       '@LOCATIONS',
-      'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — pre-sell your whole season',
       '10 listing promotions every month',
       'Featured eligibility + verified review',
-      'Everything in Grower',
+      'Everything in Pro',
     ],
-    cta: { productKey: 'GNOME_FARM_MONTHLY', label: 'Upgrade to Farm' },
+    cta: { productKey: 'GNOME_FARM_MONTHLY', label: 'Upgrade to Max' },
+  },
+  {
+    name: 'Farm',
+    price: '$99',
+    cadence: '/month',
+    blurb: 'For working farms and producers who never want to count listings.',
+    features: [
+      '@PUBLISHES',
+      '@RENEWALS',
+      '@WANTED',
+      '@QR',
+      '@LOCATIONS',
+      '10 listing promotions every month',
+      'Offer plots — pre-sell your whole season',
+      'Everything in Max',
+    ],
+    cta: { productKey: 'GNOME_SPONSOR_MONTHLY', label: 'Upgrade to Farm' },
   },
 ];
 
 export default async function PricingPage() {
   const limits = await fetchPlanLimits();
-  const PLAN_KEY: Record<string, string> = { Neighbor: 'free', Grower: 'grower', Farm: 'farm' };
-  const FALLBACK: Record<string, { listings: string; locations: string }> = {
-    Neighbor: { listings: '5 active listings', locations: '1 pickup location' },
-    Grower: { listings: '25 active listings', locations: '2 pickup locations — add more for $5/mo each' },
-    Farm: { listings: 'Unlimited active listings', locations: '5 pickup locations' },
+  // Customer-facing name → internal plan_limits row. The mapping is
+  // counter-intuitive on purpose ('farm' is the row behind "Max", 'sponsor'
+  // the row behind "Farm") because renaming enum values would rewrite live
+  // billing rows for a cosmetic gain. Do not "correct" it.
+  const PLAN_KEY: Record<string, string> = { Free: 'free', Pro: 'grower', Max: 'farm', Farm: 'sponsor' };
+  const FALLBACK: Record<string, Record<string, string>> = {
+    Free: {
+      '@PUBLISHES': '3 Sell listings included per month',
+      '@RENEWALS': 'Renewals $0.99 each — none included',
+      '@WANTED': '1 Wanted response per day',
+      '@QR': 'Free public Market link — QR tools on paid plans',
+      '@LOCATIONS': '1 pickup location',
+    },
+    Pro: {
+      '@PUBLISHES': '20 Sell listings included per month',
+      '@RENEWALS': '3 free renewals included — then $0.99 each',
+      '@WANTED': '5 Wanted responses per day',
+      '@QR': 'Premium QR tools for your Market',
+      '@LOCATIONS': '2 pickup locations — add more for $5/mo each',
+    },
+    Max: {
+      '@PUBLISHES': '40 Sell listings included per month',
+      '@RENEWALS': '10 free renewals included — then $0.99 each',
+      '@WANTED': '15 Wanted responses per day',
+      '@QR': 'Premium QR tools for your Market',
+      '@LOCATIONS': '5 pickup locations',
+    },
+    Farm: {
+      '@PUBLISHES': 'Unlimited Sell listings',
+      '@RENEWALS': 'Unlimited free renewals',
+      '@WANTED': 'Unlimited Wanted responses',
+      '@QR': 'Premium QR tools for your Market',
+      '@LOCATIONS': '10 pickup locations',
+    },
   };
-  const resolved = TIERS.map((t) => ({
-    ...t,
-    features: t.features.map((f) => {
-      const row = limits[PLAN_KEY[t.name]];
-      if (f === '@LISTINGS') return listingsLine(row, FALLBACK[t.name].listings);
-      if (f === '@LOCATIONS') return locationsLine(row, FALLBACK[t.name].locations);
-      return f;
-    }),
-  }));
+  const resolved = TIERS.map((t) => {
+    const row = limits[PLAN_KEY[t.name]];
+    const fb = FALLBACK[t.name];
+    return {
+      ...t,
+      features: t.features.map((f) => {
+        if (f === '@PUBLISHES') return publishesLine(row, fb[f]);
+        if (f === '@RENEWALS') return renewalsLine(row, fb[f]);
+        if (f === '@WANTED') return wantedLine(row, fb[f]);
+        if (f === '@QR') return qrLine(row, fb[f]);
+        if (f === '@LOCATIONS') return locationsLine(row, fb[f]);
+        return f;
+      }),
+    };
+  });
   return (
     <main className="container" style={{ paddingTop: 40, paddingBottom: 64 }}>
       <section className="hero" style={{ paddingTop: 0, paddingBottom: 20 }}>
@@ -155,6 +261,14 @@ export default async function PricingPage() {
         ))}
       </div>
 
+      <p className="pricing-fine">
+        Every Sell listing runs for 7 days on every plan — including Farm — then
+        can be renewed to stay up. Only Sell listings use your monthly allowance:
+        Share Free, Trade, and Wanted posts never count, on any plan. Beyond your
+        included allowance, an extra Sell listing or renewal is $0.99. Unlimited
+        allowances are subject to anti-abuse limits.
+      </p>
+
       {/* Seed Drop has no prices and no date. It is described here as a preview
           only — the seller plans above are the only things this page sells. */}
       <section className="hero" style={{ paddingTop: 36, paddingBottom: 24 }}>
@@ -173,10 +287,9 @@ export default async function PricingPage() {
       <p className="pricing-fine">
         <strong>Gnome takes 0% of neighbor-to-neighbor sales — no transaction fees, ever.</strong>{' '}
         Plans are billed monthly through Stripe and can be cancelled anytime; your Market
-        simply returns to the free tier at the end of the billing period, and your listings
-        beyond the free cap pause rather than disappear. Plan limits are enforced by the
-        platform itself, not the buttons on this page. Questions or a billing problem?
-        We’ll make it right — cancel first, ask second.
+        simply returns to the Free plan at the end of the billing period. Plan limits are
+        enforced by the platform itself, not the buttons on this page. Questions or a
+        billing problem? We’ll make it right — cancel first, ask second.
       </p>
     </main>
   );

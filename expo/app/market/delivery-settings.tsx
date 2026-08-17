@@ -232,7 +232,7 @@ export default function DeliverySettingsScreen() {
               <View style={styles.upsell}>
                 <Text style={styles.upsellTitle}>Neighbor delivery: up to 15 miles, one flat fee.</Text>
                 <Text style={styles.upsellBody}>
-                  Upgrade to Grower for distance surcharges, same-day & next-day
+                  Upgrade to Pro for distance surcharges, same-day & next-day
                   cutoffs, and weekly delivery days.
                 </Text>
                 <Button label="See plans" variant="secondary" onPress={() => router.push('/upgrade')}

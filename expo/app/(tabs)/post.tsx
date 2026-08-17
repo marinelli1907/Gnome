@@ -28,30 +28,34 @@ import {
   parseServerError,
 } from '@/lib/taxonomy';
 import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
-import { TYPE_CHOICES } from '@/lib/listingType';
+import { DEFAULT_LISTING_TYPE, TYPE_CHOICES, listingTypeFromParam } from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyCredentials, useMyMarket, logEvent } from '@/lib/db';
 import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
+import { purchaseOverage } from '@/lib/billing';
 import { getCurrentCoords } from '@/lib/location';
 import type { ListingType } from '@/types';
 
 const MAX_PHOTOS = 5;
 
+// Copy is per type and stays per type: Sell wording shows while Sell is
+// selected, and the Share Free wording below is still exactly what Share Free
+// says — it just isn't what the screen opens on any more.
 const HEADING: Record<ListingType, string> = {
+  sale: 'List something for sale',
   free: 'Share your surplus',
   trade: 'Offer a trade',
-  sale: 'List something for sale',
   wanted: 'Post what you need',
   plot: 'Offer a garden plot',
 };
 
 const NOTE: Record<ListingType, string> = {
+  sale: 'Expires after 7 days. Payments happen offline, in person — Gnome never handles money.',
   free: 'Listings expire after 7 days. Free to share — no payments.',
   trade: 'Listings expire after 7 days. Arrange the swap in person.',
-  sale: 'Expires after 7 days. Payments happen offline, in person — Gnome never handles money.',
   wanted: 'Wanted posts expire after 30 days. Neighbors with a match can offer it to you.',
   plot: 'Neighbors request your plot and tell you what to grow. You approve, then arrange payment together — Gnome never handles money.',
 };
@@ -74,9 +78,13 @@ export default function PostScreen() {
     n?: string;
   }>();
 
-  const initialType = (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)
-    ? (params.type as ListingType)
-    : 'free';
+  // Resolved before the first render, so the first paint is already the right
+  // type — never Share Free flashing into Sell. An explicit `?type=` (deep link,
+  // repost, Grow Log harvest) wins; a Wanted response is locked to Share Free
+  // because that is the only thing it can be; everything else opens on Sell.
+  const initialType: ListingType = params.fulfilledBy
+    ? 'free'
+    : listingTypeFromParam(params.type) ?? DEFAULT_LISTING_TYPE;
 
   const [type, setType] = useState<ListingType>(initialType);
   const [title, setTitle] = useState(params.title ?? '');
@@ -116,9 +124,11 @@ export default function PostScreen() {
   const seed = `${params.fulfilledBy ?? ''}|${params.title ?? ''}|${params.type ?? ''}|${params.n ?? ''}`;
   useEffect(() => {
     if (params.fulfilledBy || params.title || params.category || params.taxNode || params.type) {
-      if (params.type && (['free', 'trade', 'sale', 'wanted', 'plot'] as const).includes(params.type as ListingType)) {
-        setType(params.type as ListingType);
-      }
+      // Re-seeding on a later param change (repost, another Grow Log harvest):
+      // an explicit type still wins, and an unreadable one leaves the user's
+      // current choice alone rather than yanking it back to the default.
+      const seeded = listingTypeFromParam(params.type);
+      if (seeded) setType(seeded);
       if (params.fulfilledBy) setType('free');
       if (params.title) setTitle(params.title);
       if (params.category && index) {
@@ -203,6 +213,11 @@ export default function PostScreen() {
   };
 
   const reset = () => {
+    // Deliberately NOT reset to the canonical default. Sell is the default when the user arrives
+    // with no stated intent; someone who just posted a Share Free item and tapped "Post another"
+    // has stated one, and a seller listing five things in a row should not re-pick the type each
+    // time. Web behaves the same way (SellClient reset() leaves listingType alone) — the two were
+    // briefly divergent and this is the agreed reading.
     setTitle('');
     setQuantity('');
     setDescription('');
@@ -229,6 +244,21 @@ export default function PostScreen() {
 
   const blocked = !isPlot && !!selectedNode && eligibility.data ? !eligibility.data.allowed : false;
   const prohibited = blocked && eligibility.data?.reason === 'PROHIBITED';
+
+  // $0.99 overage: server-priced, server-authorized. On 'paid' the SAME submit runs again with
+  // the form state untouched — that is the draft-preservation guarantee. 'pending' means the
+  // webhook is still landing; the seller retries publish, never payment.
+  const payAndRetryPublish = async () => {
+    const outcome = await purchaseOverage(null);
+    if (outcome === 'paid' || outcome === 'not_needed') {
+      await submit();
+    } else if (outcome === 'pending') {
+      Alert.alert('Payment received', 'Stripe is confirming your payment. Tap Publish again in a few seconds — you will not be charged twice.');
+    } else if (outcome === 'error') {
+      Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged — your draft is safe. Please try again.');
+    }
+    // 'cancelled': silent — the seller backed out on purpose, the draft is untouched.
+  };
 
   const submit = async () => {
     if (!title.trim()) {
@@ -330,14 +360,31 @@ export default function PostScreen() {
         // The server gate is the authority — render its verdict even if the
         // client somehow thought this was publishable.
         Alert.alert(err.title, err.message);
-      } else if (err?.code === 'PLAN_LIMIT_REACHED') {
-        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type } });
+      } else if (err?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
+        // 0104 model: a monthly publish allowance that expiry does not refund. The draft is
+        // preserved by construction — the insert was refused, and the form state is untouched,
+        // so a successful $0.99 purchase can simply run the same submit again.
+        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'allowance' } });
         Alert.alert(
-          'You’ve reached your Free limit',
-          'Free Markets can have up to 10 active listings. Upgrade to Grower for more.',
+          'Included listings used up',
+          'You’ve used your included Sell listings for this period. Your draft is saved right here either way.',
           [
             { text: 'Not now', style: 'cancel' },
-            { text: 'See upgrade', onPress: () => router.push('/upgrade') },
+            { text: 'See plans', onPress: () => router.push('/upgrade') },
+            { text: 'Publish for $0.99', onPress: () => void payAndRetryPublish() },
+          ],
+        );
+      } else if (err?.code === 'PLAN_LIMIT_REACHED') {
+        // Transitional: production still runs the pre-0104 active-listing gate until the
+        // allowance migrations apply. The old copy here claimed "10 active listings", which was
+        // never true on any plan — the Free cap is 5 today.
+        void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'active_cap' } });
+        Alert.alert(
+          'Listing limit reached',
+          'You’re at your plan’s listing limit right now. Upgrade for more room, or try again after a listing wraps up.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'See plans', onPress: () => router.push('/upgrade') },
           ],
         );
       } else {
@@ -430,7 +477,7 @@ export default function PostScreen() {
             <Text style={styles.aiBannerEmoji}>✨</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.aiBannerTitle}>Take a photo — Gnome drafts it</Text>
-              <Text style={styles.aiBannerSub}>AI Listing Assistant · Grower & Farm plans</Text>
+              <Text style={styles.aiBannerSub}>AI Listing Assistant · included with paid plans</Text>
             </View>
             <Text style={styles.aiBannerArrow}>→</Text>
           </Pressable>

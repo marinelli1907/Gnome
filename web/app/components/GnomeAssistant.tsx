@@ -34,7 +34,7 @@ const ACTIONS: { match: (p: string) => boolean; chips: string[] }[] = [
   },
   {
     match: (p) => p.startsWith('/pricing'),
-    chips: ['Which plan fits me?', 'Does Gnome take a percentage?', 'What does Grower include?'],
+    chips: ['Which plan fits me?', 'Does Gnome take a percentage?', 'What does Pro include?'],
   },
   {
     match: (p) => p.startsWith('/my') || p.startsWith('/sell'),

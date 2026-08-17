@@ -10,10 +10,40 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useMyMarket, usePlanLimits } from '@/lib/db';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { formatPrice } from '@/lib/listingType';
-import type { MarketPlan } from '@/types';
+import { listingsMeter, planDisplay, renewalsMeter, resetLabel } from '@/lib/allowance';
+import { useMyListingAllowance } from '@/lib/db';
+import type { MarketPlan, PlanLimit } from '@/types';
 
-const ORDER: MarketPlan[] = ['free', 'grower', 'farm'];
-const PLAN_LABEL: Record<string, string> = { free: 'Neighbor', grower: 'Grower', farm: 'Farm', sponsor: 'Sponsor' };
+// Tier copy derives from plan_limits' 0104 columns. `undefined` means the connected environment
+// has not applied 0104 yet — degrade to an explicit dash, never to max_active_listings, which is
+// the retired model this screen exists to stop describing.
+const tierListings = (l?: PlanLimit) =>
+  l === undefined || l.monthly_publish_allowance === undefined ? null
+    : l.monthly_publish_allowance === null ? 'Unlimited Sell listings'
+    : `${l.monthly_publish_allowance} new Sell listings/mo`;
+const tierRenewals = (l?: PlanLimit) =>
+  l === undefined || l.included_renewals_per_period === undefined ? null
+    : l.included_renewals_per_period === null ? 'unlimited renewals'
+    : l.included_renewals_per_period === 0 ? 'renewals $0.99 each'
+    : `${l.included_renewals_per_period} free renewals/mo`;
+const tierWanted = (l?: PlanLimit) =>
+  l === undefined || l.wanted_intros_per_day === undefined ? null
+    : l.wanted_intros_per_day === null ? 'Unlimited Wanted responses'
+    : `${l.wanted_intros_per_day} Wanted response${l.wanted_intros_per_day === 1 ? '' : 's'}/day`;
+const tierQr = (l?: PlanLimit) =>
+  l === undefined || l.qr_tools === undefined ? null
+    : l.qr_tools ? 'Custom Market QR tools' : 'Market link included · QR tools locked';
+const tierCaveat = (l?: PlanLimit) => {
+  if (l === undefined || l.included_renewals_per_period === undefined) return null;
+  if (l.included_renewals_per_period === null) return 'No listing or renewal overage charges.';
+  if (l.included_renewals_per_period === 0) return 'Extra Sell listings and renewals: $0.99 each.';
+  return `Extra Sell listings $0.99 · renewals after the first ${l.included_renewals_per_period}: $0.99.`;
+};
+
+// All four sellable tiers, in ladder order. Labels come from planDisplay — customer-facing names
+// only, and the mapping is deliberately counter-intuitive (farm→Max, sponsor→Farm), which is
+// exactly why no screen may interpolate the enum.
+const ORDER: MarketPlan[] = ['free', 'grower', 'farm', 'sponsor'];
 
 /** Resolved entitlements: plan + subscription + purchased add-ons, from the
  *  backend's single source (my_plan_entitlements, 0064). */
@@ -25,7 +55,6 @@ interface Entitlements {
   grant_reason: string | null;
   plan_price_cents: number;
   subscription_status: string | null;
-  max_active_listings: number | null; // null = unlimited
   active_listings: number;
   max_pickup_locations: number;
   extra_location_fee_cents: number | null;
@@ -47,30 +76,30 @@ function useEntitlements(uid?: string) {
   });
 }
 
-const listingsLabel = (n: number | null | undefined) =>
-  n == null ? 'Unlimited listings' : `${n} active listings`;
-
 export default function UpgradeScreen() {
   const insets = useSafeAreaInsets();
   const { userId } = useAuth();
   const market = useMyMarket(userId ?? undefined);
   const limits = usePlanLimits();
   const ent = useEntitlements(userId ?? undefined);
+  const allowance = useMyListingAllowance(userId ?? undefined);
   const plan: MarketPlan = (ent.data?.plan as MarketPlan) ?? (market.data?.plan as MarketPlan) ?? 'free';
+  const row = allowance.data ?? null;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}>
       <Text style={styles.heading}>Grow your Market</Text>
       <Text style={styles.sub}>
-        More listings, pickup locations, and delivery tools as you grow — every
-        limit below comes straight from the plan the platform enforces.
+        More monthly Sell listings, free renewals, pickup locations and delivery tools as you grow —
+        every number below comes straight from the plan the platform enforces. All Sell listings run
+        for 7 days; Share Free, Trade and Wanted posts never touch your Sell allowance.
       </Text>
 
       {/* Your resolved entitlements — the same numbers the backend enforces. */}
       {ent.data ? (
         <View style={styles.entCard}>
           <Text style={styles.entTitle}>
-            Your plan: {PLAN_LABEL[ent.data.plan] ?? ent.data.plan}
+            Your plan: {row?.display_name ?? planDisplay(ent.data.plan)}
           </Text>
           {ent.data.entitlement_source === 'complimentary' ? (
             <Text style={styles.entLine}>
@@ -81,10 +110,20 @@ export default function UpgradeScreen() {
               {ent.data.grant_reason ? ` · ${ent.data.grant_reason}` : ''}
             </Text>
           ) : null}
-          <Text style={styles.entLine}>
-            {ent.data.active_listings}
-            {ent.data.max_active_listings == null ? ' listings · Unlimited' : ` / ${ent.data.max_active_listings} listings`}
-          </Text>
+          {allowance.isError && (
+            <Text style={styles.entLine}>Couldn’t load your listing usage right now.</Text>
+          )}
+          {row && (
+            <>
+              <Text style={styles.entLine}>
+                {listingsMeter(row).lines.map((l) => l.value).join(' · ')}
+              </Text>
+              <Text style={styles.entLine}>
+                {renewalsMeter(row).lines.map((l) => l.value).join(' · ')}
+              </Text>
+              <Text style={styles.entHint}>{resetLabel(row)}</Text>
+            </>
+          )}
           <Text style={styles.entLine}>
             {ent.data.max_pickup_locations} pickup location{ent.data.max_pickup_locations === 1 ? '' : 's'} included
             {ent.data.extra_pickup_locations > 0 ? ` + ${ent.data.extra_pickup_locations} add-on` : ''}
@@ -108,16 +147,20 @@ export default function UpgradeScreen() {
           <View key={p} style={[styles.tier, current && styles.tierCurrent]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.tierName}>
-                {PLAN_LABEL[p]} {current ? '· current' : ''}
+                {planDisplay(p)} {current ? '· current' : ''}
               </Text>
               <Text style={styles.tierMeta}>
-                {l ? listingsLabel(l.max_active_listings) : '—'}
+                {tierListings(l) ?? '—'}
+                {tierRenewals(l) ? ` · ${tierRenewals(l)}` : ''}
+                {tierWanted(l) ? ` · ${tierWanted(l)}` : ''}
+                {tierQr(l) ? ` · ${tierQr(l)}` : ''}
                 {l?.max_pickup_locations
                   ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}${l.extra_location_fee_cents ? ` (+${formatPrice(l.extra_location_fee_cents)}/mo each extra)` : ''}`
                   : ''}
                 {l?.included_boost_credits ? ` · ${l.included_boost_credits} promotions/mo` : ''}
                 {l && l.price_cents > 0 ? ` · ${formatPrice(l.price_cents)}/mo` : ' · free'}
               </Text>
+              {tierCaveat(l) ? <Text style={styles.tierPerk}>{tierCaveat(l)}</Text> : null}
               {p !== 'free' && (
                 <Text style={styles.tierPerk}>
                   AI Listing Assistant · delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules

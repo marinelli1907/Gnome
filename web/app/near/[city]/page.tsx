@@ -3,19 +3,21 @@ import Link from 'next/link';
 import ListingCard from '../../components/ListingCard';
 import MarketCard from '../../components/MarketCard';
 import { CATEGORIES } from '@/lib/categories';
-import { parseArea, TYPE_LABEL } from '@/lib/format';
+import { LISTING_TYPES, parseArea, TYPE_LABEL, type ListingType } from '@/lib/format';
 import { getActiveListings, getFeaturedListings, getFeaturedMarkets } from '@/lib/gnome';
 
 export const revalidate = 300;
 
 type Params = { params: Promise<{ city: string }>; searchParams: Promise<{ type?: string }> };
-const TYPES = ['free', 'trade', 'sale', 'wanted'] as const;
+// Canonical order, minus plots — those have their own page (/plots) and were
+// never offered as a chip here.
+const TYPES: ListingType[] = LISTING_TYPES.filter((t) => t !== 'plot');
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { city } = await params;
   const area = parseArea(city);
   const title = `Fresh Local Produce, Plants & Farm Goods Near ${area}`;
-  const description = `Browse free, trade, for-sale and wanted homegrown goods from Markets near ${area} on Gnome.`;
+  const description = `Browse for-sale, free, trade and wanted homegrown goods from Markets near ${area} on Gnome.`;
   return { title, description, alternates: { canonical: `/near/${city}` }, openGraph: { title, description, type: 'website' } };
 }
 
@@ -23,7 +25,7 @@ export default async function NearPage({ params, searchParams }: Params) {
   const { city } = await params;
   const { type } = await searchParams;
   const area = parseArea(city);
-  const activeType = TYPES.includes(type as any) ? (type as string) : undefined;
+  const activeType = TYPES.includes(type as ListingType) ? (type as ListingType) : undefined;
 
   const [featuredAll, listings, markets] = await Promise.all([
     getFeaturedListings(10),
@@ -67,7 +69,7 @@ export default async function NearPage({ params, searchParams }: Params) {
       )}
 
       <section className="section">
-        <div className="section-head"><h2>{activeType ? `${TYPE_LABEL[activeType as 'free']} near ${area}` : `Available near ${area}`}</h2></div>
+        <div className="section-head"><h2>{activeType ? `${TYPE_LABEL[activeType]} near ${area}` : `Available near ${area}`}</h2></div>
         {listings.length > 0 ? (
           <div className="grid">{listings.map((l) => <ListingCard key={l.id} listing={l} />)}</div>
         ) : (

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { categoryFor } from '../../lib/categories';
-import { formatPrice, listingPath, timeLeft, TYPE_LABEL } from '../../lib/format';
+import { formatPrice, listingPath, timeLeft, TYPE_LABEL, type ListingType } from '../../lib/format';
 import {
   isUnderReview,
   mapServerError,
@@ -19,6 +19,9 @@ import {
   type ScreenedListing,
 } from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import AllowanceCard from '../components/AllowanceCard';
+import ShareMarketCard from '../components/ShareMarketCard';
+import { planDisplay } from '../../lib/allowance';
 import AppLink from '../components/AppLink';
 import { SignInCard, useSession } from '../components/auth';
 import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
@@ -37,7 +40,7 @@ interface MyListing extends ScreenedListing {
   id: string;
   title: string;
   category: string;
-  listing_type: 'free' | 'trade' | 'sale' | 'wanted' | 'plot';
+  listing_type: ListingType;
   // 'paused' is content screening holding a listing: the row saved, but it is
   // not public until a person clears it.
   status: 'active' | 'claimed' | 'completed' | 'expired' | 'removed' | 'paused';
@@ -162,10 +165,12 @@ export default function MyMarketClient() {
   const [pickupOpen, setPickupOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   // Resolved plan entitlements — the backend's single source (0064). No more
-  // hardcoded caps in this file.
+  // hardcoded caps in this file. The RPC still returns max_active_listings for
+  // legacy readers, but that column is the RETIRED cap model (0104): this
+  // dashboard deliberately does not read it — publish allowance lives in
+  // <AllowanceCard/>, which speaks the per-period model.
   const [ent, setEnt] = useState<{
     plan: string; subscription_status: string | null;
-    max_active_listings: number | null; active_listings: number;
     max_pickup_locations: number; extra_location_fee_cents: number | null;
     extra_pickup_locations: number; effective_pickup_locations: number;
   } | null>(null);
@@ -562,6 +567,8 @@ export default function MyMarketClient() {
 
   return (
     <div>
+      <AllowanceCard />
+      <ShareMarketCard />
       <div className="mm-head">
         <div>
           <h1>{market?.name ?? 'My Market'}</h1>
@@ -569,7 +576,7 @@ export default function MyMarketClient() {
             <strong>{activeCount}</strong> live · <strong>{soldCount}</strong> sold &amp; shared
             {heldCount > 0 && <> · <strong>{heldCount}</strong> under review 🔎</>}
             {featured.length > 0 && <> · <strong>{featured.length}</strong> boosted ✨</>}
-            {market?.plan && <> · {market.plan} plan</>}
+            {market?.plan && <> · {planDisplay(market.plan)} plan</>}
           </p>
         </div>
         <div className="mm-actions">
@@ -582,13 +589,11 @@ export default function MyMarketClient() {
 
       <div className="plan-card">
         <div>
-          <strong className="plan-name">{(market?.plan ?? 'free') === 'free' ? 'Neighbor (free)' : `${market?.plan} plan`}</strong>
+          <strong className="plan-name">{`${planDisplay(market?.plan)} plan`}</strong>
           <span className="plan-usage">
-            {ent
-              ? ent.max_active_listings == null
-                ? `${activeCount} listings · unlimited`
-                : `${activeCount}/${ent.max_active_listings} listings`
-              : `${activeCount} listings`}
+            {/* Live count is descriptive only. The publish allowance meter is
+                AllowanceCard's job — never render a listings cap here. */}
+            {`${activeCount} live listing${activeCount === 1 ? '' : 's'}`}
             {ent ? (
               <> · {ent.max_pickup_locations} pickup location{ent.max_pickup_locations === 1 ? '' : 's'} included
               {ent.extra_pickup_locations > 0 ? ` +${ent.extra_pickup_locations} add-on` : ''}

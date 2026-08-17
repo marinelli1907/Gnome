@@ -25,6 +25,9 @@ import { categoryFor } from '@/constants/categories';
 import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { safeErrorText } from '@/lib/screening';
+import { purchaseOverage } from '@/lib/billing';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { breadcrumb, useTaxonomy } from '@/lib/taxonomy';
 import { alertUnderReview, isUnderReview, UNDER_REVIEW_LABEL } from '@/lib/screening';
@@ -37,7 +40,7 @@ export default function ListingDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userId } = useAuth();
-  const { data: listing, isLoading } = useListing(id);
+  const { data: listing, isLoading, refetch } = useListing(id);
   // Buyer's transient foreground fix vs the listing's APPROX coords — the same
   // basis Browse uses, so detail and card always tell the same story. Never
   // prompts here; never persisted.
@@ -85,6 +88,42 @@ export default function ListingDetailScreen() {
 
   const cat = categoryFor(listing.category);
   const isOwner = userId === listing.owner_id;
+
+  // renew_listing (0104): republishes THIS listing for a fresh lifetime measured from now. The
+  // allowance trigger decides included vs paid as the status flips; PUBLISH_ALLOWANCE_EXHAUSTED
+  // means this renewal costs $0.99, and after a confirmed purchase the same call runs again —
+  // the payment authorized exactly this renewal, and consumption is once-only server-side.
+  const [renewing, setRenewing] = React.useState(false);
+  const renewNow = async () => {
+    setRenewing(true);
+    try {
+      const { error } = await supabase.rpc('renew_listing', { p_listing: listing.id });
+      if (!error) {
+        Alert.alert('Renewed! 🌱', 'Your listing is live for another 7 days.');
+        await refetch();
+        return;
+      }
+      if (/PUBLISH_ALLOWANCE_EXHAUSTED/.test(error.message ?? '')) {
+        Alert.alert(
+          'Renewal — $0.99',
+          'You’ve used your included renewals for this period. Renew this listing for another 7 days for $0.99?',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Renew for $0.99', onPress: async () => {
+              const outcome = await purchaseOverage(listing.id);
+              if (outcome === 'paid' || outcome === 'not_needed') await renewNow();
+              else if (outcome === 'pending') Alert.alert('Payment received', 'Stripe is confirming. Tap Renew again in a few seconds — you will not be charged twice.');
+              else if (outcome === 'error') Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged.');
+            } },
+          ],
+        );
+        return;
+      }
+      Alert.alert('Could not renew', safeErrorText(error.message, 'Please try again.'));
+    } finally {
+      setRenewing(false);
+    }
+  };
   const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
   const isWanted = type === 'wanted';
   const value = listingValueLabel(listing);
@@ -316,6 +355,10 @@ export default function ListingDetailScreen() {
               {UNDER_REVIEW_LABEL} — saved, but not visible to neighbors yet. Tap for details.
             </Text>
           </Pressable>
+        ) : isOwner && listing.status === 'expired' && type === 'sale' ? (
+          // Renewal: one tap re-runs the same listing for a fresh 7 days. The server decides
+          // whether this renewal is included or needs $0.99 — the client never guesses.
+          <Button label="Renew for another 7 days" onPress={() => void renewNow()} loading={renewing} />
         ) : isOwner ? (
           <Text style={styles.footerNote}>
             {isWanted

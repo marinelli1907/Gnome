@@ -66,20 +66,34 @@ echo "   (Informational: files written before the ledger existed differ by"
 echo "    trailing whitespace. New migrations should match exactly.)"
 
 echo "5. summary-only files (comments describing SQL that lives only in production)"
+# "Prose" means the file contains NO SQL at all — that is the only condition
+# under which it provably cannot rebuild a database.
+#
+# This used to also flag any file whose SQL was under 15% of its lines, which
+# made 0021_plot_type.sql a false positive: it carries the complete applied
+# statement (one ALTER TYPE) under eleven lines of explanation. A check that
+# fails a correct file teaches people to ignore the check, so the ratio no
+# longer counts as a failure — it prints as a note to eyeball instead.
 summaries=0
 for path in "$MIG"/[0-9]*.sql; do
   f="$(basename "$path")"
   tot=$(grep -c . "$path"); sql=$(grep -v '^[[:space:]]*--' "$path" | grep -c .)
   [ "$tot" -eq 0 ] && continue
-  if [ "$sql" -eq 0 ] || [ $((sql * 100 / tot)) -lt 15 ]; then
+  if [ "$sql" -eq 0 ]; then
     echo "   WARN $f is prose, not runnable SQL"; summaries=$((summaries + 1))
+  elif [ $((sql * 100 / tot)) -lt 15 ]; then
+    echo "   note $f is mostly comments ($sql of $tot lines are SQL) — runnable, but"
+    echo "        confirm the SQL present does the whole job the comments describe."
   fi
 done
 if [ $summaries -eq 0 ]; then
   echo "   PASS every migration file is executable"
 else
-  echo "   $summaries file(s) cannot rebuild a database. Recover them with"
-  echo "   'supabase db pull' (needs the DB password) — see docs/db/MIGRATION_INTEGRITY.md."
+  echo "   $summaries file(s) are not runnable SQL, so the migrations folder alone cannot"
+  echo "   rebuild a database. It no longer has to: supabase/baseline/public_schema.sql is a"
+  echo "   verified full dump of production (2026-08-16) and IS the rebuild path — see its README."
+  echo "   These files have no recorded statement text in supabase_migrations.schema_migrations"
+  echo "   (they were applied through the SQL editor), so they cannot be recovered, only rewritten."
 fi
 
 echo

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { AllowanceRow, WantedRow } from '@/lib/allowance';
 import {
   useMutation,
   useQuery,
@@ -698,6 +699,55 @@ export function useMarketListings(marketId?: string) {
 }
 
 /** Plan limits (public read), keyed by plan. */
+/** The seller's own allowance row (0107). No market-id parameter exists to spoof — the RPC pins
+ *  to auth.uid() server-side. staleTime is short: this drives the My Market usage card, and a
+ *  seller who just published should see the numbers move. */
+export function useMyListingAllowance(uid?: string) {
+  return useQuery({
+    queryKey: ['my-listing-allowance', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    staleTime: 30 * 1000,
+    queryFn: async (): Promise<AllowanceRow | null> => {
+      const { data, error } = await supabase.rpc('my_listing_allowance');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as AllowanceRow | null;
+    },
+  });
+}
+
+/** Daily Wanted introduction allowance (0110). Same no-parameter shape as the listing RPC. */
+export function useMyWantedAllowance(uid?: string) {
+  return useQuery({
+    queryKey: ['my-wanted-allowance', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    staleTime: 30 * 1000,
+    queryFn: async (): Promise<WantedRow | null> => {
+      const { data, error } = await supabase.rpc('my_wanted_allowance');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as WantedRow | null;
+    },
+  });
+}
+
+export type MarketQr = { code: string | null; entitled: boolean; slug: string | null; market_name: string | null };
+/** Durable Market QR identity (0111). Issued server-side on first entitled access; a downgraded
+ *  seller keeps their code with entitled=false so printed signs stay honest. */
+export function useMyMarketQr(uid?: string) {
+  return useQuery({
+    queryKey: ['my-market-qr', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<MarketQr | null> => {
+      const { data, error } = await supabase.rpc('my_market_qr');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as MarketQr | null;
+    },
+  });
+}
+
 export function usePlanLimits() {
   return useQuery({
     queryKey: keys.planLimits(),

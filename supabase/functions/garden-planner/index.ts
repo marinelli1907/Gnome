@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'The garden planner is not configured yet.' }, 503);
     }
     if (!(await underDailyCap(userId, 'planner', 10, 40))) {
-      return json({ error: "You've hit today's free planner limit — Grower and Farm plans get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
+      return json({ error: "You've hit today's free planner limit — paid plans (Pro, Max, and Farm) get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
     }
 
     const { location, messages, imageBase64, mediaType } = await req.json();

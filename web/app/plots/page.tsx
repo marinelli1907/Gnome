@@ -107,7 +107,7 @@ export default async function PlotsPage() {
           <h2>Turn your whole garden into income.</h2>
           <p>
             Pre-sell your growing season: neighbors reserve plots before you plant,
-            so every bed has a buyer. Plot offers are a Grower &amp; Farm plan feature.
+            so every bed has a buyer. Plot offers are included with every paid plan.
           </p>
           <div className="row center">
             <Link className="btn btn-light" href="/sell?type=plot">Offer a plot</Link>

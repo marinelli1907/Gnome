@@ -19,6 +19,7 @@ import { categoryFor } from '@/constants/categories';
 import { formatPrice } from '@/lib/listingType';
 import { useAuth } from '@/providers/AuthProvider';
 import { useClaimListing, useListing } from '@/lib/db';
+import { parseServerError } from '@/lib/taxonomy';
 import type { ClaimType, ListingType } from '@/types';
 
 export default function RequestScreen() {
@@ -141,6 +142,21 @@ export default function RequestScreen() {
         },
         onError: (e: any) => {
           const raw = e?.message ?? '';
+          // The Wanted gate's stable codes come first: they carry their own seller-facing copy and
+          // the limit case deserves an upgrade path, not a dead end. parseServerError strips the
+          // code prefix so a raw token never reaches the screen.
+          const parsed = parseServerError(raw);
+          if (parsed?.code === 'WANTED_INTRO_LIMIT_REACHED') {
+            Alert.alert(parsed.title, parsed.message, [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'See plans', onPress: () => router.push('/upgrade') },
+            ]);
+            return;
+          }
+          if (parsed?.code === 'WANTED_ALREADY_CONTACTED' || parsed?.code === 'WANTED_NOT_AVAILABLE') {
+            Alert.alert(parsed.title, parsed.message);
+            return;
+          }
           const msg = /duplicate|unique/i.test(raw)
             ? 'You’ve already sent a request for this listing.'
             : /BLOCKED_USER/i.test(raw)

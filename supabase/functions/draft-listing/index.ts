@@ -128,7 +128,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'AI drafting is not configured yet.' }, 503);
     }
     if (!(await underDailyCap(userId, 'draft', 5, 25))) {
-      return json({ error: "You've used today's free AI drafts. Grower and Farm plans get 25 a day — or fill the form by hand, it works great." }, 429);
+      return json({ error: "You've used today's free AI drafts. paid plans (Pro, Max, and Farm) get 25 a day — or fill the form by hand, it works great." }, 429);
     }
 
     const { imageBase64, mediaType, listingType } = await req.json();

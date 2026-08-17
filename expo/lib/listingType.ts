@@ -1,40 +1,149 @@
 import type { Listing, ListingType } from '@/types';
 import Colors from '@/constants/colors';
 
+/**
+ * ONE canonical source of truth for listing types in the mobile app:
+ * display order, labels and the default a create flow starts on.
+ *
+ * The Postgres enum sorts `('free','trade','sale','wanted','plot')` and must NOT
+ * be reordered — Postgres cannot reorder an enum without recreating the type,
+ * and `listing_type` is referenced by markets, views and comparisons. So the
+ * DISPLAY order lives here, in application code, as an explicit array. Anything
+ * that renders the five types (chooser, filters, copy maps) derives from it —
+ * never hard-code its own ordering.
+ *
+ * Enum values are the DB values: Sell is 'sale' and Share Free is 'free'
+ * (never 'sell', never 'share_free').
+ */
+export const LISTING_TYPE_ORDER: readonly ListingType[] = [
+  'sale',
+  'free',
+  'trade',
+  'wanted',
+  'plot',
+] as const;
+
+/**
+ * What a listing/post flow starts on when the caller gave no explicit type.
+ *
+ * Migration 0104 also sets the column DEFAULT to 'sale' at the database level, so the
+ * two agree. That default is belt-and-braces only: both clients always send
+ * listing_type explicitly, so nothing depends on it.
+ * this is the client-side default for the *create UI*, so a user who opens Post
+ * with nothing selected lands on Sell. Because it is a plain constant it can be
+ * the initial `useState` value — the first paint is already Sell, so there is no
+ * Share-Free-then-Sell flash to patch up in an effect.
+ */
+export const DEFAULT_LISTING_TYPE: ListingType = 'sale';
+
+/** Canonical labels for the five types (used by the create-flow chooser). */
+export const LISTING_TYPE_LABEL: Record<ListingType, string> = {
+  sale: 'Sell',
+  free: 'Share Free',
+  trade: 'Trade',
+  wanted: 'Wanted',
+  plot: 'Offer a Plot',
+};
+
+/**
+ * Shorthand used when *describing an existing listing* (card badge, browse
+ * filter) rather than offering an action. Same five types, same canonical
+ * order — only the wording is the noun form.
+ */
 export const TYPE_LABEL: Record<ListingType, string> = {
+  sale: 'For Sale',
   free: 'Free',
   trade: 'Trade',
-  sale: 'For Sale',
   wanted: 'Wanted',
   plot: 'Plot',
 };
 
 // Rork type palette: moss / sky / terracotta / plum, plot keeps the deep green.
 export const TYPE_COLOR: Record<ListingType, string> = {
+  sale: Colors.sell,
   free: Colors.free,
   trade: Colors.sky,
-  sale: Colors.sell,
   wanted: Colors.plum,
   plot: Colors.primary,
 };
 
+/** True for the five DB enum values — anything else (a label, a stale synonym). */
+export function isListingType(value: unknown): value is ListingType {
+  return typeof value === 'string' && (LISTING_TYPE_ORDER as readonly string[]).includes(value);
+}
+
+/**
+ * Values that mean one of the five types but aren't the enum value: labels and
+ * older/looser spellings a deep link or an AI draft can carry. Mapping them
+ * keeps an explicit determination ("giveaway") from being thrown away and
+ * silently defaulted.
+ */
+const LISTING_TYPE_ALIASES: Record<string, ListingType> = {
+  sell: 'sale',
+  'for sale': 'sale',
+  for_sale: 'sale',
+  share_free: 'free',
+  'share free': 'free',
+  sharefree: 'free',
+  giveaway: 'free',
+  give_away: 'free',
+  'give away': 'free',
+  gift: 'free',
+  swap: 'trade',
+  request: 'wanted',
+  'offer a plot': 'plot',
+  plots: 'plot',
+};
+
+/**
+ * Read an externally supplied type (deep-link `?type=`, notification payload,
+ * AI draft) — `null` when there was no understandable determination.
+ *
+ * Callers that must not clobber an existing selection check for null; callers
+ * that need a value use {@link resolveListingType}.
+ */
+export function listingTypeFromParam(value: unknown): ListingType | null {
+  if (isListingType(value)) return value;
+  if (typeof value === 'string') {
+    return LISTING_TYPE_ALIASES[value.trim().toLowerCase()] ?? null;
+  }
+  return null;
+}
+
+/**
+ * Resolve an externally supplied type to a real enum value.
+ *
+ * An explicit, understood determination always wins — `?type=trade` opens Trade,
+ * an AI draft that decided giveaway/trade/wanted/plot keeps that decision. Only
+ * a missing or unrecognizable value falls back, and it falls back to Sell.
+ */
+export function resolveListingType(
+  value: unknown,
+  fallback: ListingType = DEFAULT_LISTING_TYPE,
+): ListingType {
+  return listingTypeFromParam(value) ?? fallback;
+}
+
 export const TYPE_FILTERS: { value: 'all' | ListingType; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'free', label: 'Free' },
-  { value: 'trade', label: 'Trade' },
-  { value: 'sale', label: 'For Sale' },
-  { value: 'plot', label: 'Plots' },
-  { value: 'wanted', label: 'Wanted' },
+  ...LISTING_TYPE_ORDER.map((value) => ({ value, label: TYPE_LABEL[value] })),
 ];
 
-// Create-flow chooser (Give Away / Trade / Sell / Wanted / Offer a Plot).
-export const TYPE_CHOICES: { value: ListingType; label: string; emoji: string }[] = [
-  { value: 'free', label: 'Give Away', emoji: '🧺' },
-  { value: 'trade', label: 'Trade', emoji: '🔄' },
-  { value: 'sale', label: 'Sell', emoji: '🏷️' },
-  { value: 'wanted', label: 'Wanted', emoji: '🔎' },
-  { value: 'plot', label: 'Offer a Plot', emoji: '🌾' },
-];
+// Create-flow chooser (Sell / Share Free / Trade / Wanted / Offer a Plot).
+const TYPE_EMOJI: Record<ListingType, string> = {
+  sale: '🏷️',
+  free: '🧺',
+  trade: '🔄',
+  wanted: '🔎',
+  plot: '🌾',
+};
+
+export const TYPE_CHOICES: { value: ListingType; label: string; emoji: string }[] =
+  LISTING_TYPE_ORDER.map((value) => ({
+    value,
+    label: LISTING_TYPE_LABEL[value],
+    emoji: TYPE_EMOJI[value],
+  }));
 
 export function formatPrice(cents: number, unit?: string | null): string {
   const dollars = cents / 100;

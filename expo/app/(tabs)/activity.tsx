@@ -17,6 +17,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useIncomingClaims, useMyChats } from '@/lib/db';
 import { isUnread, useChatReads } from '@/lib/chatReads';
 import MyMarketCard from '@/components/mygnome/MyMarketCard';
+import ShareMarketCard from '@/components/mygnome/ShareMarketCard';
 import ClaimsToReview from '@/components/mygnome/ClaimsToReview';
 import MyListingsView from '@/components/mygnome/MyListingsView';
 import MyPickups from '@/components/mygnome/MyPickups';
@@ -80,6 +81,7 @@ export default function MyGnomeScreen() {
       <Text style={styles.h1}>My Gnome</Text>
 
       <MyMarketCard uid={userId} />
+      <ShareMarketCard uid={userId} />
 
       <ScrollView
         horizontal

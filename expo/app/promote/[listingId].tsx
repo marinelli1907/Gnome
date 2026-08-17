@@ -18,7 +18,7 @@ import {
 import { formatPrice } from '@/lib/listingType';
 
 // FEATURED LISTING PROMOTION — one product: 7 days, $3.99, or free with an
-// included plan credit (Grower 3/mo, Farm 10/mo). All allowance math is
+// included plan credit (Pro/grower 3/mo, Max/farm 10/mo). All allowance math is
 // server-side (market_promotion_status → effective plan).
 export default function PromoteScreen() {
   const { listingId } = useLocalSearchParams<{ listingId: string }>();
@@ -116,7 +116,7 @@ export default function PromoteScreen() {
     void logEvent('boost_upgrade_prompt_tapped', { userId: userId ?? null, listingId, metadata: {} });
     Alert.alert(
       `Buy a promotion · ${formatPrice(priceCents)}`,
-      'Promotion checkout is almost ready. Until then, Grower ($9.99/mo) includes 3 promotions a month and Farm includes 10.',
+      'Promotion checkout is almost ready. Until then, Pro ($9.99/mo) includes 3 promotions a month and Max includes 10.',
     );
   };
 
@@ -156,7 +156,7 @@ export default function PromoteScreen() {
           <Text style={styles.contextNote}>
             {st && st.included_allowance > 0
               ? `You’ve used your ${st.included_allowance} included promotion${st.included_allowance === 1 ? '' : 's'} this month${resetsOn ? ` — they’re back ${resetsOn}` : ''}.`
-              : 'Grower includes 3 promotions each month, Farm includes 10.'}
+              : 'Pro includes 3 promotions each month, Max includes 10.'}
           </Text>
         </>
       )}

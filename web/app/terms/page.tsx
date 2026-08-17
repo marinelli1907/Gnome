@@ -176,8 +176,9 @@ export default function TermsPage() {
       <h2>12. Plans and billing</h2>
       <p>
         Gnome is free to use, and sharing your surplus always will be. Sellers
-        who want more active listings, more pickup locations, delivery controls,
-        plots, and higher AI limits can subscribe to a paid plan. Paying us never
+        who want more included listings each month, more pickup locations,
+        delivery controls, plots, and higher AI limits can subscribe to a paid
+        plan. Paying us never
         changes §9 — we still take no cut of what you sell to a neighbor.
       </p>
       <p>
@@ -195,9 +196,9 @@ export default function TermsPage() {
         <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>{' '}
         — we&rsquo;ll cancel the subscription and stop the next charge. Your plan
         keeps working through the period you&rsquo;ve already paid for, and your
-        Market then returns to the free tier. Listings you already posted stay
-        up; you simply can&rsquo;t post new active ones until you&rsquo;re back
-        under the free limit. Pickup locations above the free limit stop being
+        Market then returns to the free tier. Listings you already posted run
+        out their normal term; new listings then draw on the free plan&rsquo;s
+        smaller included allowance. Pickup locations above the free limit stop being
         selectable rather than being deleted. We don&rsquo;t generally refund
         partial periods, but if something went wrong on our end, email us and
         we&rsquo;ll make it right. If we change the price of a plan you&rsquo;re

@@ -16,6 +16,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { resolveListingType } from '@/lib/listingType';
 
 interface Draft {
   candidate_name: string;
@@ -94,7 +95,7 @@ export default function AiListingScreen() {
     } catch (e: any) {
       setDraft(null);
       setFailed(
-        /PLAN_REQUIRED/.test(e?.message) ? 'The AI Listing Assistant is a Grower & Farm feature.'
+        /PLAN_REQUIRED/.test(e?.message) ? 'The AI Listing Assistant is included with paid plans.'
         : /DAILY_LIMIT/.test(e?.message) ? 'Daily AI limit reached — try again tomorrow.'
         : 'Gnome couldn’t confidently identify this item.',
       );
@@ -108,7 +109,10 @@ export default function AiListingScreen() {
     router.replace({
       pathname: '/(tabs)/post',
       params: {
-        type: draft.suggested_listing_type || 'sale',
+        // The AI's determination wins whenever it made one — a photo it read as
+        // a giveaway/trade/wanted/plot opens the editor on that type. Only a
+        // missing or unreadable suggestion falls back, and it falls back to Sell.
+        type: resolveListingType(draft.suggested_listing_type),
         aiTitle: draft.suggested_title,
         aiDescription: draft.suggested_description,
         aiPrice: draft.suggested_price_cents ? (draft.suggested_price_cents / 100).toFixed(2) : '',
@@ -133,7 +137,7 @@ export default function AiListingScreen() {
         <EmptyState
           emoji="🔒"
           title="AI Listing Assistant"
-          subtitle="Snap a photo and Gnome drafts the listing for you — included with Grower and Farm plans."
+          subtitle="Snap a photo and Gnome drafts the listing for you — included with every paid plan."
         >
           <Button label="See plans" onPress={() => router.push('/upgrade')} style={{ marginTop: 14 }} />
         </EmptyState>

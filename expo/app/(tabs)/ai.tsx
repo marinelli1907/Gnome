@@ -29,6 +29,7 @@ import { fetchListingScreening } from '@/lib/db';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
+import { purchaseOverage } from '@/lib/billing';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Draft = {
@@ -153,7 +154,7 @@ export default function AiTab() {
       const msg = String(err?.message ?? '');
       setRetryCount(0);
       setError(
-        /PLAN_REQUIRED/.test(msg) ? 'Drafting listings from photos is a Grower & Farm feature.'
+        /PLAN_REQUIRED/.test(msg) ? 'Drafting listings from photos is included with paid plans.'
         : /NO_MARKET/.test(msg) ? 'Post once from the Post tab to create your Market first.'
         : /DAILY_LIMIT/.test(msg) ? 'You’ve hit today’s AI limit — it resets tomorrow.'
         : 'Couldn’t analyze those photos — try again in a moment.',
@@ -203,10 +204,27 @@ export default function AiTab() {
       alertScreeningError(r.error);
       return;
     }
+    if (r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
+      // Draft rows persist server-side, so the retry after purchase is just publishing again.
+      Alert.alert(
+        'Included listings used up',
+        'You’ve used your included Sell listings for this period. The draft stays saved.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Publish for $0.99', onPress: async () => {
+            const outcome = await purchaseOverage(null);
+            if (outcome === 'paid' || outcome === 'not_needed') void publish(d);
+            else if (outcome === 'pending') Alert.alert('Payment received', 'Stripe is confirming. Tap publish again in a few seconds — you will not be charged twice.');
+            else if (outcome === 'error') Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged.');
+          } },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       r.error?.code === 'PLAN_LIMIT_REACHED' ? 'Listing limit reached' : 'Couldn’t publish',
       r.error?.code === 'PLAN_LIMIT_REACHED'
-        ? 'You’re at your plan’s active listing limit. Upgrade or pause a listing, then publish this one.'
+        ? 'You’re at your plan’s listing limit right now. Upgrade for more room — the draft stays saved.'
         : safeErrorText(r.message, 'Something went wrong publishing that draft.'),
     );
   };

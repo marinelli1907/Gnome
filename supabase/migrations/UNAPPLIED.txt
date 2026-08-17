@@ -34,3 +34,5 @@
 0092_down_launch_grant_repairs.sql  rollback for the applied 0092; restores the broken state on purpose
 
 # Admin console round: 0094-0099 are now APPLIED (see APPLIED.tsv).
+
+# Monetization round 0104-0112: applied to production 2026-08-16/17 (see APPLIED.tsv).

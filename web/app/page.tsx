@@ -83,7 +83,7 @@ export default async function HomePage() {
           <Link href="/browse" className="pillar">
             <span className="pillar-emoji">🧺</span>
             <h3>See what’s fresh near you</h3>
-            <p>Produce, eggs, honey, baked goods, and handmade goods from people nearby — free shares, trades, sales, and wanted posts.</p>
+            <p>Produce, eggs, honey, baked goods, and handmade goods from people nearby — for sale, free to share, trades, and wanted posts.</p>
             <span className="pillar-cta">Browse nearby →</span>
           </Link>
           <Link href="/garden" className="pillar">
@@ -260,7 +260,7 @@ export default async function HomePage() {
           <div>
             <h2>Start free. Grow when you need more.</h2>
             <p className="sub" style={{ margin: '4px 0 0' }}>
-              Neighbor is free forever · Grower $9.99/mo · Farm $29.99/mo —
+              Free forever · Pro $9.99/mo · Max $29.99/mo · Farm $99/mo —
               and <strong>Gnome takes 0% of neighbor-to-neighbor sales</strong>.
             </p>
           </div>
