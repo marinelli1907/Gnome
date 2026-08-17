@@ -118,9 +118,17 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
   const setStatus = async (d: DropRow, status: 'scheduled' | 'cancelled') => {
     setBusy(true);
     try {
-      const { error } = await supabaseBrowser().from('market_drops')
+      const sb = supabaseBrowser();
+      const { error } = await sb.from('market_drops')
         .update({ status }).eq('id', d.id);
       if (error) throw error;
+      // Canonical lifecycle analytics, as the signed-in owner (create-time
+      // events come from the server; this covers draft→scheduled and cancel,
+      // which are plain RLS status updates). Best-effort only.
+      void sb.from('events').insert({
+        event_type: status === 'scheduled' ? 'drop_scheduled' : 'drop_cancelled',
+        metadata: { drop: d.id },
+      }).then(() => {}, () => {});
       await refresh();
     } catch {
       setNote('That change didn’t stick — try again.');
