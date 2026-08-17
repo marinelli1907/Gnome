@@ -240,6 +240,7 @@ export type ServerErrorCode =
   | 'RATE_LIMITED'
   | 'COMPLIANCE_BLOCKED'
   | 'PLAN_LIMIT_REACHED'
+  | 'PUBLISH_ALLOWANCE_EXHAUSTED'
   | 'PLOTS_REQUIRE_PLAN'
   | 'NOT_AUTHORIZED'
   | 'OWNER_ONLY'
@@ -275,6 +276,7 @@ const TITLES: Record<ServerErrorCode, string> = {
   RATE_LIMITED: 'Posting too quickly',
   COMPLIANCE_BLOCKED: 'Verification required',
   PLAN_LIMIT_REACHED: 'Listing limit reached',
+  PUBLISH_ALLOWANCE_EXHAUSTED: 'Included listings used up',
   PLOTS_REQUIRE_PLAN: 'Paid plan required',
   NOT_AUTHORIZED: 'Not permitted',
   OWNER_ONLY: 'Owners only',
@@ -296,10 +298,17 @@ const FALLBACK_BODY: Record<ServerErrorCode, string> = {
     'You’ve posted a lot of listings in the last hour. Try again in a little while.',
   COMPLIANCE_BLOCKED:
     'This category needs verification before publishing. Adding your permit, licence, or registration in the Credential Center is what clears it.',
+  // Transitional: raised by the retired pre-0104 active-listing gate. Production runs the
+  // allowance model now (0104 applied 2026-08-16), so this should no longer fire — kept only so
+  // a stale environment degrades to readable copy instead of a raw code. Safe to delete later.
   PLAN_LIMIT_REACHED:
-    'You’re at your plan’s active listing limit. Upgrade or pause a listing, then try again.',
+    'You’re at your plan’s listing limit right now. Upgrade, or try again later.',
+  // The 0104 model: a monthly PUBLISH allowance that expiry does not refund. The wording is
+  // per-period, never "active listings" — that model is retired.
+  PUBLISH_ALLOWANCE_EXHAUSTED:
+    'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more each month.',
   PLOTS_REQUIRE_PLAN:
-    'Offering plots is a Grower & Farm plan feature — upgrade and your garden can take reservations.',
+    'Offering plots is a paid plan feature — upgrade and your garden can take reservations.',
   NOT_AUTHORIZED: 'Your account can’t do that.',
   OWNER_ONLY: 'Only an owner can do that.',
   LAST_OWNER: 'An account must always keep at least one owner.',
@@ -314,7 +323,7 @@ const FALLBACK_BODY: Record<ServerErrorCode, string> = {
 
 const CODES: Exclude<ServerErrorCode, 'UNKNOWN'>[] = [
   'PROHIBITED_ITEM', 'PROHIBITED_CATEGORY', 'RATE_LIMITED', 'COMPLIANCE_BLOCKED',
-  'PLAN_LIMIT_REACHED', 'PLOTS_REQUIRE_PLAN', 'NOT_AUTHORIZED', 'OWNER_ONLY',
+  'PLAN_LIMIT_REACHED', 'PUBLISH_ALLOWANCE_EXHAUSTED', 'PLOTS_REQUIRE_PLAN', 'NOT_AUTHORIZED', 'OWNER_ONLY',
   'LAST_OWNER', 'INVITE_EXPIRED', 'NO_PENDING_INVITE', 'INVALID_ROLE',
   'INVALID_EMAIL', 'REASON_REQUIRED', 'UNKNOWN_STATE',
 ];

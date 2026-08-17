@@ -244,7 +244,7 @@ export default function DeliverySettingsEditor({ marketId, plan }: { marketId: s
           ) : (
             <p className="authhint" style={{ marginTop: 8 }}>
               Distance-based fees, same-day &amp; next-day cutoffs, and weekly delivery
-              schedules are Grower &amp; Farm features. <a href="/pricing">Upgrade</a> to
+              schedules are paid plan features. <a href="/pricing">Upgrade</a> to
               customize delivery further.
             </p>
           )}

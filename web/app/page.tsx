@@ -260,7 +260,7 @@ export default async function HomePage() {
           <div>
             <h2>Start free. Grow when you need more.</h2>
             <p className="sub" style={{ margin: '4px 0 0' }}>
-              Neighbor is free forever · Grower $9.99/mo · Farm $29.99/mo —
+              Free forever · Pro $9.99/mo · Max $29.99/mo · Farm $99/mo —
               and <strong>Gnome takes 0% of neighbor-to-neighbor sales</strong>.
             </p>
           </div>

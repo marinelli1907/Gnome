@@ -165,10 +165,12 @@ export default function MyMarketClient() {
   const [pickupOpen, setPickupOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   // Resolved plan entitlements — the backend's single source (0064). No more
-  // hardcoded caps in this file.
+  // hardcoded caps in this file. The RPC still returns max_active_listings for
+  // legacy readers, but that column is the RETIRED cap model (0104): this
+  // dashboard deliberately does not read it — publish allowance lives in
+  // <AllowanceCard/>, which speaks the per-period model.
   const [ent, setEnt] = useState<{
     plan: string; subscription_status: string | null;
-    max_active_listings: number | null; active_listings: number;
     max_pickup_locations: number; extra_location_fee_cents: number | null;
     extra_pickup_locations: number; effective_pickup_locations: number;
   } | null>(null);
@@ -589,11 +591,9 @@ export default function MyMarketClient() {
         <div>
           <strong className="plan-name">{`${planDisplay(market?.plan)} plan`}</strong>
           <span className="plan-usage">
-            {ent
-              ? ent.max_active_listings == null
-                ? `${activeCount} listings · unlimited`
-                : `${activeCount}/${ent.max_active_listings} listings`
-              : `${activeCount} listings`}
+            {/* Live count is descriptive only. The publish allowance meter is
+                AllowanceCard's job — never render a listings cap here. */}
+            {`${activeCount} live listing${activeCount === 1 ? '' : 's'}`}
             {ent ? (
               <> · {ent.max_pickup_locations} pickup location{ent.max_pickup_locations === 1 ? '' : 's'} included
               {ent.extra_pickup_locations > 0 ? ` +${ent.extra_pickup_locations} add-on` : ''}

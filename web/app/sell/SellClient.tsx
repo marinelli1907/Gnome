@@ -382,7 +382,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         <p className="authhint" style={{ margin: 0 }}>
           🧑‍🌾 Set the plot size and how many identical plots you have — the
           listing stays up until the last one is reserved. Plot offers are a{' '}
-          <a href="/pricing">Grower &amp; Farm plan</a> feature.
+          <a href="/pricing">paid plan</a> feature.
         </p>
       )}
 
