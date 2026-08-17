@@ -109,9 +109,18 @@ const PROMO_MESSAGE: Record<string, string> = {
   NO_CODE: 'Enter a code first.',
 };
 
+// Browser callers (web plan/boost purchases, the Ask Gnome $0.99 renewal leg) are
+// cross-origin, so the preflight must be answered and every response must carry the
+// header — same posture as ask-gnome/gnome-assistant. Mobile invokes are unaffected.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const json = (status: number, body: unknown) =>
-    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
   try {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
