@@ -112,8 +112,11 @@ Deno.serve(async (req: Request) => {
     const keys = providerKeys();
     const allowPaid = settings?.allow_paid_fallback === true;
     const chain: ModelRef[] = [];
-    if (keys.gemini) chain.push({ provider: 'gemini', model: MODELS.vision });
-    if (allowPaid && keys.openai) chain.push({ provider: 'openai', model: 'gpt-4o' });
+    // Images need the vision-class model; pasted-text-only imports run on the lite tier — same
+    // structured-output quality on plain text, faster, and on a separate free-tier quota, so a
+    // busy vision window doesn't take text imports down with it.
+    if (keys.gemini) chain.push({ provider: 'gemini', model: validImages.length ? MODELS.vision : MODELS.lite });
+    if (allowPaid && keys.openai) chain.push({ provider: 'openai', model: validImages.length ? 'gpt-4o' : 'gpt-4o-mini' });
     if (allowPaid && keys.anthropic) chain.push({ provider: 'anthropic', model: 'claude-sonnet-5' });
     if (!chain.length) return json(503, { error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet.' });
 
