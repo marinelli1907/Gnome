@@ -38,7 +38,7 @@ applied=0; failed=0
 while IFS= read -r f; do
   n="$(basename "$f" | cut -c1-4)"
   case "$n" in ''|*[!0-9]*) continue ;; esac
-  [ "$n" -le 0112 ] || continue   # includes 0112: the renew_listing already-fresh guard tested below
+  [ "$n" -le 0113 ] || continue   # includes 0112 (renew guard, tested below) and 0113 (grant tidy, self-asserting)
   if psql -h "$HOST" -d "$DB" -q -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>&1; then
     applied=$((applied + 1))
   else
