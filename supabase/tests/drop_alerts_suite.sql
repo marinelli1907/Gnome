@@ -84,6 +84,19 @@ begin
     ('ExponentPushToken[e-phone]',  e, 'ios'),
     ('ExponentPushToken[f-phone]',  f, 'ios') on conflict do nothing;
 
+  -- 0122: dispatch requires available_items > 0, so the drops under test
+  -- carry a live item (the suspended-market drop gets one too, so its
+  -- exclusion below is attributable to suspension, not emptiness).
+  insert into public.listings (id, owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at) values
+    ('aa200117-3333-0000-0000-000000000001', s,  m,  'Live Basil',     'herbs',      300, 'bunch', 'sale', 'active', now() + interval '7 days'),
+    ('aa200117-3333-0000-0000-000000000002', s2, m2, 'Suspended Kale', 'vegetables', 300, 'bunch', 'sale', 'active', now() + interval '7 days')
+  on conflict (id) do nothing;
+  insert into public.market_drop_items (drop_id, listing_id) values
+    ('aa200117-1111-0000-0000-000000000001', 'aa200117-3333-0000-0000-000000000001'),
+    ('aa200117-1111-0000-0000-000000000004', 'aa200117-3333-0000-0000-000000000001'),
+    ('aa200117-1111-0000-0000-000000000005', 'aa200117-3333-0000-0000-000000000002')
+  on conflict do nothing;
+
   -- E unfollows; F toggles alerts off — both BEFORE any worker run.
   delete from public.market_follows where market_id = m and follower_id = e;
   update public.market_follows set drop_alerts_enabled = false where market_id = m and follower_id = f;
@@ -291,6 +304,33 @@ begin
   execute 'reset role';
   perform pg_temp.ck('authenticated cannot read the delivery ledger', ledger_blocked);
   perform pg_temp.ck('authenticated cannot invoke the dispatcher', fn_blocked);
+end $$;
+
+-- ============================================================================
+-- 0122: a live drop with nothing available is not announced
+-- ============================================================================
+do $$
+declare
+  s uuid := '00000000-0000-0000-0000-00000000aa00';
+  m uuid := 'aa200117-0000-0000-0000-000000000001';
+  d2 uuid := 'aa200117-2222-0000-0000-000000000001';
+  lid uuid;
+begin
+  insert into public.listings (owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at)
+  values (s, m, 'Soldout Squash', 'vegetables', 400, 'each', 'sale', 'completed', now() + interval '5 days')
+  returning id into lid;
+  insert into public.market_drops (id, market_id, created_by, title, starts_at, ends_at, status)
+  values (d2, m, s, 'Empty-Handed Drop', now() - interval '5 minutes', now() + interval '55 minutes', 'scheduled');
+  insert into public.market_drop_items (drop_id, listing_id) values (d2, lid);
+
+  perform public.drop_alert_dispatch();
+  perform pg_temp.ck('sold-out live drop claims no deliveries',
+    not exists (select 1 from public.drop_alert_deliveries where drop_id = d2));
+
+  update public.listings set status = 'active' where id = lid;
+  perform public.drop_alert_dispatch();
+  perform pg_temp.ck('restored availability is announced on the very next run',
+    exists (select 1 from public.drop_alert_deliveries where drop_id = d2));
 end $$;
 
 select * from _t order by n;

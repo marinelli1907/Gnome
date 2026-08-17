@@ -342,6 +342,43 @@ begin
 end $$;
 
 -- ============================================================================
+-- 0122: the 30-item cap survives a single bulk INSERT (statement trigger)
+-- ============================================================================
+do $$
+declare
+  a uuid := '00000000-0000-0000-0000-0000000000da';
+  ma uuid;
+  d uuid := 'dd110122-0000-0000-0000-00000000ca01';
+begin
+  select id into ma from public.markets where owner_id = a;
+  -- 40 synthetic sponsor listings to draw from
+  insert into public.listings (owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at)
+  select a, ma, 'Cap Filler ' || g, 'vegetables', 100, 'each', 'sale', 'active', now() + interval '7 days'
+    from generate_series(1, 40) g;
+  insert into public.market_drops (id, market_id, created_by, title, starts_at, ends_at, status)
+  values (d, ma, a, 'Cap Drop', now() + interval '1 day', now() + interval '1 day 4 hours', 'scheduled');
+
+  -- exactly 30 in one statement: allowed
+  begin
+    insert into public.market_drop_items (drop_id, listing_id)
+    select d, l.id from public.listings l where l.title like 'Cap Filler %' order by l.title limit 30;
+    perform pg_temp.ck('bulk insert up to the 30-item cap is allowed', true);
+  exception when others then
+    perform pg_temp.ck('bulk insert up to the 30-item cap is allowed', false, left(sqlerrm, 60));
+  end;
+  -- one more (via a fresh drop, 31 in ONE statement): refused by the statement trigger
+  delete from public.market_drop_items where drop_id = d;
+  begin
+    insert into public.market_drop_items (drop_id, listing_id)
+    select d, l.id from public.listings l where l.title like 'Cap Filler %' order by l.title limit 31;
+    perform pg_temp.ck('31 items in one bulk INSERT are refused', false, 'insert unexpectedly succeeded');
+  exception when others then
+    perform pg_temp.ck('31 items in one bulk INSERT are refused',
+      position('DROP_ITEM_LIMIT' in sqlerrm) > 0, left(sqlerrm, 60));
+  end;
+end $$;
+
+-- ============================================================================
 select format('%s/%s passed', count(*) filter (where ok), count(*)) as market_drops_suite from _t;
 select format('  %s  %s  %s', lpad(n::text, 3), rpad(name, 72), case when ok then 'PASS' else 'FAIL  ' || detail end)
   from _t order by n;

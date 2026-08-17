@@ -31,7 +31,7 @@ applied=0; failed=0
 while IFS= read -r f; do
   n="$(basename "$f" | cut -c1-4)"
   case "$n" in ''|*[!0-9]*) continue ;; esac
-  [ "$n" -le 0121 ] || continue
+  [ "$n" -le 0123 ] || continue
   if psql -h "$HOST" -d "$DB" -q -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>&1; then
     applied=$((applied + 1))
   else
@@ -89,6 +89,8 @@ SQL
 # 0120 must have applied AFTER the shim exists for full-path testing; re-apply
 # it now that net.http_post resolves (create or replace is idempotent).
 psql -h "$HOST" -d "$DB" -q -v ON_ERROR_STOP=1 -f "$MIG/0120_drop_alerts.sql" >/dev/null
+# ...and 0122 patches dispatch (availability gate) ON TOP of 0120 — keep last.
+psql -h "$HOST" -d "$DB" -q -v ON_ERROR_STOP=1 -f "$MIG/0122_drop_polish.sql" >/dev/null
 
 for fn in drop_alert_dispatch drop_alert_reconcile drop_alert_run; do
   psql -h "$HOST" -d "$DB" -tAc "select to_regproc('public.${fn}')" | grep -q . \
@@ -115,6 +117,14 @@ values ('da200117-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000
 on conflict (market_id, follower_id) do update set drop_alerts_enabled = true;
 insert into public.device_tokens (token, user_id, platform)
 values ('ExponentPushToken[race-b]', '00000000-0000-0000-0000-00000000da0b', 'ios')
+on conflict do nothing;
+-- 0122: dispatch only announces drops with something available.
+insert into public.listings (id, owner_id, market_id, title, category, price_cents, unit, listing_type, status, expires_at)
+values ('da200117-2222-0000-0000-000000000001', '00000000-0000-0000-0000-00000000da0a', 'da200117-0000-0000-0000-000000000001',
+        'Race Radishes', 'vegetables', 200, 'bunch', 'sale', 'active', now() + interval '7 days')
+on conflict (id) do update set status = 'active', expires_at = now() + interval '7 days';
+insert into public.market_drop_items (drop_id, listing_id)
+values ('da200117-1111-0000-0000-000000000001', 'da200117-2222-0000-0000-000000000001')
 on conflict do nothing;
 SQL
 psql -h "$HOST" -d "$DB" -tAc "select public.drop_alert_dispatch()" >/dev/null 2>&1 &
