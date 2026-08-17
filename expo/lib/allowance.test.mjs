@@ -77,6 +77,27 @@ for (const [name, r] of MATRIX) {
     EXPO.resetLabel(r) === WEB.resetLabel(r);
   ck(`parity: ${name}`, same);
 }
+for (const [name, w] of [
+  ['wanted free fresh', { display_name: 'Free', allowed: 1, used_today: 0, remaining: 1 }],
+  ['wanted free spent', { display_name: 'Free', allowed: 1, used_today: 1, remaining: 0 }],
+  ['wanted pro partial', { display_name: 'Pro', allowed: 5, used_today: 3, remaining: 2 }],
+  ['wanted max partial', { display_name: 'Max', allowed: 15, used_today: 11, remaining: 4 }],
+  ['wanted farm', { display_name: 'Farm', allowed: null, used_today: 27, remaining: null }],
+]) {
+  ck(`parity: ${name}`, JSON.stringify(EXPO.wantedMeter(w)) === JSON.stringify(WEB.wantedMeter(w)));
+}
+{
+  const m = EXPO.wantedMeter({ display_name: 'Pro', allowed: 5, used_today: 3, remaining: 2 });
+  ck('Wanted partial: 3 of 5 used / 2 remaining', has(m, '3 of 5 used') && has(m, '2 remaining'));
+}
+{
+  const m = EXPO.wantedMeter({ display_name: 'Farm', allowed: null, used_today: 27, remaining: null });
+  ck('Wanted Farm: 27 sent / Unlimited, no sentinel',
+    has(m, '27 sent') && has(m, 'Unlimited') && !lines(m).some((v) => /999999|-1\b/.test(v)));
+}
+ck('Wanted exhausted state flags at 0 remaining',
+  EXPO.wantedMeter({ display_name: 'Free', allowed: 1, used_today: 1, remaining: 0 }).exhausted === true);
+
 ck('parity: planDisplay maps identically',
   ['free', 'grower', 'farm', 'sponsor', 'junk'].every((p) => EXPO.planDisplay(p) === WEB.planDisplay(p)));
 ck('parity: NEXT_PLAN ladders identical',

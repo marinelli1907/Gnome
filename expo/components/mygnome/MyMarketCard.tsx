@@ -6,8 +6,8 @@ import { Avatar } from '@/components/ui';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
-import { useBoostCreditsRemaining, useMyListingAllowance, useMyListings, useMyMarket, usePlanLimits } from '@/lib/db';
-import { exhaustedHint, listingsMeter, renewalsMeter, planDisplay, resetLabel, type Meter } from '@/lib/allowance';
+import { useBoostCreditsRemaining, useMyListingAllowance, useMyListings, useMyMarket, useMyWantedAllowance, usePlanLimits } from '@/lib/db';
+import { exhaustedHint, listingsMeter, renewalsMeter, wantedMeter, planDisplay, resetLabel, type Meter } from '@/lib/allowance';
 import type { MarketPlan } from '@/types';
 
 // One LISTINGS or RENEWALS block. Lines come straight from the shared formatter, which renders
@@ -30,6 +30,7 @@ export default function MyMarketCard({ uid }: { uid: string }) {
   const market = useMyMarket(uid);
   const limits = usePlanLimits();
   const allowance = useMyListingAllowance(uid);
+  const wantedAllow = useMyWantedAllowance(uid);
   const credits = useBoostCreditsRemaining(market.data?.id);
   // Every account gets a market row at signup, because listings, orders,
   // pickup hours and the sales notebook all hang off market_id. But someone
@@ -73,6 +74,12 @@ export default function MyMarketCard({ uid }: { uid: string }) {
           <View style={styles.meters}>
             <MeterBlock meter={listingsMeter(row)} hint={exhaustedHint(row, 'listings')} />
             <MeterBlock meter={renewalsMeter(row)} hint={exhaustedHint(row, 'renewals')} />
+            {wantedAllow.data ? (
+              <MeterBlock
+                meter={wantedMeter(wantedAllow.data)}
+                hint={wantedMeter(wantedAllow.data).exhausted ? 'More tomorrow — or upgrade' : null}
+              />
+            ) : null}
           </View>
         )}
         {row && <Text style={styles.reset}>{resetLabel(row)} · Sell listings run for {row.listing_lifetime_days} days</Text>}

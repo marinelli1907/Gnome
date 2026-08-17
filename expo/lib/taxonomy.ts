@@ -243,6 +243,9 @@ export type ServerErrorCode =
   | 'COMPLIANCE_BLOCKED'
   | 'PLAN_LIMIT_REACHED'
   | 'PUBLISH_ALLOWANCE_EXHAUSTED'
+  | 'WANTED_INTRO_LIMIT_REACHED'
+  | 'WANTED_ALREADY_CONTACTED'
+  | 'WANTED_NOT_AVAILABLE'
   | 'NOT_AUTHORIZED'
   | 'LAST_OWNER'
   | 'INVITE_EXPIRED'
@@ -290,6 +293,20 @@ const SERVER_ERRORS: Record<ServerErrorCode, { title: string; fallback: string }
     // per-period, never "active listings" — that model is retired.
     title: 'Included listings used up',
     fallback: 'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more each month.',
+  },
+  WANTED_INTRO_LIMIT_REACHED: {
+    // Daily meter on initiating contact with a unique Wanted post. Follow-up messages in existing
+    // conversations are never metered, and the server copy says when the allowance resets.
+    title: 'Daily Wanted responses used',
+    fallback: 'You’ve used today’s Wanted responses. Your existing conversations stay open, and you can respond to more tomorrow — or upgrade for a higher daily allowance.',
+  },
+  WANTED_ALREADY_CONTACTED: {
+    title: 'Already responded',
+    fallback: 'You’ve already responded to this request — open the conversation to keep talking.',
+  },
+  WANTED_NOT_AVAILABLE: {
+    title: 'Request closed',
+    fallback: 'That request is no longer open.',
   },
   NOT_AUTHORIZED: {
     title: 'Not permitted',

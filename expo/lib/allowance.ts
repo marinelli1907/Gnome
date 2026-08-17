@@ -216,3 +216,34 @@ export const PLAN_DISPLAY: Record<string, string> = {
 };
 export const planDisplay = (plan?: string | null) =>
   (plan && PLAN_DISPLAY[plan]) || 'Free';
+
+/** One row of my_wanted_allowance(). Wanted meters daily, and used IS actual — there is no paid
+ *  Wanted overage, so the two never diverge the way listing usage does. */
+export type WantedRow = {
+  display_name: string;
+  allowed: number | null;    // null = unlimited
+  used_today: number;
+  remaining: number | null;  // null = unlimited, never negative
+};
+
+export function wantedMeter(row: WantedRow): Meter {
+  const heading = 'Wanted responses today';
+  if (row.allowed === null) {
+    // Unlimited entitlement, measured activity — same rule as Farm listings.
+    return {
+      heading,
+      unlimited: true,
+      exhausted: false,
+      lines: [{ value: `${row.used_today} sent` }, { value: 'Unlimited' }],
+    };
+  }
+  return {
+    heading,
+    unlimited: false,
+    exhausted: row.remaining === 0,
+    lines: [
+      { value: `${row.used_today} of ${row.allowed} used` },
+      { value: `${row.remaining} remaining` },
+    ],
+  };
+}

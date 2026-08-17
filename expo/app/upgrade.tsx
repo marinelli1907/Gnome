@@ -26,6 +26,10 @@ const tierRenewals = (l?: PlanLimit) =>
     : l.included_renewals_per_period === null ? 'unlimited renewals'
     : l.included_renewals_per_period === 0 ? 'renewals $0.99 each'
     : `${l.included_renewals_per_period} free renewals/mo`;
+const tierWanted = (l?: PlanLimit) =>
+  l === undefined || l.wanted_intros_per_day === undefined ? null
+    : l.wanted_intros_per_day === null ? 'Unlimited Wanted responses'
+    : `${l.wanted_intros_per_day} Wanted response${l.wanted_intros_per_day === 1 ? '' : 's'}/day`;
 const tierCaveat = (l?: PlanLimit) => {
   if (l === undefined || l.included_renewals_per_period === undefined) return null;
   if (l.included_renewals_per_period === null) return 'No listing or renewal overage charges.';
@@ -145,6 +149,7 @@ export default function UpgradeScreen() {
               <Text style={styles.tierMeta}>
                 {tierListings(l) ?? '—'}
                 {tierRenewals(l) ? ` · ${tierRenewals(l)}` : ''}
+                {tierWanted(l) ? ` · ${tierWanted(l)}` : ''}
                 {l?.max_pickup_locations
                   ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}${l.extra_location_fee_cents ? ` (+${formatPrice(l.extra_location_fee_cents)}/mo each extra)` : ''}`
                   : ''}

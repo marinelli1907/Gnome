@@ -10,8 +10,8 @@
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import {
-  type AllowanceRow, type Meter,
-  listingsMeter, renewalsMeter, exhaustedHint, upgradeHint, resetLabel,
+  type AllowanceRow, type Meter, type WantedRow,
+  listingsMeter, renewalsMeter, wantedMeter, exhaustedHint, upgradeHint, resetLabel,
 } from '../../lib/allowance';
 
 function MeterBlock({ meter, hint }: { meter: Meter; hint: string | null }) {
@@ -47,6 +47,9 @@ function MeterBlock({ meter, hint }: { meter: Meter; hint: string | null }) {
 export default function AllowanceCard() {
   const [row, setRow] = useState<AllowanceRow | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'none'>('loading');
+  // Wanted meters daily through its own RPC. Held separately so a failure here degrades to a
+  // one-line note instead of taking the listing meters down with it — and never to fake zeros.
+  const [wanted, setWanted] = useState<WantedRow | null | 'error'>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +60,12 @@ export default function AllowanceCard() {
       // No row is a real state, not an error: the seller has no Market yet.
       if (!r) { setState('none'); return; }
       setRow(r); setState('ready');
+    });
+    void supabaseBrowser().rpc('my_wanted_allowance').then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) { setWanted('error'); return; }
+      const w = (Array.isArray(data) ? data[0] : data) as WantedRow | undefined;
+      setWanted(w ?? null);
     });
     return () => { cancelled = true; };
   }, []);
@@ -104,7 +113,18 @@ export default function AllowanceCard() {
         >
           <MeterBlock meter={listings} hint={exhaustedHint(r, 'listings')} />
           <MeterBlock meter={renewals} hint={exhaustedHint(r, 'renewals')} />
+          {wanted && wanted !== 'error' ? (
+            <MeterBlock
+              meter={wantedMeter(wanted)}
+              hint={wantedMeter(wanted).exhausted ? 'More Wanted responses tomorrow — or upgrade' : null}
+            />
+          ) : null}
         </div>
+        {wanted === 'error' ? (
+          <p className="authhint" style={{ marginTop: 8 }}>
+            Wanted response usage couldn’t load just now — this doesn’t affect your allowance.
+          </p>
+        ) : null}
 
         <div
           style={{

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { AllowanceRow } from '@/lib/allowance';
+import type { AllowanceRow, WantedRow } from '@/lib/allowance';
 import {
   useMutation,
   useQuery,
@@ -712,6 +712,21 @@ export function useMyListingAllowance(uid?: string) {
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       return (row ?? null) as AllowanceRow | null;
+    },
+  });
+}
+
+/** Daily Wanted introduction allowance (0110). Same no-parameter shape as the listing RPC. */
+export function useMyWantedAllowance(uid?: string) {
+  return useQuery({
+    queryKey: ['my-wanted-allowance', uid],
+    enabled: isSupabaseConfigured && !!uid,
+    staleTime: 30 * 1000,
+    queryFn: async (): Promise<WantedRow | null> => {
+      const { data, error } = await supabase.rpc('my_wanted_allowance');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return (row ?? null) as WantedRow | null;
     },
   });
 }
