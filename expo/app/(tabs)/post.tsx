@@ -483,6 +483,20 @@ export default function PostScreen() {
           </Pressable>
         )}
 
+        {/* Sellers with an existing inventory elsewhere: import it instead of retyping. */}
+        {!isWanted && (
+          <Pressable
+            onPress={() => router.push('/import' as never)}
+            accessibilityRole="button"
+            style={styles.importHint}
+          >
+            <Text style={styles.importHintText}>
+              Already selling on Facebook or at a farm stand?{' '}
+              <Text style={styles.importHintLink}>Build My Market with Gnome →</Text>
+            </Text>
+          </Pressable>
+        )}
+
         <Field
           label={isWanted ? 'What are you looking for?' : 'Title'}
           value={title}
@@ -670,6 +684,9 @@ const styles = StyleSheet.create({
   aiBannerTitle: { fontSize: 14.5, fontFamily: fonts.bold, color: Colors.text },
   aiBannerSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
   aiBannerArrow: { fontSize: 16, color: Colors.primary, fontFamily: fonts.bold },
+  importHint: { marginTop: -6, marginBottom: 14, paddingHorizontal: 2 },
+  importHintText: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 18 },
+  importHintLink: { fontFamily: fonts.semibold, color: Colors.primary },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   container: { padding: 20, paddingBottom: 40 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },

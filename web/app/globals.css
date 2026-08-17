@@ -756,3 +756,25 @@ body {
 .plan-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin: 14px 0 4px; flex-wrap: wrap; }
 .plan-name { text-transform: capitalize; margin-right: 10px; }
 .plan-usage { color: var(--muted); font-size: 13.5px; }
+
+/* Build My Market import review (/my/import). Single column by design — the
+   candidate list stays readable at 375px with no horizontal overflow. */
+.imp-cards { display: flex; flex-direction: column; gap: 12px; }
+.imp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; }
+.imp-card.off { opacity: .55; }
+.imp-card-head { display: flex; align-items: flex-start; gap: 10px; }
+.imp-card-head input[type='checkbox'] { margin-top: 4px; width: 18px; height: 18px; accent-color: var(--green); flex: none; }
+.imp-name { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
+.imp-sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; overflow-wrap: anywhere; }
+.imp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.imp-chip { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(188,71,73,.12); color: var(--tomato); }
+.imp-conflict { background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-top: 10px; font-size: 14px; }
+.imp-conflict-values { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+.imp-conflict-values .chip { cursor: pointer; }
+.imp-note { color: var(--muted); font-size: 13px; margin: 8px 0 0; line-height: 1.5; }
+.imp-edit { border-top: 1px dashed var(--border); margin-top: 12px; padding-top: 12px; }
+.imp-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .imp-card-head { flex-wrap: wrap; }
+  .imp-card-head .mm-btns { width: 100%; justify-content: flex-start; }
+}

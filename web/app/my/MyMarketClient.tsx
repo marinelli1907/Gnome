@@ -560,6 +560,11 @@ export default function MyMarketClient() {
           <h2>Nothing posted yet</h2>
           <p>Your first listing takes under a minute — the AI even writes it for you.</p>
           <p><a className="btn btn-primary" href="/sell">Post your first listing</a></p>
+          <p className="authhint">
+            Already selling somewhere else?{' '}
+            <a href="/my/import">Build My Market with Gnome</a> — upload a screenshot
+            and get draft listings.
+          </p>
         </div>
       </div>
     );
@@ -569,6 +574,19 @@ export default function MyMarketClient() {
     <div>
       <AllowanceCard />
       <ShareMarketCard />
+      {/* Entry to the import flow — the one surface where a screenshot of an
+          existing stand becomes draft listings (/my/import). */}
+      <a className="band" href="/my/import" style={{ marginBottom: 10 }}>
+        <span className="band-emoji">🧙</span>
+        <div className="band-copy">
+          <h2>Build My Market with Gnome</h2>
+          <p>
+            Already selling on Facebook, at a farm stand, or somewhere else? Upload a
+            screenshot or photo and Gnome can turn what you sell into draft listings.
+          </p>
+        </div>
+        <span className="band-cta">Upload photos or screenshots</span>
+      </a>
       <div className="mm-head">
         <div>
           <h1>{market?.name ?? 'My Market'}</h1>

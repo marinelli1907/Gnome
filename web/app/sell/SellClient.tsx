@@ -376,6 +376,10 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
             {drafting ? 'Drafting…' : '✨ Let AI write the listing from your photo'}
           </button>
         )}
+        <p className="authhint" style={{ margin: '6px 0 0' }}>
+          Selling more than one thing? <a href="/my/import">Build My Market with Gnome</a>{' '}
+          turns a screenshot of your stand or listings into draft listings.
+        </p>
       </div>
 
       {listingType === 'plot' && (
