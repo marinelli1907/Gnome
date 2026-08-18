@@ -162,7 +162,30 @@ key. See **B1**.
 
 ## 2. BLOCKERS and findings, ranked
 
-### B1 — The Map tab will not render on Android. **BLOCKER**
+### B1 — The Map tab will not render on Android. **RESOLVED 2026-08-18**
+
+> **Key configured and behaviourally verified.** The owner created a restricted
+> Android key in the `Gnome Farmers Market` Google Cloud project (Maps SDK for
+> Android enabled, restricted to package `app.boonesystems.gnome` + the EAS
+> upload key's SHA-1), wired into `app.json` as
+> `android.config.googleMaps.apiKey` (commit `be8bb2e`). Verified on an
+> Android 16 emulator with build vc3: Google tiles render with attribution,
+> four market pins plot correctly, pan/zoom works, and the app survives a full
+> Browse→Map→My Gnome cycle on one PID with zero `API key not found` or
+> ReactInstance-teardown log lines.
+>
+> **The original finding UNDERSTATED this.** Measured against a real build, a
+> missing key does not render a blank map — it throws `RuntimeException` inside
+> `FabricUIManager`, which destroys the entire ReactInstance. The whole app goes
+> white permanently, including tabs never visited, until force-stop.
+>
+> ⚠️ **One step remains at first upload:** Play App Signing re-signs the app
+> with a different key, so Store installs present a SHA-1 this restriction does
+> not list and Maps will fail **in production only**. After the first AAB
+> upload: Play Console → Setup → App signing → copy the app signing SHA-1 → add
+> it to the same credential alongside the upload SHA-1.
+
+Original finding, for the record:
 
 `react-native-maps` uses the Google Maps SDK on Android, which authenticates
 with a `com.google.android.geo.API_KEY` manifest entry. That key is absent from
