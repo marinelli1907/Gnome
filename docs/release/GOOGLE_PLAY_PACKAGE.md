@@ -218,7 +218,49 @@ the backend has no token to fail on.
 Not a policy blocker — Play will happily publish an app whose push is broken.
 It is a product blocker: Gnome's entire claim/approve/chat loop depends on push.
 
-### B3 — Account deletion **web URL** is missing. **BLOCKER for the Play form**
+### B3 — Account deletion **web URL** — **RESOLVED 2026-08-16**
+
+> **Fill the Data safety field with:**
+> ```
+> https://gnomefarmersmarket.com/delete-account
+> ```
+> Built as option (b), at `web/app/delete-account/` (`page.tsx` +
+> `DeleteAccountClient.tsx`). Note the path is `/delete-account`, **not** the
+> `/account-deletion` this document originally proposed — it matches the
+> `delete-account` edge function it calls. The page is indexable on purpose
+> (unlike `/login`) because the reviewer opens it cold, signed out.
+>
+> Signed out it explains everything and offers the email-code sign-in card;
+> signing in IS the identity check, since the edge function takes the user id
+> from the JWT. Signed in it requires a ticked acknowledgement **and** the typed
+> word `DELETE`, mirroring mobile's two-alert confirm. Retention copy was written
+> against the live schema, not assumed: every user-linked table either is purged
+> explicitly or cascades (`seller_transactions` → `markets`, `market_orders` →
+> `auth.users`, `buyer_delivery_addresses`/`user_private_contact` → `profiles`),
+> so the page states plainly that nothing identifying survives in Gnome and that
+> Stripe keeps its own records.
+>
+> **DEPLOYED and verified 2026-08-17** — the URL answers 200 with the real page
+> (a bogus route 404s, so it is not a soft-200 fallback), renders correctly at
+> desktop and 375px-wide mobile with no horizontal overflow, and the client
+> bundle hydrates: signed out, the page shows the email-code sign-in card. The
+> backend was re-verified the same day and one defect fixed before relying on
+> it: `seed_orders.user_id → profiles` is `NO ACTION`, so a user holding a seed
+> order had their `profiles` delete raise and the whole deletion answer 500 —
+> one live account was affected. `delete-account` v9 purges `seed_orders`
+> first (which also removes `profile_snapshot`, a copy of the buyer's seed
+> profile the page's retention promise did not allow to survive).
+>
+> ⚠️ **The email fallback is currently undeliverable.** The page (and `/privacy`
+> and `/terms`) advertise `hello@gnomefarmersmarket.com`, but the domain has
+> **no MX records** and the A-record host (the web VPS) listens on no SMTP
+> port, so mail to that address bounces or blackholes. The PRIMARY deletion
+> path (sign in on the page, or in-app) is self-serve and unaffected, but the
+> "can't sign in at all" path is advertised and dead — and the same address is
+> the Play listing's contact email (§3.3). Set up mailboxes or forwarding for
+> the domain before submission.
+
+Original finding, for the record:
 
 Play's Data safety form requires apps that offer account creation to provide a
 **URL where a user can request account and data deletion**, reachable without
@@ -419,7 +461,7 @@ Notebook and a Grow Log. Settings → Send feedback goes straight to the builder
 
 | Field | Value | Verified |
 |---|---|---|
-| Email | `hello@gnomefarmersmarket.com` | Appears on `/privacy` and `/terms` |
+| Email | `hello@gnomefarmersmarket.com` | Appears on `/privacy` and `/terms` — ⚠️ **cannot currently receive mail** (no MX for the domain, no SMTP on the A-record host; verified 2026-08-17). Set up the mailbox before submitting |
 | Website | `https://gnomefarmersmarket.com` | HTTP 200 today |
 | Privacy Policy | `https://gnomefarmersmarket.com/privacy` | HTTP 200 today |
 | Countries | United States only | The app is US-scoped: `countrycodes=us` on the geocoder, US state table in `expo/lib/location.ts`, USD throughout |
@@ -439,7 +481,7 @@ SDK exists in `expo/package.json`.** The full reasoning behind each row is in
 |---|---|---|
 | Does your app collect or share any of the required user data types? | **Yes** | §4.2 |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | All traffic is HTTPS (Supabase, exp.host, nominatim). `NSAllowsArbitraryLoads: false` on iOS; no cleartext traffic config on Android |
-| Do you provide a way for users to request that their data be deleted? | **Yes** | §5 — but the **URL** field needs B3 resolved first |
+| Do you provide a way for users to request that their data be deleted? | **Yes** | §5; URL field = `https://gnomefarmersmarket.com/delete-account` (B3 resolved — deploy before submitting) |
 | Does your app have an account creation feature? | **Yes** | Email/password, email code, Sign in with Apple, Google |
 | Data collected in an ephemeral way only? | **No** for most rows; see the Precise Location note in 4.2 |
 | Is data collection required, or can users choose? | **Mixed** — email and name are required to have an account; phone, address, photos, location, and permits are all optional |
@@ -498,10 +540,10 @@ without installing the app.
 |---|---|
 | **In-app deletion** | **PRESENT.** `expo/app/settings.tsx` → "Delete my account", two destructive confirmations, calls the JWT-authenticated `delete-account` edge function |
 | **Server implementation** | `supabase/functions/delete-account/index.ts` — identity from the caller's JWT, never the body. Purges `device_tokens`, `claim_messages`, `claims` (as claimer and on own listings), `listings`, `seller_credentials` + `credential_taxonomy_scope`, `markets`, `user_blocks` both directions, `events`, `profiles`, then `auth.admin.deleteUser`. Storage: `grow-log` folders per affected claim, `compliance-docs/<uid>`, `listing-images/<uid>` |
-| **Web URL** | **MISSING — see B3** |
+| **Web URL** | `https://gnomefarmersmarket.com/delete-account` — **live, HTTP 200, verified 2026-08-17** (see B3) |
 
 So: not a blocker for the app's behavior, but **a blocker for completing the
-Play form.** Resolve B3 before you reach the Data safety step.
+Play form.** B3 is resolved in the repo; the remaining step is deploying the web page so the URL answers 200.
 
 ---
 
@@ -585,7 +627,7 @@ saying so is shown every time.
 ACCOUNT DELETION
 Profile tab → Settings → "Delete my account". Two confirmations, then the
 account, Market, listings, photos, and messages are permanently deleted
-server-side. Web instructions: <URL from B3>.
+server-side. Web instructions: https://gnomefarmersmarket.com/delete-account.
 
 USER-GENERATED CONTENT
 Every listing, Market page, and conversation has a Report control, and any user
@@ -678,7 +720,7 @@ Ordered. **(owner)** marks anything needing a Google account or console.
    `eas credentials --platform android`.
 3. **(coordinator)** **F1/F2** — add `android.blockedPermissions` for
    `SYSTEM_ALERT_WINDOW`, and decide on the two storage permissions.
-4. **(web lane)** **B3** — publish an account-deletion page or expand
+4. ~~**(web lane)** **B3** — publish an account-deletion page~~ **DONE — deployed and verified 2026-08-17** (`/delete-account`, HTTP 200). Superseded text: or expand
    `/privacy` with an explicit deletion section, and capture its URL.
 5. **(web lane)** **F3/F4** — correct the AI-provider naming; decide the
    Nominatim question, because it changes the Data safety answers (§4.3).
@@ -729,7 +771,7 @@ Ordered. **(owner)** marks anything needing a Google account or console.
 |---|---|---|---|
 | B1 | No Google Maps API key → Map tab blank on Android | **BLOCKER** | coordinator + owner |
 | B2 | No FCM config → Android push silently dead | **BLOCKER** | coordinator + owner |
-| B3 | No account-deletion web URL → Data safety form cannot be completed | **BLOCKER** | web lane |
+| ~~B3~~ | ~~No account-deletion web URL~~ **RESOLVED 2026-08-16** — `/delete-account` built; deploy pending | done (deploy) | web lane |
 | §7.1 | Possible 12-tester / 14-day closed-test requirement | **SCHEDULE BLOCKER if personal account** | owner |
 | F1 | `SYSTEM_ALERT_WINDOW` in the production manifest | High | coordinator |
 | F2 | Legacy storage permissions | Medium | coordinator |
