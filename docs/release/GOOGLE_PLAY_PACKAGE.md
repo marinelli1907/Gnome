@@ -131,6 +131,33 @@ What is missing, verified:
 
 See **B2**.
 
+> **CONFIGURED 2026-08-18, DELIVERY UNPROVEN.** Firebase was added to the
+> existing `Gnome Farmers Market` Cloud project, the Android app registered as
+> `app.boonesystems.gnome`, `google-services.json` committed with
+> `android.googleServicesFile` (commit `0705f34`), and the FCM V1 service-account
+> key uploaded to the Expo project (key id `1ff17b318c…`, service account
+> `firebase-adminsdk-fbsvc@gnome-farmers-market-70414`). Build vc4 confirms the
+> plumbing arrived: `dumpsys` shows
+> `expo.modules.notifications.service.ExpoFirebaseMessagingService` bound to
+> `com.google.firebase.MESSAGING_EVENT`, which no previous Android build had.
+>
+> **What is still NOT proven: an actual delivered notification.** It cannot be
+> proven on an emulator, by the app's own design —
+> `lib/notifications.ts:22` guards registration with `!Device.isDevice`, which
+> `expo-device` reports false for emulators, so `registerForPushNotifications`
+> returns before requesting permission or fetching a token. Verified
+> empirically on vc4: no POST_NOTIFICATIONS prompt appeared, the permission
+> stayed `granted=false`, and no `device_tokens` row was written. That guard is
+> correct for shipping (real users are always on real devices) — it is a
+> TESTING limitation, not a defect.
+>
+> **Closing it requires one run on a physical Android device:** install the
+> preview APK, sign in, accept the notification prompt, confirm a
+> `device_tokens` row with `platform='android'`, then send a test push from
+> https://expo.dev/notifications to that token and confirm it displays and
+> routes on tap. Until that happens, treat Android push as a **release risk**:
+> the configuration is right, the last mile is unverified.
+
 ### 1.6 Maps — **not configured for Android**
 
 `react-native-maps@1.20.1` is a dependency and `expo/components/MapListings.native.tsx`
