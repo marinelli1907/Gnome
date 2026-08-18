@@ -308,7 +308,7 @@ real device that picking a listing photo still works on Android 10 and Android 1
 Do not skip that check — it is exactly the kind of change that looks free and
 breaks the oldest supported devices.
 
-### F3 — Privacy Policy names the wrong AI provider. **MEDIUM**
+### F3 — Privacy Policy names the wrong AI provider. **RESOLVED 2026-08-17** — the deployed policy names Google's Gemini models as the only provider (verified live). Standing condition: `ai_settings.allow_paid_fallback` is FALSE in prod (verified); flipping it re-enables OpenAI/Anthropic fallbacks and re-falsifies both the policy and these declarations. Original finding:
 
 `web/app/privacy/page.tsx` says photos are processed by "our AI provider
 (Anthropic)". The real chain in `supabase/functions/draft-listing/index.ts:123-126`
@@ -362,6 +362,23 @@ Apple's Guideline 2.1. Fixing it for the App Store fixes it here.
 
 ---
 
+### B4 — The $0.99 overage checkout is a REAL digital-service purchase. **BLOCKER (new since 54e141e)**
+
+`expo/lib/billing.ts` (`purchaseOverage`) opens a server-created Stripe
+Checkout session in an auth browser session from three surfaces
+(`app/(tabs)/post.tsx`, `app/(tabs)/ai.tsx`, `app/listing/[id].tsx`) whenever
+the server says a publish/renewal needs paying — which any Free seller hits on
+their 4th Sell listing of the month or first renewal (free = 3/mo, 0 included
+renewals). `payments_live_enabled=false` only selects Stripe TEST mode; the
+purchase UI itself is reachable today. Publish rights are a digital service,
+so Play's Payments policy requires Play Billing for it (subject to the current
+US external-offers rules — re-verify at submission time). **Owner decision
+required before the Play form can be answered:** (a) gate the overage purchase
+OFF on Android for v1.1.0 (allowance-exhausted sellers see "not available on
+Android yet"), (b) integrate Play Billing, or (c) rely on the US
+external-offers program with its disclosure requirements. Every "No purchases
+/ No IAP" answer in §3, §6 and §7.2 is conditional on (a).
+
 ## 3. Store listing copy
 
 Same product, Play's fields. Nothing below claims Seed Drop is available.
@@ -374,7 +391,7 @@ Same product, Play's fields. Nothing below claims Seed Drop is available.
 | **Tags** | Marketplace, Food & Drink, Local | — | — |
 | **Content rating** | Teen / IARC (see §4) | — | — |
 | **Contains ads** | **No** | — | — |
-| **In-app purchases** | **No** | — | — |
+| **In-app purchases** | **No only if B4 is gated off on Android — otherwise Yes** | — | — |
 
 Play does not use keyword fields — the name and short description carry the
 search weight, which is why the Play name spells out "Local Farmers Market"
@@ -464,7 +481,7 @@ Notebook and a Grow Log. Settings → Send feedback goes straight to the builder
 | Website | `https://gnomefarmersmarket.com` | HTTP 200 today |
 | Privacy Policy | `https://gnomefarmersmarket.com/privacy` | HTTP 200 today |
 | Countries | United States only | The app is US-scoped: `countrycodes=us` on the geocoder, US state table in `expo/lib/location.ts`, USD throughout |
-| Free / Paid | Free | No IAP |
+| Free / Paid | Free | Purchase posture pending **B4** — the $0.99 overage checkout is reachable in-app |
 
 ---
 
@@ -504,19 +521,24 @@ decision (F4).**
 | Location → **Precise location** | **Yes** | **See F4** | App functionality | Optional | `Location.getCurrentPositionAsync({ accuracy: Balanced })` (`expo/lib/location.ts`). The device reading itself is used in memory for distance filtering; the **geocoded lat/lng of a delivery address is stored** on the buyer's private row (`expo/lib/delivery.ts:145-160`), so this cannot be declared ephemeral-only |
 | Financial info → **Other financial info** | Yes | No | App functionality | Optional | Sales Notebook — sale amounts, quantities, optional buyer label, expenses with vendor and category (`expo/components/RecordSaleSheet.tsx`, `expo/app/notebook.tsx`) |
 | Financial info → **Payment info** | **No** | — | — | — | Gnome never collects a card or bank detail. Payment links open the seller's own Venmo/PayPal/Cash App/Zelle; `PaymentDisclaimer` states it every time |
-| Photos and videos → **Photos** | Yes | No | App functionality | Optional | `expo/lib/images.ts` → `listing-images`; grow-log photos; compliance document images. Photos are also sent to the AI provider for drafting (`draft-listing`) |
+| Photos and videos → **Photos** | Yes | **See §4.3b** | App functionality | Optional | `expo/lib/images.ts` → `listing-images`; grow-log photos; compliance document images. Photos are sent to the AI provider from FOUR functions: `draft-listing`, `analyze-listing-photo`, `gnome-assistant` (draft_from_photos), `market-import` — all Gemini FREE tier, whose content Google may use for product improvement (Gnome's own /privacy says so) |
 | Files and docs | Yes | No | App functionality | Optional | Permit/license uploads via `expo-document-picker` → `compliance-docs` bucket |
 | Messages → **Other in-app messages** | Yes | No | App functionality | Optional | `claim_messages`; previews also travel in push payloads (`supabase/functions/notify/index.ts`) |
-| App activity → **App interactions** | Yes | No | Analytics, App functionality | Required | `logEvent` → `events` with `user_id` (`expo/lib/db.ts:12-27`). 22 distinct event names today, e.g. `listing_viewed`, `listing_claim_started`, `claim_message_sent`, `market_order_requested`, `payment_link_opened`, `ai_draft_used`, `sale_recorded_mobile`, `plan_limit_hit` |
+| Messages → AI chat / Other user content | Yes | **See §4.3b** | App functionality | Optional | Gnome AI tab chat turns + city/county/state context go to Gemini (`gnome-assistant`); full user and assistant text stored verbatim in `ai_chat_messages` with no retention window; Garden Planner question text also logged to `events` |
+| App activity → **App interactions** | Yes | No | Analytics, App functionality | Required | `logEvent` → `events` with `user_id` (`expo/lib/db.ts:12-27`). 31 distinct event names today (one, `garden_planner_used`, logs the user's full question text in metadata — check AI_DATA_FLOW.md before declaring analytics content-free), e.g. `listing_viewed`, `listing_claim_started`, `claim_message_sent`, `market_order_requested`, `payment_link_opened`, `ai_draft_used`, `sale_recorded_mobile`, `plan_limit_hit` |
 | Device or other IDs | Yes | No | App functionality | Optional | Expo push token in `device_tokens` (`expo/lib/notifications.ts`) |
 | App info and performance → Crash logs, Diagnostics | **No** | — | — | — | No crash-reporting SDK installed |
 | Health and fitness, Contacts, Calendar, Web browsing, Search history, Audio, Music, Installed apps | **No** | — | — | — | None collected |
 
-### 4.3 The one row that needs a decision before you fill the form
+### 4.3 The two rows that need a decision before you fill the form
 
-**Address and Precise location (F4).** As written, `forwardGeocode` sends the
-buyer's street address from the device to the OpenStreetMap Foundation. Two
-honest ways to fill the form:
+**a) Address and Precise location (F4) — decided by deployment 2026-08-17.**
+The live privacy policy now names OpenStreetMap (Nominatim) as the geocoder,
+so the ship-as-is fork was taken: declare Personal info → Address as
+**collected and shared** (recipient: OpenStreetMap Foundation, disclosed in
+/privacy) and keep Precise location collected-not-ephemeral (geocoded lat/lng
+stored). Moving the geocode server-side later lets both revert to not-shared.
+The original two-option analysis, for the record:
 
 - **Move the geocode server-side** (recommended) → the recipient becomes your own
   backend, and Address/Location can be declared **collected, not shared**.
@@ -524,7 +546,16 @@ honest ways to fill the form:
   OpenStreetMap in the privacy policy, and expect to explain it.
 
 Declaring "not shared" while shipping the current code would be an inaccurate
-Data safety declaration, which is itself a Play policy violation. Pick one.
+Data safety declaration, which is itself a Play policy violation.
+
+**b) Gemini free tier (new since 54e141e).** Every AI surface — draft-listing,
+analyze-listing-photo, gnome-assistant (chat + photo drafts), market-import —
+runs on Gemini's FREE tier, and Google may use free-tier content for product
+improvement; Gnome's own deployed privacy policy says so. That defeats the
+service-provider exclusion, so either declare Photos and AI-chat content
+**shared** (recipient: Google), or move `GEMINI_API_KEY` to a tier with
+data-use protections and keep them "collected only". Declaring not-shared
+while on the free tier is the same inaccurate-declaration violation as F4.
 
 ---
 
@@ -538,7 +569,7 @@ without installing the app.
 | Leg | Status |
 |---|---|
 | **In-app deletion** | **PRESENT.** `expo/app/settings.tsx` → "Delete my account", two destructive confirmations, calls the JWT-authenticated `delete-account` edge function |
-| **Server implementation** | `supabase/functions/delete-account/index.ts` — identity from the caller's JWT, never the body. Purges `device_tokens`, `claim_messages`, `claims` (as claimer and on own listings), `listings`, `seller_credentials` + `credential_taxonomy_scope`, `markets`, `user_blocks` both directions, `events`, `profiles`, then `auth.admin.deleteUser`. Storage: `grow-log` folders per affected claim, `compliance-docs/<uid>`, `listing-images/<uid>` |
+| **Server implementation** | `supabase/functions/delete-account/index.ts` — identity from the caller's JWT, never the body. Purges `device_tokens`, `claim_messages`, `claims` (as claimer and on own listings), `listings`, `seller_credentials` + `credential_taxonomy_scope`, `markets`, `user_blocks` both directions, `events`, `profiles`, `seed_orders` (NO-ACTION FK — added in delete-account v9, 2026-08-17), then `auth.admin.deleteUser`. Known gap: `ai_usage` / `ai_daily_counter` rows (no FK) survive deletion — fix pending. Storage: `grow-log` folders per affected claim, `compliance-docs/<uid>`, `listing-images/<uid>` |
 | **Web URL** | `https://gnomefarmersmarket.com/delete-account` — **live, HTTP 200, verified 2026-08-17** (see B3) |
 
 So: not a blocker for the app's behavior, but **a blocker for completing the
@@ -561,7 +592,7 @@ Play form.** B3 is resolved in the repo; the remaining step is deploying the web
 | — Can users communicate with strangers? | **Yes** | Any user can request another user's listing, which opens a thread on approval |
 | — Is user interaction moderated? | **Yes** | Report on every listing, Market, and chat (`useReport` → `reports`, `0013_trust_layer.sql`); block/unblock (`useBlockUser`, managed in Settings); admin moderation (`0024_admin_moderation.sql`, `web/app/admin/`) |
 | **Does the app share the user's current location with other users?** | **Yes — approximate only** | Listings show an approximate area and a distance. Exact coordinates are deliberately withheld: `listings.lat/lng` is revoked at the DB level, photo EXIF including GPS is stripped before upload (`expo/lib/images.ts`), and exact pickup addresses are released only to an approved counterparty |
-| **Does the app allow users to purchase digital goods?** | **No** | No Play Billing integration; nothing in the app is purchasable (§8 in the App Store package) |
+| **Does the app allow users to purchase digital goods?** | **No if B4 is gated off; otherwise Yes** | The $0.99 publish/renewal overage (`expo/lib/billing.ts`) is a digital-service purchase via Stripe — see B4. Previously: no Play Billing integration; nothing purchasable (§8 in the App Store package) |
 | Does the app provide unrestricted internet access (a browser)? | **No** | Only specific first-party and payment-app URLs via `Linking.openURL`, plus `expo-web-browser` for the OAuth session |
 | Is the app "Designed for Families" / targeted at children? | **No** | The privacy policy states Gnome is not for children under 13 |
 
@@ -574,9 +605,13 @@ rating is driven by messaging and location sharing, not by any depicted content.
 Play requires: a UGC moderation policy, an in-app reporting mechanism, an
 in-app blocking mechanism, and removal of objectionable content. Gnome has the
 reporting, the blocking, and a staffed admin queue. **What it does not have is
-any proactive filter** — no profanity list, no image classifier; moderation is
-entirely reactive. That is generally accepted with a stated response SLA. State
-the 24-hour commitment in the reviewer notes (§7.2).
+a proactive IMAGE filter** — but since 0095 there IS a proactive server-side
+text screen at publish time: prohibited goods are blocked outright and
+ambiguous listings (raw milk, alcohol, etc.) are saved unpublished for human
+review (`supabase/migrations/0095_prohibited_content.sql`; seller-facing flow
+in `expo/lib/screening.ts`). Worded-around euphemisms still pass, so reactive
+report/block/admin remain the backstop. State the 24-hour commitment in the
+reviewer notes (§7.2).
 
 ---
 

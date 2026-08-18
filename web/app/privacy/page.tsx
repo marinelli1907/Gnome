@@ -351,10 +351,11 @@ export default function PrivacyPage() {
       <h2>Deleting your account</h2>
       <p>
         In the mobile app, go to <strong>Settings → Delete my account</strong>.
-        It is permanent, it takes two confirmations, and it removes your
-        listings and conversations for everyone, not just from your view. The
-        website does not have a self-service delete button yet — if you only
-        use the web, email{' '}
+        On the web, use <a href="/delete-account">gnomefarmersmarket.com/delete-account</a> —
+        sign in there and confirm. Either way it is permanent, it takes two
+        confirmations, and it removes your listings and conversations for
+        everyone, not just from your view. If you can&rsquo;t sign in at all,
+        email{' '}
         <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>{' '}
         from your account&rsquo;s email address and we will delete it for you.
       </p>
