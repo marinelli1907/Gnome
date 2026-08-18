@@ -114,6 +114,13 @@ Deno.serve(async (req) => {
     await admin.from('user_blocks').delete().eq('blocker_id', user.id);
     await admin.from('user_blocks').delete().eq('blocked_id', user.id);
     await admin.from('events').delete().eq('user_id', user.id);
+    // Seed orders are the one user-linked table whose FK to profiles is
+    // NO ACTION rather than CASCADE, so leaving them makes the profiles delete
+    // below raise and the whole deletion answer 500 — found live 2026-08-17,
+    // one affected account. They also carry profile_snapshot, a copy of the
+    // buyer's seed profile, which must not survive an account whose page
+    // promises nothing identifying stays. seed_order_items cascades with them.
+    await admin.from('seed_orders').delete().eq('user_id', user.id);
     await admin.from('profiles').delete().eq('id', user.id);
 
     const { error: delErr } = await admin.auth.admin.deleteUser(user.id);
