@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BeDsL5NweNtYFu2ueoJICDhhkmX2FuyoA1eq6ceN9QtOHUbGngbqK9SRal8EQr1
+\restrict wsUXKhobI5yZFX2aehDPYqsu72lmiO0JF2uqkYOzccpzIecTnosQ2qeHIHLt9id
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.11 (Homebrew)
@@ -230,6 +230,28 @@ CREATE TYPE public.user_type AS ENUM (
     'market',
     'municipality'
 );
+
+
+--
+-- Name: _ai_audit(uuid, text, uuid, jsonb, jsonb, text, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public._ai_audit(p_user uuid, p_action text, p_listing uuid, p_prev jsonb, p_new jsonb, p_request text, p_success boolean) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  -- Best-effort by design (0115 precedent): a missing profile row must never turn a seller's
+  -- successful edit into an error. The mutation itself is still in the caller's transaction.
+  begin
+    insert into public.events (user_id, event_type, listing_id, metadata)
+    values (p_user, 'ai_action', p_listing, jsonb_strip_nulls(jsonb_build_object(
+      'action', p_action, 'tool', 'gnome_ai',
+      'prev', p_prev, 'new', p_new,
+      'request_id', p_request, 'success', p_success)));
+  exception when others then null;
+  end;
+end $$;
 
 
 --
@@ -1180,6 +1202,68 @@ $$;
 
 
 --
+-- Name: admin_market_allowance(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_market_allowance(p_market uuid) RETURNS TABLE(market_id uuid, market_name text, owner_id uuid, owner_email text, plan public.market_plan, display_name text, period_start timestamp with time zone, period_end timestamp with time zone, period_source text, publishes_allowed integer, publishes_used integer, publishes_actual integer, paid_publishes_period integer, publishes_remaining integer, renewals_allowed integer, renewals_used integer, renewals_actual integer, paid_renewals_period integer, renewals_remaining integer, paid_publishes_lifetime integer, paid_renewals_lifetime integer, paid_cents_period integer, paid_cents_lifetime integer, active_listings integer, expired_listings integer)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare u record; m record;
+begin
+  if not public.is_admin() then
+    raise exception 'admin only' using errcode = 'P0001';
+  end if;
+
+  select mk.id, mk.name, mk.owner_id into m from public.markets mk where mk.id = p_market;
+  if m.id is null then return; end if;
+
+  select * into u from public.market_allowance_usage(p_market);
+  if u.plan is null then return; end if;
+
+  market_id   := m.id;
+  market_name := m.name;
+  owner_id    := m.owner_id;
+  select au.email::text into owner_email from auth.users au where au.id = m.owner_id;
+
+  -- Straight passthrough. Nothing is recomputed here: actual is NOT used + paid, which happens to
+  -- hold on metered plans and is wrong on Farm, where all activity is funded='unlimited' and
+  -- included usage is legitimately 0 while actual is 47.
+  plan                    := u.plan;
+  display_name            := u.display_name;
+  period_start            := u.period_start;
+  period_end              := u.period_end;
+  period_source           := u.period_source;
+  publishes_allowed       := u.publishes_allowed;
+  publishes_used          := u.publishes_used;
+  publishes_actual        := u.publishes_actual;
+  paid_publishes_period   := u.paid_publishes_period;
+  publishes_remaining     := u.publishes_remaining;
+  renewals_allowed        := u.renewals_allowed;
+  renewals_used           := u.renewals_used;
+  renewals_actual         := u.renewals_actual;
+  paid_renewals_period    := u.paid_renewals_period;
+  renewals_remaining      := u.renewals_remaining;
+  paid_publishes_lifetime := u.paid_publishes_lifetime;
+  paid_renewals_lifetime  := u.paid_renewals_lifetime;
+  paid_cents_period       := u.paid_cents_period;
+  paid_cents_lifetime     := u.paid_cents_lifetime;
+
+  -- Listing counts are a property of the listings table, not of the allowance ledger, so they are
+  -- counted here rather than bolted onto the usage RPC the seller card also consumes. Sell only,
+  -- matching what the allowance actually meters.
+  select
+    count(*) filter (where l.status = 'active'),
+    count(*) filter (where l.status = 'expired')
+  into active_listings, expired_listings
+  from public.listings l
+  where l.market_id = p_market and l.listing_type = 'sale';
+
+  return next;
+end $$;
+
+
+--
 -- Name: admin_market_entitlements(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1196,6 +1280,35 @@ CREATE FUNCTION public.admin_market_entitlements(p_market uuid) RETURNS jsonb
       from public.market_effective_plan(p_market) ep)
   end;
 $$;
+
+
+--
+-- Name: admin_market_qr(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_market_qr(p_market uuid) RETURNS TABLE(code text, created_at timestamp with time zone, entitled boolean, market_slug text, scans_total integer, scans_30d integer)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare eff record;
+begin
+  if not public.is_admin() then raise exception 'admin only' using errcode = 'P0001'; end if;
+
+  select mq.code, mq.created_at into code, created_at
+    from public.market_qr mq where mq.market_id = p_market;
+  select m.slug into market_slug from public.markets m where m.id = p_market;
+
+  select ep.plan into eff from public.market_effective_plan(p_market) ep;
+  select coalesce(pl.qr_tools, false) into entitled
+    from public.plan_limits pl where pl.plan = coalesce(eff.plan, 'free');
+
+  select count(*)::int,
+         count(*) filter (where s.occurred_at > now() - interval '30 days')::int
+    into scans_total, scans_30d
+    from public.market_qr_scans s where s.market_id = p_market;
+
+  return next;
+end $$;
 
 
 --
@@ -1429,6 +1542,54 @@ end $$;
 
 
 --
+-- Name: admin_promo_campaigns(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_promo_campaigns() RETURNS TABLE(id uuid, code text, campaign_name text, active boolean, applicable_plans public.market_plan[], discount_type text, discount_percent numeric, discount_amount_cents integer, duration text, duration_in_months integer, starts_at timestamp with time zone, expires_at timestamp with time zone, max_redemptions integer, max_redemptions_per_user integer, new_customers_only boolean, redeemed integer, converted integer, cancelled integer, revenue_after_promo_cents bigint, configured boolean, internal_notes text, created_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  if not public.is_admin() then raise exception 'admin only' using errcode = 'P0001'; end if;
+  return query
+    select c.id, c.code, c.campaign_name, c.active, c.applicable_plans, c.discount_type,
+           c.discount_percent, c.discount_amount_cents, c.duration, c.duration_in_months,
+           c.starts_at, c.expires_at, c.max_redemptions, c.max_redemptions_per_user,
+           c.new_customers_only,
+           count(r.*) filter (where r.status in ('redeemed','converted'))::int,
+           count(r.*) filter (where r.status = 'converted')::int,
+           count(r.*) filter (where r.status = 'cancelled')::int,
+           coalesce(sum(r.amount_discounted_cents) filter (where r.status = 'converted'), 0)::bigint,
+           c.stripe_promotion_code_id is not null,
+           c.internal_notes, c.created_at
+      from public.promotion_campaigns c
+      left join public.promotion_redemptions r on r.campaign_id = c.id
+     group by c.id
+     order by c.created_at desc;
+end $$;
+
+
+--
+-- Name: admin_promo_redemptions(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_promo_redemptions(p_campaign uuid) RETURNS TABLE(user_id uuid, email text, market_id uuid, plan public.market_plan, status text, redeemed_at timestamp with time zone, converted_at timestamp with time zone, cancelled_at timestamp with time zone, amount_discounted_cents integer)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  if not public.is_admin() then raise exception 'admin only' using errcode = 'P0001'; end if;
+  return query
+    select r.user_id, au.email::text, r.market_id, r.plan, r.status,
+           r.redeemed_at, r.converted_at, r.cancelled_at, r.amount_discounted_cents
+      from public.promotion_redemptions r
+      left join auth.users au on au.id = r.user_id
+     where r.campaign_id = p_campaign
+     order by r.redeemed_at desc;
+end $$;
+
+
+--
 -- Name: admin_receive_lot(uuid, numeric, text, text, text, text, numeric, integer, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1547,7 +1708,7 @@ CREATE TABLE public.listings (
     kind public.listing_kind DEFAULT 'offer'::public.listing_kind NOT NULL,
     fulfilled_by_listing_id uuid,
     market_id uuid,
-    listing_type public.listing_type DEFAULT 'free'::public.listing_type NOT NULL,
+    listing_type public.listing_type DEFAULT 'sale'::public.listing_type NOT NULL,
     price_cents integer,
     currency text DEFAULT 'USD'::text,
     trade_for text,
@@ -1576,6 +1737,7 @@ CREATE TABLE public.listings (
     screening_term text,
     screening_category text,
     screened_at timestamp with time zone,
+    is_bundle boolean DEFAULT false NOT NULL,
     CONSTRAINT listings_inventory_chk CHECK (((inventory_count IS NULL) OR (inventory_count >= 0))),
     CONSTRAINT listings_photo_limit CHECK ((COALESCE(array_length(photos, 1), 0) <= 5)),
     CONSTRAINT listings_plot_price_chk CHECK (((listing_type <> 'plot'::public.listing_type) OR ((price_cents IS NOT NULL) AND (price_cents > 0)))),
@@ -2806,6 +2968,64 @@ end $$;
 
 
 --
+-- Name: admin_upsert_promo_campaign(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_upsert_promo_campaign(p_payload jsonb) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare v_id uuid; v_code text;
+begin
+  if not public.is_admin() then raise exception 'admin only' using errcode = 'P0001'; end if;
+  v_code := upper(btrim(p_payload->>'code'));
+  v_id   := nullif(p_payload->>'id','')::uuid;
+
+  insert into public.promotion_campaigns (
+    id, code, campaign_name, active, applicable_plans, discount_type,
+    discount_percent, discount_amount_cents, duration, duration_in_months,
+    starts_at, expires_at, max_redemptions, max_redemptions_per_user,
+    new_customers_only, internal_notes, created_by
+  ) values (
+    coalesce(v_id, gen_random_uuid()), v_code,
+    p_payload->>'campaign_name',
+    coalesce((p_payload->>'active')::boolean, true),
+    coalesce((select array_agg(x::public.market_plan)
+                from jsonb_array_elements_text(coalesce(p_payload->'applicable_plans','[]'::jsonb)) x), '{}'),
+    p_payload->>'discount_type',
+    nullif(p_payload->>'discount_percent','')::numeric,
+    nullif(p_payload->>'discount_amount_cents','')::int,
+    p_payload->>'duration',
+    nullif(p_payload->>'duration_in_months','')::int,
+    nullif(p_payload->>'starts_at','')::timestamptz,
+    nullif(p_payload->>'expires_at','')::timestamptz,
+    nullif(p_payload->>'max_redemptions','')::int,
+    coalesce(nullif(p_payload->>'max_redemptions_per_user','')::int, 1),
+    coalesce((p_payload->>'new_customers_only')::boolean, false),
+    p_payload->>'internal_notes',
+    auth.uid()
+  )
+  on conflict (id) do update set
+    code = excluded.code, campaign_name = excluded.campaign_name, active = excluded.active,
+    applicable_plans = excluded.applicable_plans, discount_type = excluded.discount_type,
+    discount_percent = excluded.discount_percent,
+    discount_amount_cents = excluded.discount_amount_cents,
+    duration = excluded.duration, duration_in_months = excluded.duration_in_months,
+    starts_at = excluded.starts_at, expires_at = excluded.expires_at,
+    max_redemptions = excluded.max_redemptions,
+    max_redemptions_per_user = excluded.max_redemptions_per_user,
+    new_customers_only = excluded.new_customers_only,
+    internal_notes = excluded.internal_notes, updated_at = now()
+  returning id into v_id;
+
+  insert into public.admin_audit_log (actor_id, actor_type, action, resource_type, resource_id, new_state)
+  values (auth.uid(), 'ADMIN', 'promo_campaign_upsert', 'promotion_campaign', v_id::text, p_payload);
+
+  return v_id;
+end $$;
+
+
+--
 -- Name: admin_upsert_seed_product(uuid, text, text, text, text, text, text, text, text, integer, integer, integer, text, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2863,6 +3083,53 @@ end $$;
 
 
 --
+-- Name: admin_wanted_usage(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admin_wanted_usage(p_user uuid) RETURNS TABLE(user_id uuid, email text, plan public.market_plan, display_name text, allowed integer, used_today integer, remaining integer, hit_limit_today boolean, lifetime_intros integer, recent jsonb)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare eff record; day0 timestamptz;
+begin
+  if not public.is_admin() then raise exception 'admin only' using errcode = 'P0001'; end if;
+
+  user_id := p_user;
+  select au.email::text into email from auth.users au where au.id = p_user;
+
+  select ep.plan into eff
+    from public.markets m
+    cross join lateral public.market_effective_plan(m.id) ep
+   where m.owner_id = p_user
+   limit 1;
+  plan := coalesce(eff.plan, 'free');
+  select pl.display_name, pl.wanted_intros_per_day into display_name, allowed
+    from public.plan_limits pl where pl.plan = coalesce(eff.plan, 'free');
+  display_name := coalesce(display_name, initcap(plan::text));
+
+  day0 := public.wanted_day_start();
+  select count(*)::int into used_today from public.claims c
+   where c.claimer_id = p_user and c.claim_type = 'wanted_response' and c.created_at >= day0;
+  select count(*)::int into lifetime_intros from public.claims c
+   where c.claimer_id = p_user and c.claim_type = 'wanted_response';
+
+  remaining := case when allowed is null then null else greatest(0, allowed - used_today) end;
+  hit_limit_today := allowed is not null and used_today >= allowed;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'title', li.title, 'created_at', c.created_at, 'status', c.status)
+           order by c.created_at desc), '[]'::jsonb)
+    into recent
+    from (select * from public.claims c2
+           where c2.claimer_id = p_user and c2.claim_type = 'wanted_response'
+           order by c2.created_at desc limit 10) c
+    join public.listings li on li.id = c.listing_id;
+
+  return next;
+end $$;
+
+
+--
 -- Name: ai_agents_no_cycle(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2880,6 +3147,163 @@ begin
     depth := depth + 1;
   end loop;
   return new;
+end $$;
+
+
+--
+-- Name: ai_cancel_action(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_cancel_action(p_action_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  update public.ai_pending_actions
+     set status = 'cancelled'
+   where id = p_action_id and owner_id = uid and status = 'pending';
+  if not found then raise exception 'ACTION_NOT_FOUND'; end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+
+--
+-- Name: ai_confirm_action(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_confirm_action(p_action_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  a public.ai_pending_actions;
+  lid uuid;
+  results jsonb := '[]'::jsonb;
+  r record;
+  drop_result jsonb;
+  bundle_result jsonb;
+  ok_count int := 0;
+  payment_needed int := 0;
+  err text;
+  v_price int;
+  v_unit text;
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+
+  select * into a from public.ai_pending_actions
+   where id = p_action_id and owner_id = uid for update;
+  if a.id is null then raise exception 'ACTION_NOT_FOUND'; end if;
+  if a.status <> 'pending' then raise exception 'ACTION_ALREADY_%', a.status; end if;
+  if a.expires_at <= now() then
+    update public.ai_pending_actions set status = 'expired' where id = a.id;
+    raise exception 'ACTION_EXPIRED';
+  end if;
+
+  -- create_drop is one atomic creation, not a per-listing loop. The canonical RPC
+  -- rechecks ownership and every window/title rule itself.
+  if a.action = 'create_drop' then
+    drop_result := public.create_market_drop(
+      a.payload ->> 'title',
+      (a.payload ->> 'starts_at')::timestamptz,
+      (a.payload ->> 'ends_at')::timestamptz,
+      a.listing_ids,
+      a.payload ->> 'description',
+      true,               -- an AI-confirmed drop is scheduled; drafts stay a UI concern
+      a.request_id);
+    perform public._ai_audit(uid, 'create_drop', null, null,
+      jsonb_build_object('drop_id', drop_result ->> 'id', 'items', drop_result -> 'items'),
+      a.request_id, true);
+    update public.ai_pending_actions
+       set status = 'executed', executed_at = now(),
+           result = jsonb_build_object('ok_count', 1, 'payment_needed', 0, 'drop', drop_result)
+     where id = a.id;
+    return jsonb_build_object('ok', true, 'action', a.action,
+      'ok_count', 1, 'payment_needed', 0, 'drop', drop_result, 'results', '[]'::jsonb);
+  end if;
+
+  -- create_bundle mirrors create_drop: one atomic creation through the
+  -- canonical RPC, which rechecks ownership, composition, and pricing itself.
+  -- PUBLISH_ALLOWANCE_EXHAUSTED propagates: the AI gets no allowance exception.
+  if a.action = 'create_bundle' then
+    begin
+      bundle_result := public.create_market_bundle(
+        a.payload ->> 'title',
+        (a.payload ->> 'price_cents')::int,
+        a.listing_ids,
+        a.payload ->> 'description',
+        a.payload ->> 'unit',
+        null,
+        a.request_id);
+    exception when others then
+      err := sqlerrm;
+      if position('PUBLISH_ALLOWANCE_EXHAUSTED' in err) > 0 then
+        perform public._ai_audit(uid, 'create_bundle', null, null,
+          jsonb_build_object('refused', 'PAYMENT_REQUIRED'), a.request_id, false);
+        update public.ai_pending_actions
+           set status = 'executed', executed_at = now(),
+               result = jsonb_build_object('ok_count', 0, 'payment_needed', 1)
+         where id = a.id;
+        return jsonb_build_object('ok', true, 'action', a.action,
+          'ok_count', 0, 'payment_needed', 1, 'results', '[]'::jsonb);
+      end if;
+      raise;
+    end;
+    perform public._ai_audit(uid, 'create_bundle', null, null,
+      jsonb_build_object('listing_id', bundle_result ->> 'id', 'items', bundle_result -> 'items'),
+      a.request_id, true);
+    update public.ai_pending_actions
+       set status = 'executed', executed_at = now(),
+           result = jsonb_build_object('ok_count', 1, 'payment_needed', 0, 'bundle', bundle_result)
+     where id = a.id;
+    return jsonb_build_object('ok', true, 'action', a.action,
+      'ok_count', 1, 'payment_needed', 0, 'bundle', bundle_result, 'results', '[]'::jsonb);
+  end if;
+
+  foreach lid in array a.listing_ids loop
+    begin
+      if a.action in ('renew', 'restock') then
+        select * into r from public.renew_listing(lid);
+        results := results || jsonb_build_object('id', lid, 'ok', true,
+          'expires_at', r.expires_at, 'funded', r.funded);
+        ok_count := ok_count + 1;
+        perform public._ai_audit(uid, a.action, lid,
+          null, jsonb_build_object('expires_at', r.expires_at, 'funded', r.funded),
+          a.request_id, true);
+      elsif a.action = 'mark_sold_bulk' then
+        results := results || public.ai_mark_sold(lid, a.request_id);
+        ok_count := ok_count + 1;
+      elsif a.action = 'set_price_bulk' then
+        v_price := (a.payload ->> 'price_cents')::int;
+        v_unit  := a.payload ->> 'unit';
+        results := results || public.ai_set_price(lid, v_price, v_unit, a.request_id);
+        ok_count := ok_count + 1;
+      end if;
+    exception when others then
+      err := sqlerrm;
+      if position('PUBLISH_ALLOWANCE_EXHAUSTED' in err) > 0 then
+        payment_needed := payment_needed + 1;
+        results := results || jsonb_build_object('id', lid, 'ok', false,
+          'error', 'PAYMENT_REQUIRED', 'price_cents', 99);
+        perform public._ai_audit(uid, a.action, lid, null,
+          jsonb_build_object('refused', 'PAYMENT_REQUIRED'), a.request_id, false);
+      else
+        results := results || jsonb_build_object('id', lid, 'ok', false, 'error', left(err, 60));
+        perform public._ai_audit(uid, a.action, lid, null,
+          jsonb_build_object('refused', left(err, 60)), a.request_id, false);
+      end if;
+    end;
+  end loop;
+
+  update public.ai_pending_actions
+     set status = 'executed', executed_at = now(),
+         result = jsonb_build_object('ok_count', ok_count, 'payment_needed', payment_needed)
+   where id = a.id;
+
+  return jsonb_build_object('ok', true, 'action', a.action,
+    'ok_count', ok_count, 'payment_needed', payment_needed, 'results', results);
 end $$;
 
 
@@ -2939,6 +3363,203 @@ end $$;
 
 
 --
+-- Name: ai_find_my_listings(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_find_my_listings(p_query text) RETURNS TABLE(id uuid, title text, status text, listing_type text, price_cents integer, unit text, quantity text, expires_at timestamp with time zone, score integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  q   text := lower(btrim(coalesce(p_query, '')));
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  if q = '' or length(q) > 80 then raise exception 'BAD_QUERY'; end if;
+
+  return query
+  select l.id, l.title, l.status::text, l.listing_type::text,
+         l.price_cents, l.unit, l.quantity, l.expires_at,
+         (case when lower(btrim(l.title)) = q then 3
+               when lower(l.title) like '%' || q || '%' or q like '%' || lower(btrim(l.title)) || '%' then 2
+               when tn.id is not null and (
+                    lower(tn.name) = q or lower(tn.name) like '%' || q || '%'
+                    or exists (select 1 from unnest(coalesce(tn.search_synonyms, '{}')) s
+                                where lower(s) = q or lower(s) like '%' || q || '%' or q like '%' || lower(s) || '%'))
+                 then 1
+               else 0 end)::int as score
+    from public.listings l
+    left join public.marketplace_taxonomy_nodes tn on tn.id = l.taxonomy_node_id
+   where l.owner_id = uid
+     and l.status in ('active', 'completed', 'expired', 'paused')
+     and (lower(l.title) like '%' || q || '%'
+          or q like '%' || lower(btrim(l.title)) || '%'
+          or (tn.id is not null and (
+               lower(tn.name) like '%' || q || '%'
+               or exists (select 1 from unnest(coalesce(tn.search_synonyms, '{}')) s
+                           where lower(s) like '%' || q || '%' or q like '%' || lower(s) || '%'))))
+   order by 9 desc, l.created_at desc
+   limit 10;
+end $$;
+
+
+--
+-- Name: ai_mark_sold(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_mark_sold(p_listing uuid, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  l public.listings;
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  select * into l from public.listings where id = p_listing and owner_id = uid for update;
+  if l.id is null then raise exception 'LISTING_NOT_FOUND'; end if;
+  if l.status = 'completed' then
+    return jsonb_build_object('ok', true, 'id', l.id, 'title', l.title, 'already', true);
+  end if;
+  if l.status <> 'active' then raise exception 'LISTING_NOT_ACTIVE'; end if;
+
+  update public.listings set status = 'completed' where id = l.id;
+
+  perform public._ai_audit(uid, 'mark_sold', l.id,
+    jsonb_build_object('status', l.status::text), jsonb_build_object('status', 'completed'),
+    p_request, true);
+
+  return jsonb_build_object('ok', true, 'id', l.id, 'title', l.title, 'status', 'completed');
+end $$;
+
+
+--
+-- Name: ai_my_drafts(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_my_drafts(p_missing_price boolean DEFAULT false) RETURNS TABLE(id uuid, title text, price_cents integer, unit text, source text, listing_type text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  return query
+  select d.id, d.title, d.price_cents, d.unit, d.source, d.listing_type::text
+    from public.listing_drafts d
+   where d.owner_id = uid and d.status = 'pending'
+     and (not coalesce(p_missing_price, false)
+          or (d.listing_type = 'sale' and d.price_cents is null))
+   order by d.created_at desc
+   limit 100;
+end $$;
+
+
+--
+-- Name: ai_my_expiring(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_my_expiring(p_within_days integer DEFAULT 2) RETURNS TABLE(id uuid, title text, expires_at timestamp with time zone, listing_type text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  if p_within_days is null or p_within_days < 0 or p_within_days > 30 then
+    raise exception 'BAD_WINDOW';
+  end if;
+  return query
+  select l.id, l.title, l.expires_at, l.listing_type::text
+    from public.listings l
+   where l.owner_id = uid and l.status = 'active'
+     and l.expires_at <= now() + make_interval(days => p_within_days)
+   order by l.expires_at
+   limit 50;
+end $$;
+
+
+--
+-- Name: ai_my_inventory(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_my_inventory() RETURNS TABLE(id uuid, title text, status text, listing_type text, price_cents integer, unit text, quantity text, expires_at timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare uid uuid := auth.uid();
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  return query
+  select l.id, l.title, l.status::text, l.listing_type::text,
+         l.price_cents, l.unit, l.quantity, l.expires_at
+    from public.listings l
+   where l.owner_id = uid and l.status in ('active', 'completed', 'expired', 'paused')
+   order by case l.status when 'active' then 0 when 'expired' then 1 when 'completed' then 2 else 3 end,
+            l.expires_at nulls last
+   limit 100;
+end $$;
+
+
+--
+-- Name: ai_propose_action(text, uuid[], jsonb, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_propose_action(p_action text, p_listing_ids uuid[], p_payload jsonb DEFAULT '{}'::jsonb, p_summary text DEFAULT NULL::text, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  n int;
+  owned int;
+  act_id uuid;
+  k text;
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  if p_action is null or p_action not in ('renew', 'restock', 'mark_sold_bulk', 'set_price_bulk', 'create_drop', 'create_bundle') then
+    raise exception 'BAD_ACTION';
+  end if;
+  n := coalesce(array_length(p_listing_ids, 1), 0);
+  if n = 0 then raise exception 'NO_LISTINGS'; end if;
+  if n > 20 then raise exception 'BULK_LIMIT' using hint = format('%s > 20', n); end if;
+
+  select count(distinct l.id)::int into owned from public.listings l
+   where l.id = any (p_listing_ids) and l.owner_id = uid and l.status <> 'removed';
+  if owned <> (select count(distinct x) from unnest(p_listing_ids) x) then
+    raise exception 'LISTING_NOT_FOUND';
+  end if;
+
+  if p_payload is not null then
+    for k in select jsonb_object_keys(p_payload) loop
+      if k not in ('price_cents', 'unit', 'title', 'description', 'starts_at', 'ends_at') then
+        raise exception 'UNKNOWN_FIELD' using hint = k;
+      end if;
+    end loop;
+  end if;
+  if p_action = 'create_drop' then
+    if p_payload ->> 'title' is null then raise exception 'MISSING_FIELD' using hint = 'title'; end if;
+    if (p_payload ->> 'starts_at') is null or (p_payload ->> 'ends_at') is null then
+      raise exception 'MISSING_FIELD' using hint = 'starts_at/ends_at';
+    end if;
+    perform (p_payload ->> 'starts_at')::timestamptz, (p_payload ->> 'ends_at')::timestamptz;
+  end if;
+  if p_action = 'create_bundle' then
+    if p_payload ->> 'title' is null then raise exception 'MISSING_FIELD' using hint = 'title'; end if;
+    if (p_payload ->> 'price_cents') is null then raise exception 'MISSING_FIELD' using hint = 'price_cents'; end if;
+    perform (p_payload ->> 'price_cents')::int;
+  end if;
+
+  insert into public.ai_pending_actions (owner_id, action, listing_ids, payload, summary, request_id)
+  values (uid, p_action, p_listing_ids, coalesce(p_payload, '{}'::jsonb),
+          left(coalesce(p_summary, p_action), 300), p_request)
+  returning id into act_id;
+
+  return jsonb_build_object('action_id', act_id, 'expires_in_minutes', 15);
+end $$;
+
+
+--
 -- Name: ai_reserve_slot(uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2953,6 +3574,125 @@ CREATE FUNCTION public.ai_reserve_slot(p_uid uuid, p_feature text, p_cap integer
     where ai_daily_counter.count < p_cap
   returning true;
 $$;
+
+
+--
+-- Name: ai_set_price(uuid, integer, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_set_price(p_listing uuid, p_price_cents integer, p_unit text DEFAULT NULL::text, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  l public.listings;
+  allowed_units constant text[] := array[
+    'lb','oz','each','bunch','dozen','half-dozen','jar','basket','pint','quart',
+    'bag','loaf','head','ear','peck','half-peck','bushel','half-bushel','flat','stem'];
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  select * into l from public.listings where id = p_listing and owner_id = uid for update;
+  if l.id is null then raise exception 'LISTING_NOT_FOUND'; end if;
+  if l.status = 'removed' then raise exception 'LISTING_UNAVAILABLE'; end if;
+  if l.listing_type <> 'sale' then raise exception 'NOT_A_SALE_LISTING'; end if;
+  if p_price_cents is null or p_price_cents < 1 or p_price_cents > 100000 then
+    raise exception 'INVALID_PRICE';
+  end if;
+  if p_unit is not null and not (lower(btrim(p_unit)) = any (allowed_units)) then
+    raise exception 'INVALID_UNIT';
+  end if;
+
+  update public.listings
+     set price_cents = p_price_cents,
+         unit = coalesce(lower(btrim(p_unit)), unit)
+   where id = l.id;
+
+  perform public._ai_audit(uid, 'set_price', l.id,
+    jsonb_build_object('price_cents', l.price_cents, 'unit', l.unit),
+    jsonb_build_object('price_cents', p_price_cents, 'unit', coalesce(lower(btrim(p_unit)), l.unit)),
+    p_request, true);
+
+  return jsonb_build_object('ok', true, 'id', l.id, 'title', l.title,
+    'price_cents', p_price_cents, 'unit', coalesce(lower(btrim(p_unit)), l.unit));
+end $$;
+
+
+--
+-- Name: ai_set_quantity(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_set_quantity(p_listing uuid, p_quantity text, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  l public.listings;
+  q text := nullif(btrim(coalesce(p_quantity, '')), '');
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  select * into l from public.listings where id = p_listing and owner_id = uid for update;
+  if l.id is null then raise exception 'LISTING_NOT_FOUND'; end if;
+  if l.status = 'removed' then raise exception 'LISTING_UNAVAILABLE'; end if;
+  if q is null or length(q) > 60 then raise exception 'INVALID_QUANTITY'; end if;
+
+  update public.listings set quantity = q where id = l.id;
+
+  perform public._ai_audit(uid, 'set_quantity', l.id,
+    jsonb_build_object('quantity', l.quantity), jsonb_build_object('quantity', q),
+    p_request, true);
+
+  return jsonb_build_object('ok', true, 'id', l.id, 'title', l.title, 'quantity', q);
+end $$;
+
+
+--
+-- Name: ai_update_draft(uuid, integer, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ai_update_draft(p_draft uuid, p_price_cents integer DEFAULT NULL::integer, p_unit text DEFAULT NULL::text, p_quantity text DEFAULT NULL::text, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  d public.listing_drafts;
+  allowed_units constant text[] := array[
+    'lb','oz','each','bunch','dozen','half-dozen','jar','basket','pint','quart',
+    'bag','loaf','head','ear','peck','half-peck','bushel','half-bushel','flat','stem'];
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  select * into d from public.listing_drafts where id = p_draft and owner_id = uid for update;
+  if d.id is null then raise exception 'DRAFT_NOT_FOUND'; end if;
+  if d.status <> 'pending' then raise exception 'DRAFT_NOT_PENDING'; end if;
+  if p_price_cents is not null and (p_price_cents < 1 or p_price_cents > 100000) then
+    raise exception 'INVALID_PRICE';
+  end if;
+  if p_unit is not null and not (lower(btrim(p_unit)) = any (allowed_units)) then
+    raise exception 'INVALID_UNIT';
+  end if;
+  if p_quantity is not null and length(btrim(p_quantity)) > 60 then
+    raise exception 'INVALID_QUANTITY';
+  end if;
+
+  update public.listing_drafts
+     set price_cents = coalesce(p_price_cents, price_cents),
+         unit = coalesce(lower(btrim(p_unit)), unit),
+         quantity = coalesce(nullif(btrim(p_quantity), ''), quantity),
+         updated_at = now()
+   where id = d.id;
+
+  perform public._ai_audit(uid, 'update_draft', null,
+    jsonb_build_object('draft_id', d.id, 'price_cents', d.price_cents, 'unit', d.unit, 'quantity', d.quantity),
+    jsonb_strip_nulls(jsonb_build_object('draft_id', d.id, 'price_cents', p_price_cents,
+      'unit', lower(btrim(p_unit)), 'quantity', nullif(btrim(p_quantity), ''))),
+    p_request, true);
+
+  return jsonb_build_object('ok', true, 'id', d.id, 'title', d.title,
+    'price_cents', coalesce(p_price_cents, d.price_cents),
+    'unit', coalesce(lower(btrim(p_unit)), d.unit));
+end $$;
 
 
 --
@@ -2973,6 +3713,27 @@ begin
   return new_count <= p_cap;
 end;
 $$;
+
+
+--
+-- Name: authorization_mode_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.authorization_mode_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+declare
+  v_live boolean;
+begin
+  if new.status = 'consumed' and old.status is distinct from 'consumed' then
+    select payments_live_enabled into v_live from public.billing_config limit 1;
+    if new.stripe_livemode is distinct from coalesce(v_live, false) then
+      raise exception 'AUTHORIZATION_MODE_MISMATCH'
+        using hint = 'this authorization was minted in the other Stripe mode';
+    end if;
+  end if;
+  return new;
+end $$;
 
 
 --
@@ -3153,6 +3914,29 @@ CREATE FUNCTION public.blocked_pair(a uuid, b uuid) RETURNS boolean
     where (blocker_id = a and blocked_id = b)
        or (blocker_id = b and blocked_id = a)
   );
+$$;
+
+
+--
+-- Name: bundle_components_available(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bundle_components_available(p_listing uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select not exists (
+    select 1
+      from public.listing_components c
+      left join public.listings cl on cl.id = c.component_listing_id
+      left join public.markets  cm on cm.id = cl.market_id
+     where c.listing_id = p_listing
+       and (cl.id is null
+            or cl.status <> 'active'
+            or cl.expires_at <= now()
+            or cm.status <> 'active')
+  )
+  and exists (select 1 from public.listing_components c where c.listing_id = p_listing);
 $$;
 
 
@@ -3424,6 +4208,24 @@ $$;
 
 
 --
+-- Name: claims_bundle_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.claims_bundle_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare bundled boolean;
+begin
+  select is_bundle into bundled from public.listings where id = new.listing_id;
+  if coalesce(bundled, false) and not public.bundle_components_available(new.listing_id) then
+    raise exception 'BUNDLE_UNAVAILABLE';
+  end if;
+  return new;
+end $$;
+
+
+--
 -- Name: complete_market_order(uuid, boolean, text, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3599,6 +4401,427 @@ end $$;
 
 
 --
+-- Name: create_import_drafts(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_import_drafts(p_import_id uuid, p_candidates jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid          uuid := auth.uid();
+  mkt          uuid;
+  n            int;
+  i            int;
+  c            jsonb;
+  k            text;
+  -- per-candidate validated values
+  v_name       text;
+  v_variety    text;
+  v_type       text;
+  v_price      int;
+  v_unit       text;
+  v_terms      text[];
+  best_node    uuid;
+  best_path    text;
+  best_score   int;
+  dup_id       uuid;
+  created_ids  uuid[] := '{}';
+  results      jsonb := '[]'::jsonb;
+  dup_notes    jsonb := '[]'::jsonb;
+  n_created    int := 0;
+  n_existing   int := 0;
+  pending_cnt  int;
+  usage        record;
+  sale_selected int := 0;
+  allowed_keys constant text[] := array[
+    'product_name','variety','category_terms','listing_type','price_cents','unit','quantity',
+    'availability','pickup','location_text','description','seller_notes',
+    'compliance_attention_required'];
+  allowed_units constant text[] := array[
+    'lb','oz','each','bunch','dozen','half-dozen','jar','basket','pint','quart',
+    'bag','loaf','head','ear','peck','half-peck','bushel','half-bushel','flat','stem',''];
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  if p_import_id is null then raise exception 'IMPORT_ID_REQUIRED'; end if;
+
+  -- The seller's OWN Market, resolved here. No parameter exists to point elsewhere.
+  select id into mkt from public.markets where owner_id = uid limit 1;
+  if mkt is null then raise exception 'NO_MARKET' using hint = 'Post once to create your Market first.'; end if;
+
+  -- Anti-abuse: drafts are free, storage is not infinite. 40 per request (the extraction
+  -- contract's own ceiling) and a pending-import backlog cap well above honest use.
+  if p_candidates is null or jsonb_typeof(p_candidates) <> 'array' then
+    raise exception 'BAD_CANDIDATES' using hint = 'candidates must be an array';
+  end if;
+  n := jsonb_array_length(p_candidates);
+  if n = 0 then raise exception 'NO_CANDIDATES'; end if;
+  if n > 40 then raise exception 'TOO_MANY_CANDIDATES' using hint = format('%s > 40', n); end if;
+
+  select count(*)::int into pending_cnt from public.listing_drafts
+   where owner_id = uid and status = 'pending' and source = 'market_import';
+  if pending_cnt + n > 200 then
+    raise exception 'IMPORT_DRAFTS_LIMIT'
+      using hint = 'Too many pending imported drafts — publish or discard some first.';
+  end if;
+
+  -- ---- PASS 1: validate every candidate before anything is written --------
+  for i in 0 .. n - 1 loop
+    c := p_candidates -> i;
+    if jsonb_typeof(c) <> 'object' then
+      raise exception 'BAD_CANDIDATE' using hint = format('candidates[%s] is not an object', i);
+    end if;
+    for k in select jsonb_object_keys(c) loop
+      if not (k = any (allowed_keys)) then
+        raise exception 'UNKNOWN_FIELD' using hint = format('candidates[%s].%s', i, k);
+      end if;
+    end loop;
+
+    v_name := nullif(btrim(coalesce(c ->> 'product_name', '')), '');
+    if v_name is null or length(v_name) > 80 then
+      raise exception 'BAD_PRODUCT_NAME' using hint = format('candidates[%s]', i);
+    end if;
+
+    v_type := coalesce(c ->> 'listing_type', 'sale');
+    if v_type not in ('sale', 'free', 'trade', 'wanted') then
+      raise exception 'BAD_LISTING_TYPE' using hint = format('candidates[%s]: %s', i, v_type);
+    end if;
+
+    if c ? 'price_cents' and jsonb_typeof(c -> 'price_cents') <> 'null' then
+      if jsonb_typeof(c -> 'price_cents') <> 'number' then
+        raise exception 'BAD_PRICE' using hint = format('candidates[%s]', i);
+      end if;
+      v_price := (c ->> 'price_cents')::numeric::int;
+      if (c ->> 'price_cents')::numeric <> v_price or v_price < 0 or v_price > 100000 then
+        raise exception 'BAD_PRICE' using hint = format('candidates[%s]', i);
+      end if;
+    end if;
+
+    v_unit := lower(btrim(coalesce(c ->> 'unit', '')));
+    if not (v_unit = any (allowed_units)) then
+      raise exception 'BAD_UNIT' using hint = format('candidates[%s]: %s', i, v_unit);
+    end if;
+
+    if length(coalesce(c ->> 'variety', '')) > 80
+       or length(coalesce(c ->> 'quantity', '')) > 160
+       or length(coalesce(c ->> 'availability', '')) > 160
+       or length(coalesce(c ->> 'pickup', '')) > 160
+       or length(coalesce(c ->> 'location_text', '')) > 160
+       or length(coalesce(c ->> 'description', '')) > 600
+       or length(coalesce(c ->> 'seller_notes', '')) > 600 then
+      raise exception 'FIELD_TOO_LONG' using hint = format('candidates[%s]', i);
+    end if;
+    if c ? 'compliance_attention_required'
+       and jsonb_typeof(c -> 'compliance_attention_required') not in ('boolean', 'null') then
+      raise exception 'BAD_COMPLIANCE_FLAG' using hint = format('candidates[%s]', i);
+    end if;
+    if c ? 'category_terms' and jsonb_typeof(c -> 'category_terms') not in ('array', 'null') then
+      raise exception 'BAD_CATEGORY_TERMS' using hint = format('candidates[%s]', i);
+    end if;
+  end loop;
+
+  -- ---- PASS 2: map taxonomy, flag duplicates, insert ----------------------
+  for i in 0 .. n - 1 loop
+    c := p_candidates -> i;
+    v_name    := btrim(c ->> 'product_name');
+    v_variety := btrim(coalesce(c ->> 'variety', ''));
+    v_type    := coalesce(c ->> 'listing_type', 'sale');
+    v_price   := case when c ? 'price_cents' and jsonb_typeof(c -> 'price_cents') = 'number'
+                      then (c ->> 'price_cents')::numeric::int end;
+    v_unit    := lower(btrim(coalesce(c ->> 'unit', '')));
+    if v_type = 'sale' then sale_selected := sale_selected + 1; end if;
+
+    -- Search terms: the candidate's own words. The MODEL never supplies node ids.
+    select coalesce(array_agg(lower(t)), '{}') into v_terms
+      from (
+        select v_name as t
+        union all select v_variety where v_variety <> ''
+        union all select btrim(x.value) from jsonb_array_elements_text(coalesce(c -> 'category_terms', '[]'::jsonb)) x
+                   where btrim(x.value) <> '' limit 8
+      ) s where t is not null and t <> '';
+
+    -- Best node by the same scoring the vision functions use: exact hit 3, substring 1.
+    -- Only an EXACT hit (score >= 3) earns a stored node; anything weaker leaves the node
+    -- NULL and the category for the seller to confirm in review.
+    select n2.id, n2.path, n2.score into best_node, best_path, best_score
+      from (
+        select tn.id, tn.path,
+               (select coalesce(sum(case
+                   when lower(tn.name) = term or term = any (select lower(s2) from unnest(coalesce(tn.search_synonyms, '{}')) s2)
+                     then 3
+                   when lower(tn.name) like '%' || term || '%'
+                     or exists (select 1 from unnest(coalesce(tn.search_synonyms, '{}')) s3
+                                 where lower(s3) like '%' || term || '%' or term like '%' || lower(s3) || '%')
+                     then 1
+                   else 0 end), 0)
+                  from unnest(v_terms) term)::int as score
+          from public.marketplace_taxonomy_nodes tn
+         where tn.active
+      ) n2
+     where n2.score > 0
+     order by n2.score desc
+     limit 1;
+
+    if best_score is null or best_score < 3 then
+      best_node := null;
+    end if;
+
+    -- V1 duplicate signal: same Market, live-ish listing, same normalized name — or the same
+    -- taxonomy node when the variety does not tell them apart. Advisory only; nothing is
+    -- overwritten and nothing is skipped.
+    select l.id into dup_id
+      from public.listings l
+     where l.market_id = mkt
+       and l.status in ('active', 'paused')
+       and ( lower(btrim(l.title)) = lower(v_name)
+             or ( best_node is not null and l.taxonomy_node_id = best_node
+                  and (v_variety = '' or position(lower(v_variety) in lower(coalesce(l.title, ''))) > 0) ) )
+     order by l.created_at desc
+     limit 1;
+
+    insert into public.listing_drafts (
+      owner_id, market_id, batch_id, source, status,
+      title, description, category, taxonomy_node_id, listing_type,
+      price_cents, unit, quantity, photos,
+      ai_candidate_name, compliance_attention,
+      import_request_id, import_candidate_index, duplicate_listing_id, import_meta
+    ) values (
+      uid, mkt, p_import_id, 'market_import', 'pending',
+      v_name,
+      nullif(btrim(coalesce(c ->> 'description', '')), ''),
+      case when best_path is not null and best_score >= 3 then split_part(best_path, '/', 1) end,
+      best_node, v_type::listing_type,
+      case when v_type = 'sale' then v_price end,
+      nullif(v_unit, ''), nullif(btrim(coalesce(c ->> 'quantity', '')), ''),
+      '{}',                                       -- NEVER the source screenshot: listing photos
+                                                  -- are a separate, seller-chosen concept.
+      case when v_variety <> '' then v_name || ' (' || v_variety || ')' else v_name end,
+      coalesce((c ->> 'compliance_attention_required')::boolean, false),
+      p_import_id, i, dup_id,
+      jsonb_strip_nulls(jsonb_build_object(
+        'variety',       nullif(v_variety, ''),
+        'availability',  nullif(btrim(coalesce(c ->> 'availability', '')), ''),
+        'pickup',        nullif(btrim(coalesce(c ->> 'pickup', '')), ''),
+        'location_text', nullif(btrim(coalesce(c ->> 'location_text', '')), ''),
+        'seller_notes',  nullif(btrim(coalesce(c ->> 'seller_notes', '')), '')))
+    )
+    on conflict (owner_id, import_request_id, import_candidate_index) where import_request_id is not null
+    do nothing;
+
+    if found then
+      n_created := n_created + 1;
+    else
+      n_existing := n_existing + 1;
+    end if;
+
+    if dup_id is not null then
+      dup_notes := dup_notes || jsonb_build_object(
+        'candidate_index', i, 'product_name', v_name, 'existing_listing_id', dup_id);
+    end if;
+    best_node := null; best_path := null; best_score := null; dup_id := null; v_price := null;
+  end loop;
+
+  -- Plan-aware answer for the UI: how the selected Sell drafts compare to the allowance.
+  -- Informational only — nothing here blocks or reserves anything.
+  select * into usage from public.market_allowance_usage(mkt);
+
+  -- Best-effort analytics: one event row answers "how is import converting" without a new
+  -- system. A missing profile row or similar must never fail the seller's draft creation.
+  begin
+    insert into public.events (user_id, event_type, metadata) values (uid, 'market_import_drafts', jsonb_build_object(
+      'import_request_id', p_import_id, 'candidates', n, 'created', n_created,
+      'already_existed', n_existing, 'duplicates_flagged', jsonb_array_length(dup_notes),
+      'plan', usage.plan));
+  exception when others then null;
+  end;
+
+  return jsonb_build_object(
+    'import_request_id', p_import_id,
+    'candidates', n,
+    'drafts_created', n_created,
+    'drafts_already_existed', n_existing,
+    'draft_ids', (select coalesce(jsonb_agg(d.id order by d.import_candidate_index), '[]'::jsonb)
+                    from public.listing_drafts d
+                   where d.owner_id = uid and d.import_request_id = p_import_id),
+    'duplicates', dup_notes,
+    'allowance', jsonb_build_object(
+      'plan', usage.plan,
+      'publishes_allowed', usage.publishes_allowed,
+      'publishes_used', usage.publishes_used,
+      'publishes_remaining', usage.publishes_remaining,
+      'sale_candidates_selected', sale_selected,
+      'exceeds_included_allowance',
+        usage.publishes_remaining is not null and sale_selected > usage.publishes_remaining));
+end;
+$$;
+
+
+--
+-- Name: create_market_bundle(text, integer, uuid[], text, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_market_bundle(p_title text, p_price_cents integer, p_component_ids uuid[], p_description text DEFAULT NULL::text, p_unit text DEFAULT NULL::text, p_inventory integer DEFAULT NULL::integer, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+declare
+  uid uuid := auth.uid();
+  mkt uuid;
+  n int;
+  owned int;
+  new_id uuid;
+  lifetime int;
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  select id into mkt from public.markets where owner_id = uid limit 1;
+  if mkt is null then raise exception 'NO_MARKET'; end if;
+
+  if p_title is null or length(btrim(p_title)) < 1 or length(btrim(p_title)) > 80 then
+    raise exception 'INVALID_TITLE';
+  end if;
+  if p_description is not null and length(p_description) > 600 then
+    raise exception 'INVALID_DESCRIPTION';
+  end if;
+  if p_price_cents is null or p_price_cents < 1 or p_price_cents > 100000 then
+    raise exception 'INVALID_PRICE';
+  end if;
+  if p_inventory is not null and (p_inventory < 1 or p_inventory > 999) then
+    raise exception 'INVALID_INVENTORY';
+  end if;
+
+  n := coalesce(array_length(p_component_ids, 1), 0);
+  if n < 2 then raise exception 'BUNDLE_NEEDS_ITEMS'; end if;
+  if n > 12 then raise exception 'BUNDLE_ITEM_LIMIT'; end if;
+  if n <> (select count(distinct x) from unnest(p_component_ids) x) then
+    raise exception 'BUNDLE_DUPLICATE_COMPONENT';
+  end if;
+
+  -- Same owner, same market, currently active, and never another bundle.
+  select count(*)::int into owned
+    from public.listings l
+   where l.id = any (p_component_ids)
+     and l.owner_id = uid
+     and l.market_id = mkt
+     and l.status = 'active'
+     and l.expires_at > now()
+     and not l.is_bundle;
+  if owned <> n then raise exception 'COMPONENT_NOT_AVAILABLE'; end if;
+
+  -- The plan's Sell lifetime (7 days), same as every publish path.
+  select coalesce(pl.listing_lifetime_days, 7) into lifetime
+    from public.market_effective_plan(mkt) ep
+    join public.plan_limits pl on pl.plan = ep.plan;
+
+  -- This insert IS a Sell publication: enforce_publish_allowance and the
+  -- content screening trigger both fire exactly as they do for any listing.
+  -- PUBLISH_ALLOWANCE_EXHAUSTED propagates to the caller, where the existing
+  -- $0.99 / upgrade paths take over. The AI gets no exception (CTO ruling).
+  insert into public.listings
+    (owner_id, market_id, title, description, category, listing_type, kind,
+     price_cents, unit, inventory_count, quantity, status, expires_at, is_bundle)
+  values
+    (uid, mkt, btrim(p_title), nullif(btrim(coalesce(p_description, '')), ''),
+     'basket', 'sale', 'offer', p_price_cents, nullif(btrim(coalesce(p_unit, '')), ''),
+     p_inventory, case when p_inventory is not null
+                       then p_inventory || ' basket' || case when p_inventory = 1 then '' else 's' end
+                       else null end,
+     'active', now() + make_interval(days => lifetime), true)
+  returning id into new_id;
+
+  insert into public.listing_components (listing_id, component_listing_id, position)
+  select new_id, x.listing_id, x.ord - 1
+    from (select distinct on (u.listing_id) u.listing_id, u.ord
+            from unnest(p_component_ids) with ordinality as u(listing_id, ord)
+           order by u.listing_id, u.ord) x;
+
+  begin
+    insert into public.events (user_id, event_type, metadata)
+    values (uid, 'bundle_created',
+            jsonb_strip_nulls(jsonb_build_object(
+              'listing_id', new_id, 'market_id', mkt, 'items', n,
+              'price_cents', p_price_cents, 'request_id', p_request)));
+  exception when others then null;
+  end;
+
+  return jsonb_build_object('ok', true, 'id', new_id, 'title', btrim(p_title),
+                            'items', n, 'price_cents', p_price_cents);
+end $_$;
+
+
+--
+-- Name: create_market_drop(text, timestamp with time zone, timestamp with time zone, uuid[], text, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_market_drop(p_title text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_listing_ids uuid[], p_description text DEFAULT NULL::text, p_publish boolean DEFAULT false, p_request text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+  mkt uuid;
+  n int;
+  owned int;
+  new_id uuid;
+  i int;
+begin
+  if uid is null then raise exception 'UNAUTHENTICATED'; end if;
+  select id into mkt from public.markets where owner_id = uid limit 1;
+  if mkt is null then raise exception 'NO_MARKET'; end if;
+
+  if p_title is null or length(btrim(p_title)) < 1 or length(btrim(p_title)) > 80 then
+    raise exception 'INVALID_TITLE';
+  end if;
+  if regexp_replace(lower(p_title), '[^a-z0-9]', '', 'g') like '%seeddrop%' then
+    -- Only impersonation of the branded "Seed Drop" product is reserved;
+    -- plain "seed" titles are legitimate seller inventory.
+    raise exception 'RESERVED_TITLE';
+  end if;
+  if p_description is not null and length(p_description) > 400 then
+    raise exception 'INVALID_DESCRIPTION';
+  end if;
+  if p_starts_at is null or p_ends_at is null or p_ends_at <= p_starts_at then
+    raise exception 'INVALID_WINDOW';
+  end if;
+  if p_ends_at < now() then raise exception 'WINDOW_IN_PAST'; end if;
+  if p_ends_at - p_starts_at > interval '14 days' then raise exception 'WINDOW_TOO_LONG'; end if;
+
+  n := coalesce(array_length(p_listing_ids, 1), 0);
+  if n = 0 then raise exception 'NO_LISTINGS'; end if;
+  if n > 30 then raise exception 'DROP_ITEM_LIMIT'; end if;
+  select count(distinct l.id)::int into owned from public.listings l
+   where l.id = any (p_listing_ids) and l.owner_id = uid and l.status <> 'removed';
+  if owned <> (select count(distinct x) from unnest(p_listing_ids) x) then
+    raise exception 'LISTING_NOT_FOUND';
+  end if;
+
+  insert into public.market_drops (market_id, created_by, title, description, starts_at, ends_at, status)
+  values (mkt, uid, btrim(p_title), nullif(btrim(coalesce(p_description, '')), ''),
+          p_starts_at, p_ends_at, case when p_publish then 'scheduled' else 'draft' end)
+  returning id into new_id;
+
+  i := 0;
+  insert into public.market_drop_items (drop_id, listing_id, position)
+  select new_id, x.listing_id, x.ord - 1
+    from (select distinct on (u.listing_id) u.listing_id, u.ord
+            from unnest(p_listing_ids) with ordinality as u(listing_id, ord)
+           order by u.listing_id, u.ord) x;
+
+  -- Audit: structured facts only, same posture as every ai_action event.
+  begin
+    insert into public.events (user_id, event_type, metadata)
+    values (uid, case when p_publish then 'drop_scheduled' else 'drop_created' end,
+            jsonb_strip_nulls(jsonb_build_object(
+              'drop_id', new_id, 'market_id', mkt, 'items', n,
+              'starts_at', p_starts_at, 'ends_at', p_ends_at, 'request_id', p_request)));
+  exception when others then null;
+  end;
+
+  return jsonb_build_object('ok', true, 'id', new_id, 'title', btrim(p_title),
+    'status', case when p_publish then 'scheduled' else 'draft' end, 'items', n);
+end $$;
+
+
+--
 -- Name: create_market_order(uuid, jsonb, timestamp with time zone, timestamp with time zone, text, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3659,12 +4882,13 @@ begin
             loc.id, loc.nickname, loc.location_type, 'pickup')
     returning id into v_order;
 
-  else
+  else -- delivery
     if p_address is null then raise exception 'ADDRESS_REQUIRED' using errcode = 'P0001'; end if;
     select * into addr from public.buyer_delivery_addresses
      where id = p_address and buyer_id = v_buyer;
     if addr is null then raise exception 'ADDRESS_NOT_FOUND' using errcode = 'P0001'; end if;
 
+    -- Authoritative quote (never the client's math).
     select * into q from public.delivery_quote(p_market, p_address);
     if not q.eligible then
       raise exception 'DELIVERY_INELIGIBLE: %', coalesce(q.reason, 'not available') using errcode = 'P0001';
@@ -3673,10 +4897,14 @@ begin
     select * into ds from public.market_delivery_settings where market_id = p_market;
     v_tz := coalesce(ds.tz, 'America/New_York');
 
+    -- Requested-window validation against the seller's timing rules.
+    -- No timing mode enabled → any future window; exact day is arranged in
+    -- the existing propose/confirm negotiation, like pickup.
     if p_start is null or p_end is null or p_end <= p_start then
       raise exception 'BAD_WINDOW' using errcode = 'P0001';
     end if;
     if (p_start at time zone v_tz)::date = (now() at time zone v_tz)::date then
+      -- same-day request
       if not ds.same_day then
         raise exception 'SAME_DAY_UNAVAILABLE: this Market does not offer same-day delivery' using errcode = 'P0001';
       end if;
@@ -3684,6 +4912,8 @@ begin
         raise exception 'CUTOFF_PASSED: same-day orders close at %', to_char(ds.same_day_cutoff, 'HH12:MI AM') using errcode = 'P0001';
       end if;
     elsif (p_start at time zone v_tz)::date = (now() at time zone v_tz)::date + 1 then
+      -- next-day request (also satisfied by a weekly schedule that covers it —
+      -- but the schedule's order-by deadline applies either way)
       if ds.scheduled and extract(dow from p_start at time zone v_tz)::int = any(ds.delivery_dows) then
         if ds.order_by_dow is not null
            and (now() at time zone v_tz)::date >
@@ -3706,6 +4936,7 @@ begin
         raise exception 'NOT_A_DELIVERY_DAY: this Market delivers on scheduled days only' using errcode = 'P0001';
       end if;
       if ds.order_by_dow is not null then
+        -- order-by day must not already be past in the current week window
         if (now() at time zone v_tz)::date >
            ((p_start at time zone v_tz)::date
              - ((7 + extract(dow from p_start at time zone v_tz)::int - ds.order_by_dow) % 7)) then
@@ -3714,12 +4945,14 @@ begin
         end if;
       end if;
     elsif ds.same_day or ds.next_day then
+      -- same/next-day-only Market: a window 2+ days out has no valid mode
       raise exception 'NOT_A_DELIVERY_DAY: this Market offers same-day or next-day delivery only' using errcode = 'P0001';
     end if;
     if p_start < now() then
       raise exception 'BAD_WINDOW: that time is in the past' using errcode = 'P0001';
     end if;
 
+    -- Item-level compliance: active pickup-only rules refuse delivery.
     if exists (
       select 1 from jsonb_array_elements(p_items) x
       join public.listings li on li.id = (x->>'listing_id')::uuid
@@ -3746,13 +4979,18 @@ begin
   for item in select * from jsonb_array_elements(p_items) loop
     v_qty := coalesce((item->>'quantity')::numeric, 1);
     if v_qty <= 0 then raise exception 'BAD_QUANTITY' using errcode = 'P0001'; end if;
-    select id, title, unit, price_cents, market_id, status, taxonomy_node_id
+    select id, title, unit, price_cents, market_id, status, taxonomy_node_id, is_bundle
       into l from public.listings where id = (item->>'listing_id')::uuid;
     if l is null or l.market_id is distinct from p_market then
       raise exception 'ITEM_NOT_IN_MARKET' using errcode = 'P0001';
     end if;
     if l.status <> 'active' then
       raise exception 'ITEM_UNAVAILABLE: %', l.title using errcode = 'P0001';
+    end if;
+    -- 0121: an unavailable basket cannot be ordered no matter what a stale
+    -- client rendered — canonical component availability decides.
+    if l.is_bundle and not public.bundle_components_available(l.id) then
+      raise exception 'BUNDLE_UNAVAILABLE: %', l.title using errcode = 'P0001';
     end if;
     v_line := coalesce(l.price_cents, 0) * v_qty;
     v_subtotal := v_subtotal + v_line;
@@ -3764,6 +5002,29 @@ begin
   update public.market_orders set subtotal_cents = v_subtotal, updated_at = now()
    where id = v_order;
   return v_order;
+end $$;
+
+
+--
+-- Name: create_publish_authorization(uuid, text, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_publish_authorization(p_market uuid, p_intent text, p_listing uuid, p_session text, p_amount_cents integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare v_id uuid;
+begin
+  if p_intent not in ('publish','renewal') then
+    raise exception 'BAD_INTENT' using errcode = 'P0001';
+  end if;
+
+  insert into public.listing_publish_authorizations
+    (market_id, listing_id, intent, amount_cents, stripe_session_id, status)
+  values (p_market, p_listing, p_intent, p_amount_cents, p_session, 'pending')
+  on conflict (stripe_session_id) do update set market_id = excluded.market_id
+  returning id into v_id;
+  return v_id;
 end $$;
 
 
@@ -3896,6 +5157,246 @@ begin
   if not found then raise exception 'DRAFT_NOT_FOUND'; end if;
 end;
 $$;
+
+
+--
+-- Name: drop_alert_dispatch(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.drop_alert_dispatch(p_limit integer DEFAULT 200) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  claimed_count int := 0;
+  submitted_msgs int := 0;
+  batch record;
+  req_id bigint;
+  -- Detect the callable, not the extension row: production gets it from
+  -- pg_net; the local test harness provides a capture shim with the same
+  -- signature so dispatch/reconcile logic is fully testable offline.
+  has_net boolean := to_regproc('net.http_post') is not null;
+begin
+  -- 3a. CLAIM: eligible = live drop × opted-in current follower × has tokens.
+  with live_drops as (
+    select d.id, m.id as mkt_id
+      from public.market_drops d
+      join public.markets m on m.id = d.market_id
+      join public.profiles p on p.id = m.owner_id
+     where d.status = 'scheduled'
+       and now() >= d.starts_at and now() < d.ends_at
+       and m.status = 'active'
+       and coalesce(p.suspended, false) = false
+       -- 0122: never announce a Drop with nothing left in it. available_items
+       -- comes from the canonical view (which also hides unavailable baskets),
+       -- so "see what's available" is only pushed when something actually is.
+       and exists (select 1 from public.public_market_drops v
+                    where v.id = d.id and v.available_items > 0)
+  ),
+  eligible as (
+    select ld.id as drop_id, f.follower_id as user_id
+      from live_drops ld
+      join public.market_follows f
+        on f.market_id = ld.mkt_id and f.drop_alerts_enabled
+     where exists (select 1 from public.device_tokens t where t.user_id = f.follower_id)
+     limit greatest(p_limit, 1)
+  ),
+  claimed as (
+    insert into public.drop_alert_deliveries (drop_id, user_id)
+    select e.drop_id, e.user_id from eligible e
+    on conflict (drop_id, user_id) do nothing
+    returning id, user_id
+  ),
+  msgs as (
+    insert into public.drop_alert_messages (delivery_id, token)
+    select c.id, t.token
+      from claimed c
+      join public.device_tokens t on t.user_id = c.user_id
+    returning 1
+  )
+  select count(*) into claimed_count from claimed;
+
+  -- 3b. SUBMIT: batch pending messages (≤100 per Expo request). The pg_net
+  -- enqueue and the request_id stamp commit in the SAME transaction — a crash
+  -- before commit sends nothing and stamps nothing; a commit does both.
+  if has_net then
+    for batch in
+      select array_agg(x.id order by x.rn) as msg_ids,
+             jsonb_agg(jsonb_build_object(
+               'to', x.token, 'sound', 'default',
+               'title', x.title || ' is LIVE',
+               'body', x.mkt_name || '''s Drop is live now. See what''s available.',
+               'data', jsonb_build_object('event', 'drop_live',
+                                          'marketId', x.mkt_id, 'dropId', x.drop_id)
+             ) order by x.rn) as body
+        from (
+          select msg.id, msg.token, d.title, m.name as mkt_name, m.id as mkt_id,
+                 dd.drop_id, row_number() over (order by msg.created_at, msg.id) as rn
+            from public.drop_alert_messages msg
+            join public.drop_alert_deliveries dd on dd.id = msg.delivery_id
+            join public.market_drops d on d.id = dd.drop_id
+            join public.markets m on m.id = d.market_id
+           where msg.status = 'pending' and msg.request_id is null
+           order by msg.created_at, msg.id
+           limit greatest(p_limit, 1)
+        ) x
+       group by (x.rn - 1) / 100
+    loop
+      select net.http_post(
+        url := 'https://exp.host/--/api/v2/push/send',
+        body := batch.body,
+        headers := '{"Content-Type": "application/json", "Accept": "application/json"}'::jsonb,
+        timeout_milliseconds := 10000
+      ) into req_id;
+
+      update public.drop_alert_messages msg
+         set request_id = req_id,
+             batch_position = pos.ordinality - 1,
+             attempts = attempts + 1,
+             updated_at = now()
+        from unnest(batch.msg_ids) with ordinality as pos(mid, ordinality)
+       where msg.id = pos.mid;
+
+      update public.drop_alert_deliveries dd
+         set status = 'submitted'
+       where dd.status = 'claimed'
+         and dd.id in (select delivery_id from public.drop_alert_messages
+                        where id = any (batch.msg_ids));
+
+      submitted_msgs := submitted_msgs + coalesce(array_length(batch.msg_ids, 1), 0);
+    end loop;
+  end if;
+
+  return jsonb_build_object('claimed', claimed_count, 'submitted', submitted_msgs);
+end $$;
+
+
+--
+-- Name: drop_alert_reconcile(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.drop_alert_reconcile(p_limit integer DEFAULT 500) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  ticketed int := 0; invalid int := 0; requeued int := 0; failed int := 0;
+  r record;
+  tick jsonb;
+  err text;
+  -- Detect the callable, not the extension row: production gets it from
+  -- pg_net; the local test harness provides a capture shim with the same
+  -- signature so dispatch/reconcile logic is fully testable offline.
+  has_net boolean := to_regproc('net.http_post') is not null;
+begin
+  if not has_net then
+    return jsonb_build_object('ticketed', 0, 'invalid', 0, 'requeued', 0, 'failed', 0);
+  end if;
+
+  for r in
+    select msg.id, msg.delivery_id, msg.token, msg.batch_position, msg.attempts,
+           resp.status_code, resp.content, resp.error_msg
+      from public.drop_alert_messages msg
+      join net._http_response resp on resp.id = msg.request_id
+     where msg.status = 'pending' and msg.request_id is not null
+     limit greatest(p_limit, 1)
+  loop
+    if r.status_code = 200 then
+      -- Ticket for THIS device: the response's data[] is ordered like the
+      -- request body; batch_position picks out exactly our message.
+      tick := (r.content::jsonb) -> 'data' -> r.batch_position;
+      if tick is null then
+        update public.drop_alert_messages
+           set status = 'failed', detail = 'no ticket at position', updated_at = now()
+         where id = r.id;
+        failed := failed + 1;
+      elsif tick ->> 'status' = 'ok' then
+        update public.drop_alert_messages
+           set status = 'ticketed', ticket_id = tick ->> 'id', updated_at = now()
+         where id = r.id;
+        ticketed := ticketed + 1;
+      else
+        err := coalesce(tick -> 'details' ->> 'error', 'unknown');
+        if err = 'DeviceNotRegistered' then
+          -- Expo's PERMANENT signal: retire the token (existing storage
+          -- semantics = the row is deleted, same as sign-out/unregister).
+          update public.drop_alert_messages
+             set status = 'invalid', detail = err, updated_at = now()
+           where id = r.id;
+          delete from public.device_tokens where token = r.token;
+          invalid := invalid + 1;
+        else
+          -- Ticket-level error that is not a permanent token verdict:
+          -- record; do not retire the token.
+          update public.drop_alert_messages
+             set status = 'failed', detail = left(err, 120), updated_at = now()
+           where id = r.id;
+          failed := failed + 1;
+        end if;
+      end if;
+    else
+      -- Transport-level trouble (timeout, 5xx): TRANSIENT. Requeue the whole
+      -- message for a fresh dispatch, bounded to 3 attempts, never touching
+      -- the token. Only the affected request's messages requeue — a partial
+      -- fan-out never resets recipients whose submission already succeeded.
+      if r.attempts < 3 then
+        update public.drop_alert_messages
+           set request_id = null, batch_position = null, updated_at = now(),
+               detail = left(coalesce(r.error_msg, 'http ' || coalesce(r.status_code::text, '?')), 120)
+         where id = r.id;
+        requeued := requeued + 1;
+      else
+        update public.drop_alert_messages
+           set status = 'failed', updated_at = now(),
+               detail = left('gave up: ' || coalesce(r.error_msg, 'http ' || coalesce(r.status_code::text, '?')), 120)
+         where id = r.id;
+        failed := failed + 1;
+      end if;
+    end if;
+  end loop;
+
+  -- Roll terminal message truth up to the recipient decision.
+  update public.drop_alert_deliveries dd
+     set status = case
+           when exists (select 1 from public.drop_alert_messages m
+                         where m.delivery_id = dd.id and m.status = 'ticketed') then 'sent'
+           when exists (select 1 from public.drop_alert_messages m
+                         where m.delivery_id = dd.id and m.status = 'invalid') then 'invalid_token'
+           else 'failed'
+         end,
+         resolved_at = now()
+   where dd.status = 'submitted'
+     and not exists (select 1 from public.drop_alert_messages m
+                      where m.delivery_id = dd.id and m.status = 'pending');
+
+  return jsonb_build_object('ticketed', ticketed, 'invalid', invalid,
+                            'requeued', requeued, 'failed', failed);
+end $$;
+
+
+--
+-- Name: drop_alert_run(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.drop_alert_run() RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  rec jsonb; dis jsonb;
+begin
+  rec := public.drop_alert_reconcile();
+  dis := public.drop_alert_dispatch();
+  if (dis ->> 'claimed')::int > 0 or (dis ->> 'submitted')::int > 0
+     or (rec ->> 'ticketed')::int > 0 or (rec ->> 'invalid')::int > 0
+     or (rec ->> 'requeued')::int > 0 or (rec ->> 'failed')::int > 0 then
+    begin
+      insert into public.events (event_type, metadata)
+      values ('drop_alert_run', jsonb_build_object('dispatch', dis, 'reconcile', rec));
+    exception when others then null;
+    end;
+  end if;
+end $$;
 
 
 --
@@ -4113,6 +5614,201 @@ end $$;
 
 
 --
+-- Name: enforce_publish_allowance(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_publish_allowance() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+declare
+  eff       record;
+  per       record;
+  lim       record;
+  v_kind    text;
+  used      int;
+  allowed   int;
+  auth_row  public.listing_publish_authorizations;
+begin
+  -- Only activations matter.
+  if new.status <> 'active' or new.market_id is null then return new; end if;
+  if tg_op = 'UPDATE' and old.status = 'active' then return new; end if;
+
+  -- Owner decision: only Sell spends allowance.
+  if not public.listing_type_spends_allowance(new.listing_type) then return new; end if;
+
+  select ep.plan into eff from public.market_effective_plan(new.market_id) ep;
+  if eff.plan is null then return new; end if;
+
+  select * into per from public.market_allowance_period(new.market_id);
+  select pl.* into lim from public.plan_limits pl where pl.plan = eff.plan;
+
+  v_kind := case
+    when exists (select 1 from public.listing_publish_events e
+                  where e.listing_id = new.id and e.kind = 'publish')
+    then 'renewal' else 'publish' end;
+
+  allowed := case when v_kind = 'publish'
+                  then lim.monthly_publish_allowance
+                  else lim.included_renewals_per_period end;
+
+  -- Unlimited tier: record the event for analytics, spend nothing.
+  if allowed is null then
+    insert into public.listing_publish_events
+      (market_id, listing_id, kind, funded, period_start, period_source, plan_at_time)
+    values (new.market_id, new.id, v_kind, 'unlimited', per.period_start, per.source, eff.plan);
+    return new;
+  end if;
+
+  select count(*)::int into used
+  from public.listing_publish_events
+  where market_id = new.market_id
+    and period_start = per.period_start
+    and kind = v_kind
+    and funded = 'included';
+
+  if used < allowed then
+    insert into public.listing_publish_events
+      (market_id, listing_id, kind, funded, period_start, period_source, plan_at_time)
+    values (new.market_id, new.id, v_kind, 'included', per.period_start, per.source, eff.plan);
+    return new;
+  end if;
+
+  -- Allowance spent. Look for a paid authorization for this exact intent. Locked so two concurrent
+  -- publishes cannot consume the same payment.
+  select * into auth_row
+  from public.listing_publish_authorizations
+  where market_id = new.market_id
+    and intent = v_kind
+    and status = 'paid'
+    and (listing_id is null or listing_id = new.id)
+  order by (listing_id = new.id) desc nulls last, paid_at asc
+  limit 1
+  for update skip locked;
+
+  if found then
+    update public.listing_publish_authorizations
+       set status = 'consumed', consumed_at = now(), listing_id = new.id
+     where id = auth_row.id;
+
+    insert into public.listing_publish_events
+      (market_id, listing_id, kind, funded, period_start, period_source, plan_at_time, authorization_id)
+    values (new.market_id, new.id, v_kind, 'paid', per.period_start, per.source, eff.plan, auth_row.id);
+    return new;
+  end if;
+
+  -- Structured refusal so the client can offer "pay $0.99" or "upgrade" instead of a dead end.
+  raise exception 'PUBLISH_ALLOWANCE_EXHAUSTED'
+    using errcode = 'P0001',
+          hint = format('%s allowance of %s spent for plan %s in period starting %s',
+                        v_kind, allowed, eff.plan, per.period_start);
+end $_$;
+
+
+--
+-- Name: enforce_wanted_introduction(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_wanted_introduction() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  l         record;
+  eff       record;
+  allowed   int;
+  used      int;
+  hour_used int;
+  existing  public.claim_status;
+  day0      timestamptz;
+  -- Anti-abuse ceiling, deliberately separate from the subscription entitlement: a legitimate
+  -- Farm seller can answer many leads in a day, but no account answers thirty DISTINCT requests
+  -- inside one hour by hand. Applies to every plan, unlimited included.
+  hourly_cap constant int := 30;
+begin
+  -- The gate is keyed on the LISTING'S type, never on the claim_type the client sent — otherwise
+  -- submitting claim_type='claim' against a Wanted post would walk straight past the meter.
+  select li.id, li.owner_id, li.status, li.expires_at, li.listing_type
+    into l from public.listings li where li.id = new.listing_id;
+  if l.id is null then
+    raise exception 'WANTED_NOT_AVAILABLE: That request is no longer open.' using errcode = 'P0001';
+  end if;
+  if l.listing_type <> 'wanted' then return new; end if;
+
+  -- Normalize for the same reason the gate keys on the listing: the row that becomes the durable
+  -- introduction record must say what it is regardless of what the client called it.
+  new.claim_type := 'wanted_response';
+
+  if l.status <> 'active' or l.expires_at <= now() then
+    raise exception 'WANTED_NOT_AVAILABLE: That request is no longer open.' using errcode = 'P0001';
+  end if;
+
+  -- Already-contacted pre-check, with a deliberate carve-out. An ACTIVE relationship answers with
+  -- the stable code so the client opens the existing conversation. A declined/cancelled/expired
+  -- row falls through to the UNIQUE constraint's 23505 instead, because the mobile client's
+  -- revive path depends on receiving exactly that error to re-open the old row — an UPDATE,
+  -- which this INSERT gate correctly never meters.
+  select c.status into existing from public.claims c
+   where c.listing_id = new.listing_id and c.claimer_id = new.claimer_id;
+  if existing is not null then
+    if existing in ('declined','cancelled','expired') then
+      -- Let the UNIQUE constraint answer with 23505 so the client's revive path can re-open the
+      -- old row. Returning here also SKIPS the quota checks below on purpose: the relationship
+      -- already exists and its introduction was already spent, so re-opening it is never a new
+      -- introduction — a Free seller at 1/1 who was declined must still be able to revive today.
+      -- No row can be created on this path; the constraint fires unconditionally.
+      return new;
+    end if;
+    raise exception 'WANTED_ALREADY_CONTACTED: You’ve already responded to this request — open the conversation to keep talking.'
+      using errcode = 'P0001';
+  end if;
+
+  -- Serialize this seller's introductions. Without the lock, two simultaneous requests both count
+  -- the same "used" and both pass a one-slot allowance. With it, the second waits, recounts, and
+  -- is refused. Transaction-scoped, self-releasing.
+  perform pg_advisory_xact_lock(hashtextextended('wanted_intro:' || new.claimer_id::text, 0));
+
+  select count(*)::int into hour_used from public.claims c
+   where c.claimer_id = new.claimer_id and c.claim_type = 'wanted_response'
+     and c.created_at > now() - interval '1 hour';
+  if hour_used >= hourly_cap then
+    raise exception 'RATE_LIMITED: You’ve reached out about % requests in the last hour, which is the most we allow at once. Try again in a little while.',
+      hour_used using errcode = 'P0001';
+  end if;
+
+  -- Effective plan through the claimer's market — the same resolver every other entitlement uses,
+  -- so complimentary grants and FOUNDING3-style promotional subscriptions land on the right rung
+  -- automatically. No market resolves to the free rung rather than to unlimited.
+  select ep.plan into eff
+    from public.markets m
+    cross join lateral public.market_effective_plan(m.id) ep
+   where m.owner_id = new.claimer_id
+   limit 1;
+  new.claimer_plan_at_time := coalesce(eff.plan, 'free');
+
+  select pl.wanted_intros_per_day into allowed
+    from public.plan_limits pl where pl.plan = coalesce(eff.plan, 'free');
+
+  -- NULL = unlimited: nothing to spend, but the row is still the measurement.
+  if allowed is null then return new; end if;
+
+  day0 := public.wanted_day_start();
+  select count(*)::int into used from public.claims c
+   where c.claimer_id = new.claimer_id and c.claim_type = 'wanted_response'
+     and c.created_at >= day0;
+
+  if used >= allowed then
+    raise exception 'WANTED_INTRO_LIMIT_REACHED: You’ve used today’s % Wanted response%. You can respond to more tomorrow, and your existing conversations stay open.',
+      allowed, case when allowed = 1 then '' else 's' end
+      using errcode = 'P0001',
+            hint = format('used %s of %s; resets %s', used, allowed, day0 + interval '1 day');
+  end if;
+
+  return new;
+end $$;
+
+
+--
 -- Name: events_guard(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4120,25 +5816,44 @@ CREATE FUNCTION public.events_guard() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-declare cnt int;
+declare
+  recent int;
 begin
-  if coalesce(auth.jwt() ->> 'role', '') <> 'anon' then return new; end if;
-  if new.event_type is null or new.event_type not in (
-    'web_zip_search','web_browse_location_set','web_reserve_started',
-    'web_reserve_submitted','web_listing_published',
-    'web_gnome_opened','web_gnome_quick_action','web_gnome_message',
-    'web_seed_profile_started','web_seed_profile_completed','web_seed_checkout_started',
-    'web_sale_recorded','web_expense_recorded','web_market_customized','web_market_reordered'
+  -- Authenticated and service-role writes pass through untouched.
+  if coalesce(auth.jwt() ->> 'role', '') <> 'anon' then
+    return new;
+  end if;
+
+  if new.event_type not in (
+    'web_zip_search',
+    'web_browse_location_set',
+    'web_reserve_started',
+    'web_reserve_submitted',
+    'web_listing_published',
+    'web_gnome_opened',
+    'web_gnome_quick_action',
+    'web_gnome_message',
+    'web_drop_viewed',
+    'web_drop_shared'
   ) then
-    raise exception 'EVENT_NOT_ALLOWED' using errcode = 'P0001';
+    raise exception 'EVENT_NOT_ALLOWED';
   end if;
-  if length(coalesce(new.metadata::text, '')) > 512 then
-    raise exception 'EVENT_METADATA_TOO_LARGE' using errcode = 'P0001';
+
+  if new.metadata is not null and pg_column_size(new.metadata) > 512 then
+    raise exception 'EVENT_METADATA_TOO_LARGE';
   end if;
-  new.user_id := null; new.listing_id := null;
-  select count(*) into cnt from public.events
-  where user_id is null and created_at > now() - interval '1 minute';
-  if cnt >= 300 then raise exception 'EVENT_RATE_LIMITED' using errcode = 'P0001'; end if;
+
+  new.user_id := null;
+  new.listing_id := null;
+
+  select count(*) into recent
+    from public.events
+   where user_id is null
+     and created_at > now() - interval '1 minute';
+  if recent >= 300 then
+    raise exception 'EVENT_RATE_LIMITED';
+  end if;
+
   return new;
 end $$;
 
@@ -4157,6 +5872,39 @@ CREATE FUNCTION public.expire_finished_promotions() RETURNS integer
     returning 1)
   select count(*)::int from upd;
 $$;
+
+
+--
+-- Name: expire_stale_publish_authorizations(interval); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.expire_stale_publish_authorizations(p_older_than interval DEFAULT '24:00:00'::interval) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  n int;
+begin
+  -- ONLY pending rows age out. paid / consumed / refunded are financial truth
+  -- and are never rewritten, never deleted.
+  with stale as (
+    update public.listing_publish_authorizations
+       set status = 'expired'
+     where status = 'pending'
+       and created_at < now() - p_older_than
+    returning 1
+  )
+  select count(*) into n from stale;
+
+  if n > 0 then
+    begin
+      insert into public.events (event_type, metadata)
+      values ('publish_authorizations_expired', jsonb_build_object('count', n));
+    exception when others then null;
+    end;
+  end if;
+  return n;
+end $$;
 
 
 --
@@ -4564,6 +6312,38 @@ $$;
 
 
 --
+-- Name: listing_components_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.listing_components_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  parent_bundle boolean;
+  comp_bundle boolean;
+  n int;
+begin
+  if new.listing_id = new.component_listing_id then
+    raise exception 'BUNDLE_SELF_REFERENCE';
+  end if;
+  select is_bundle into parent_bundle from public.listings where id = new.listing_id;
+  select is_bundle into comp_bundle   from public.listings where id = new.component_listing_id;
+  if not coalesce(parent_bundle, false) then
+    raise exception 'NOT_A_BUNDLE';
+  end if;
+  if coalesce(comp_bundle, false) then
+    raise exception 'BUNDLE_RECURSION';
+  end if;
+  select count(*) into n from public.listing_components where listing_id = new.listing_id;
+  if n >= 12 then
+    raise exception 'BUNDLE_ITEM_LIMIT';
+  end if;
+  return new;
+end $$;
+
+
+--
 -- Name: listing_has_verified_credential(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4594,6 +6374,130 @@ begin
        and (c.expiration_date is null or c.expiration_date >= current_date)
        and (ln.path = sn.path or ln.path like sn.path || '/%'));
 end $$;
+
+
+--
+-- Name: listing_lifecycle_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.listing_lifecycle_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+declare
+  v_market uuid;
+begin
+  if current_user not in ('anon', 'authenticated') then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    new.expires_at := null;
+    -- 0124: a crafted insert could name someone ELSE's market and bill the
+    -- publish there — free against an unlimited plan, and it injected a live
+    -- listing into a storefront its owner does not control.
+    if new.market_id is not null and not exists (
+      select 1 from public.markets m
+       where m.id = new.market_id and m.owner_id = new.owner_id
+    ) then
+      raise exception 'FOREIGN_MARKET';
+    end if;
+    if new.listing_type = 'sale' and new.market_id is null then
+      select id into v_market from public.markets
+       where owner_id = new.owner_id limit 1;
+      if v_market is null then
+        raise exception 'NO_MARKET';
+      end if;
+      new.market_id := v_market;
+    end if;
+    return new;
+  end if;
+
+  new.listing_type := old.listing_type;
+  new.kind := old.kind;
+  new.market_id := old.market_id;
+
+  if old.status is distinct from 'active' and new.status = 'active' then
+    new.expires_at := case new.listing_type
+      when 'wanted' then now() + interval '30 days'
+      when 'plot'   then now() + interval '45 days'
+      else               now() + interval '7 days'
+    end;
+  elsif new.expires_at is distinct from old.expires_at then
+    new.expires_at := old.expires_at;
+  end if;
+  return new;
+end $$;
+
+
+--
+-- Name: listing_overage_required(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.listing_overage_required(p_market uuid, p_listing uuid DEFAULT NULL::uuid) RETURNS TABLE(required boolean, intent text, reason text, product_key text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  u     record;
+  v_kind text;
+begin
+  select * into u from public.market_allowance_usage(p_market);
+  if u.plan is null then
+    required := false; intent := null; reason := 'NO_MARKET'; product_key := null; return next; return;
+  end if;
+
+  v_kind := case
+    when p_listing is not null and exists (
+      select 1 from public.listing_publish_events e
+       where e.listing_id = p_listing and e.kind = 'publish')
+    then 'renewal' else 'publish' end;
+  intent := v_kind;
+  product_key := case when v_kind = 'renewal' then 'GNOME_LISTING_RENEWAL' else 'GNOME_LISTING_PUBLISH' end;
+
+  if v_kind = 'publish' then
+    if u.publishes_allowed is null then
+      required := false; reason := 'UNLIMITED'; return next; return;
+    end if;
+    if u.publishes_remaining > 0 then
+      required := false; reason := 'ALLOWANCE_REMAINING'; return next; return;
+    end if;
+  else
+    if u.renewals_allowed is null then
+      required := false; reason := 'UNLIMITED'; return next; return;
+    end if;
+    if u.renewals_remaining > 0 then
+      required := false; reason := 'ALLOWANCE_REMAINING'; return next; return;
+    end if;
+  end if;
+
+  -- Already paid and not yet spent: send them back to publishing, not to Stripe again. This is what
+  -- stops a double purchase when a seller returns from a completed checkout and retries.
+  if exists (
+    select 1 from public.listing_publish_authorizations a
+     where a.market_id = p_market and a.intent = v_kind and a.status = 'paid'
+       and (a.listing_id is null or a.listing_id = p_listing)
+  ) then
+    required := false; reason := 'ALREADY_AUTHORIZED'; return next; return;
+  end if;
+
+  required := true; reason := 'ALLOWANCE_EXHAUSTED'; return next;
+end $$;
+
+
+--
+-- Name: listing_type_spends_allowance(public.listing_type); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.listing_type_spends_allowance(p_type public.listing_type) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    AS $$ select p_type = 'sale'::public.listing_type; $$;
+
+
+--
+-- Name: FUNCTION listing_type_spends_allowance(p_type public.listing_type); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.listing_type_spends_allowance(p_type public.listing_type) IS 'Only Sell listings consume publish allowance. Changing this changes monetization — see 0104.';
 
 
 --
@@ -4727,22 +6631,55 @@ CREATE FUNCTION public.listings_screen_content() RETURNS trigger
 declare hit record; blob text; cfg public.content_screening_config; made int;
         v_class text; cls public.compliance_classes; v_state text;
         oldest timestamptz; wait_min int;
+        v_plan public.market_plan; cap_hr int;
 begin
   select * into cfg from public.content_screening_config where id;
 
-  if tg_op = 'INSERT' and cfg.max_listings_per_hour is not null
-     and not public.is_admin() then
-    select count(*), min(created_at) into made, oldest from public.listings
-     where owner_id = new.owner_id and created_at > now() - interval '1 hour';
-    if made >= cfg.max_listings_per_hour then
-      wait_min := greatest(1, ceil(extract(epoch from (oldest + interval '1 hour' - now())) / 60))::int;
-      raise exception
-        'RATE_LIMITED: You have posted % listings in the last hour, which is the most we allow. You can post again in about % minute%.',
-        made, wait_min, case when wait_min = 1 then '' else 's' end
-        using errcode = 'P0001';
+  -- ---- hourly abuse ceiling, now plan-aware for Sell -----------------------
+  if tg_op = 'INSERT' and not public.is_admin() then
+    if public.listing_type_spends_allowance(new.listing_type) then
+      -- Sell: resolve the seller's ceiling, counting only their Sell listings so a busy Share Free
+      -- day cannot eat the allowance they paid for.
+      if new.market_id is not null then
+        select ep.plan into v_plan from public.market_effective_plan(new.market_id) ep;
+      end if;
+      if v_plan is not null then
+        select pl.max_sale_publishes_per_hour into cap_hr
+          from public.plan_limits pl where pl.plan = v_plan;
+      end if;
+      cap_hr := coalesce(cap_hr, cfg.max_listings_per_hour);
+
+      if cap_hr is not null then
+        select count(*), min(created_at) into made, oldest from public.listings
+         where owner_id = new.owner_id
+           and listing_type = 'sale'
+           and created_at > now() - interval '1 hour';
+        if made >= cap_hr then
+          wait_min := greatest(1, ceil(extract(epoch from (oldest + interval '1 hour' - now())) / 60))::int;
+          raise exception
+            'RATE_LIMITED: You have published % listings in the last hour, which is the most we allow at once. You can publish again in about % minute%.',
+            made, wait_min, case when wait_min = 1 then '' else 's' end
+            using errcode = 'P0001';
+        end if;
+      end if;
+
+    elsif cfg.max_listings_per_hour is not null then
+      -- Everything else keeps the original global ceiling, counted over its own rows.
+      select count(*), min(created_at) into made, oldest from public.listings
+       where owner_id = new.owner_id
+         and listing_type <> 'sale'
+         and created_at > now() - interval '1 hour';
+      if made >= cfg.max_listings_per_hour then
+        wait_min := greatest(1, ceil(extract(epoch from (oldest + interval '1 hour' - now())) / 60))::int;
+        raise exception
+          'RATE_LIMITED: You have posted % listings in the last hour, which is the most we allow. You can post again in about % minute%.',
+          made, wait_min, case when wait_min = 1 then '' else 's' end
+          using errcode = 'P0001';
+      end if;
     end if;
   end if;
 
+  -- ---- screening below is reproduced verbatim from the deployed definition --
   if not coalesce(cfg.screening_enabled, true) then
     return new;
   end if;
@@ -4884,6 +6821,25 @@ end $$;
 
 
 --
+-- Name: mark_authorization_paid(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_authorization_paid(p_session text, p_payment_intent text DEFAULT NULL::text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare n int;
+begin
+  update public.listing_publish_authorizations
+     set status = 'paid', paid_at = now(),
+         stripe_payment_intent_id = coalesce(p_payment_intent, stripe_payment_intent_id)
+   where stripe_session_id = p_session and status = 'pending';
+  get diagnostics n = row_count;
+  return n > 0;
+end $$;
+
+
+--
 -- Name: mark_order_ready(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4945,6 +6901,127 @@ $$;
 
 
 --
+-- Name: market_allowance_period(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.market_allowance_period(p_market uuid) RETURNS TABLE(period_start timestamp with time zone, period_end timestamp with time zone, source text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  s record;
+begin
+  select ms.current_period_start, ms.current_period_end
+    into s
+    from public.market_subscriptions ms
+   where ms.market_id = p_market
+     and ms.kind = 'plan'
+     and ms.status in ('active','trialing','past_due')
+     and ms.current_period_start is not null
+     and ms.current_period_end   is not null
+     and ms.current_period_start <= now()
+     and ms.current_period_end   >  now()
+   order by ms.current_period_start desc
+   limit 1;
+
+  if found then
+    period_start := s.current_period_start;
+    period_end   := s.current_period_end;
+    source       := 'subscription';
+    return next;
+    return;
+  end if;
+
+  -- Calendar month, America/New_York, resolved server-side.
+  period_start := date_trunc('month', now() at time zone 'America/New_York')
+                    at time zone 'America/New_York';
+  period_end   := period_start + interval '1 month';
+  source       := 'calendar_month';
+  return next;
+end $$;
+
+
+--
+-- Name: market_allowance_usage(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.market_allowance_usage(p_market uuid) RETURNS TABLE(plan public.market_plan, display_name text, period_start timestamp with time zone, period_end timestamp with time zone, period_source text, publishes_allowed integer, renewals_allowed integer, publishes_used integer, renewals_used integer, publishes_actual integer, renewals_actual integer, paid_publishes_period integer, paid_renewals_period integer, paid_cents_period integer, paid_publishes_lifetime integer, paid_renewals_lifetime integer, paid_cents_lifetime integer, publishes_remaining integer, renewals_remaining integer, listing_lifetime_days integer, qr_tools boolean, wanted_intros_per_day integer)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  eff record; per record; lim record;
+begin
+  select ep.plan into eff from public.market_effective_plan(p_market) ep;
+  if eff.plan is null then return; end if;
+
+  select * into per from public.market_allowance_period(p_market);
+  select pl.* into lim from public.plan_limits pl where pl.plan = eff.plan;
+
+  plan                  := eff.plan;
+  display_name          := coalesce(lim.display_name, eff.plan::text);
+  period_start          := per.period_start;
+  period_end            := per.period_end;
+  period_source         := per.source;
+  publishes_allowed     := lim.monthly_publish_allowance;
+  renewals_allowed      := lim.included_renewals_per_period;
+  listing_lifetime_days := coalesce(lim.listing_lifetime_days, 7);
+  qr_tools              := coalesce(lim.qr_tools, false);
+  wanted_intros_per_day := lim.wanted_intros_per_day;
+
+  -- Every reference is table-qualified: this function's OUT parameters share names with
+  -- listing_publish_events columns, and an unqualified one resolves to the PL/pgSQL variable,
+  -- silently comparing a column to itself.
+  --
+  -- 'included' is entitlement spent. 'actual' is everything that happened, which for an unlimited
+  -- plan is entirely funded='unlimited' — the reason Farm previously read as zero. admin_grant is
+  -- counted as activity but never as entitlement, since it was given rather than bought or owed.
+  select
+    count(*) filter (where e.kind = 'publish' and e.funded = 'included'),
+    count(*) filter (where e.kind = 'renewal' and e.funded = 'included'),
+    count(*) filter (where e.kind = 'publish'),
+    count(*) filter (where e.kind = 'renewal'),
+    count(*) filter (where e.kind = 'publish' and e.funded = 'paid'),
+    count(*) filter (where e.kind = 'renewal' and e.funded = 'paid')
+  into publishes_used, renewals_used, publishes_actual, renewals_actual,
+       paid_publishes_period, paid_renewals_period
+  from public.listing_publish_events e
+  where e.market_id = p_market and e.period_start = per.period_start;
+
+  -- Money is read from the authorizations, not the ledger: the ledger records that an action was
+  -- paid for, the authorization records what it cost. Scoped by the authorization it funded so a
+  -- payment lands in the period it was SPENT in, matching the counts above.
+  select coalesce(sum(a.amount_cents), 0)::int into paid_cents_period
+  from public.listing_publish_authorizations a
+  where a.market_id = p_market
+    and a.status = 'consumed'
+    and exists (
+      select 1 from public.listing_publish_events e2
+       where e2.authorization_id = a.id and e2.period_start = per.period_start);
+
+  select
+    count(*) filter (where e.kind = 'publish' and e.funded = 'paid'),
+    count(*) filter (where e.kind = 'renewal' and e.funded = 'paid')
+  into paid_publishes_lifetime, paid_renewals_lifetime
+  from public.listing_publish_events e
+  where e.market_id = p_market;
+
+  select coalesce(sum(a.amount_cents), 0)::int into paid_cents_lifetime
+  from public.listing_publish_authorizations a
+  where a.market_id = p_market and a.status in ('paid','consumed');
+
+  -- greatest(0, …) is belt and braces: included usage cannot exceed the allowance because the
+  -- trigger stops issuing 'included' rows at the cap, but a negative "remaining" reaching the UI
+  -- is precisely the nonsense this migration exists to prevent.
+  publishes_remaining := case when publishes_allowed is null then null
+                              else greatest(0, publishes_allowed - publishes_used) end;
+  renewals_remaining  := case when renewals_allowed  is null then null
+                              else greatest(0, renewals_allowed  - renewals_used)  end;
+  return next;
+end $$;
+
+
+--
 -- Name: market_available_slots(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4996,6 +7073,56 @@ CREATE FUNCTION public.market_delivery_origin(p_market uuid) RETURNS TABLE(lat d
     left join public.market_pickup_locations l
       on l.market_id = m.id and l.is_default and l.active and not l.plan_restricted
    where m.id = p_market;
+$$;
+
+
+--
+-- Name: market_drop_items_cap(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.market_drop_items_cap() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+  if (select count(*) from public.market_drop_items where drop_id = new.drop_id) >= 30 then
+    raise exception 'DROP_ITEM_LIMIT' using hint = 'a Market Drop holds at most 30 items';
+  end if;
+  return new;
+end $$;
+
+
+--
+-- Name: market_drop_items_cap_stmt(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.market_drop_items_cap_stmt() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+  if exists (
+    select 1
+      from (select distinct drop_id from new_table) nd
+     where (select count(*) from public.market_drop_items i where i.drop_id = nd.drop_id) > 30
+  ) then
+    raise exception 'DROP_ITEM_LIMIT' using hint = 'a Market Drop holds at most 30 items';
+  end if;
+  return null;
+end $$;
+
+
+--
+-- Name: market_drop_phase(text, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.market_drop_phase(p_status text, p_starts timestamp with time zone, p_ends timestamp with time zone) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+  select case
+    when p_status <> 'scheduled' then p_status
+    when now() < p_starts then 'upcoming'
+    when now() >= p_ends then 'ended'
+    else 'live'
+  end
 $$;
 
 
@@ -5209,6 +7336,22 @@ end $$;
 
 
 --
+-- Name: my_listing_allowance(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_listing_allowance() RETURNS TABLE(plan public.market_plan, display_name text, period_start timestamp with time zone, period_end timestamp with time zone, period_source text, publishes_allowed integer, renewals_allowed integer, publishes_used integer, renewals_used integer, publishes_actual integer, renewals_actual integer, paid_publishes_period integer, paid_renewals_period integer, paid_cents_period integer, paid_publishes_lifetime integer, paid_renewals_lifetime integer, paid_cents_lifetime integer, publishes_remaining integer, renewals_remaining integer, listing_lifetime_days integer, qr_tools boolean, wanted_intros_per_day integer)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare m uuid;
+begin
+  select id into m from public.markets where owner_id = auth.uid() limit 1;
+  if m is null then return; end if;
+  return query select * from public.market_allowance_usage(m);
+end $$;
+
+
+--
 -- Name: my_market(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5218,6 +7361,51 @@ CREATE FUNCTION public.my_market() RETURNS SETOF public.markets
     AS $$
   select m.* from public.markets m where m.owner_id = auth.uid();
 $$;
+
+
+--
+-- Name: my_market_follower_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_market_follower_count() RETURNS integer
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select count(*)::int
+    from public.market_follows f
+    join public.markets m on m.id = f.market_id
+   where m.owner_id = auth.uid();
+$$;
+
+
+--
+-- Name: my_market_qr(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_market_qr() RETURNS TABLE(code text, entitled boolean, slug text, market_name text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare m record; eff record; tools boolean;
+begin
+  if auth.uid() is null then return; end if;
+  select mk.id, mk.slug, mk.name into m from public.markets mk where mk.owner_id = auth.uid() limit 1;
+  if m.id is null then return; end if;
+
+  select ep.plan into eff from public.market_effective_plan(m.id) ep;
+  select coalesce(pl.qr_tools, false) into tools
+    from public.plan_limits pl where pl.plan = coalesce(eff.plan, 'free');
+
+  select mq.code into code from public.market_qr mq where mq.market_id = m.id;
+  if code is null and tools then
+    insert into public.market_qr (market_id) values (m.id) returning market_qr.code into code;
+  end if;
+
+  entitled := tools;
+  slug := m.slug;
+  market_name := m.name;
+  return next;
+end $$;
 
 
 --
@@ -5253,6 +7441,22 @@ begin
   );
 end;
 $$;
+
+
+--
+-- Name: my_overage_required(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_overage_required(p_listing uuid DEFAULT NULL::uuid) RETURNS TABLE(required boolean, intent text, reason text, product_key text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare m uuid;
+begin
+  select id into m from public.markets where owner_id = auth.uid() limit 1;
+  if m is null then return; end if;
+  return query select * from public.listing_overage_required(m, p_listing);
+end $$;
 
 
 --
@@ -5382,6 +7586,40 @@ $$;
 
 
 --
+-- Name: my_wanted_allowance(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_wanted_allowance() RETURNS TABLE(plan public.market_plan, display_name text, allowed integer, used_today integer, remaining integer, resets_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare eff record; day0 timestamptz;
+begin
+  if auth.uid() is null then return; end if;
+
+  select ep.plan into eff
+    from public.markets m
+    cross join lateral public.market_effective_plan(m.id) ep
+   where m.owner_id = auth.uid()
+   limit 1;
+
+  plan := coalesce(eff.plan, 'free');
+  select pl.display_name, pl.wanted_intros_per_day into display_name, allowed
+    from public.plan_limits pl where pl.plan = coalesce(eff.plan, 'free');
+  display_name := coalesce(display_name, initcap(plan::text));
+
+  day0 := public.wanted_day_start();
+  select count(*)::int into used_today from public.claims c
+   where c.claimer_id = auth.uid() and c.claim_type = 'wanted_response'
+     and c.created_at >= day0;
+
+  remaining := case when allowed is null then null else greatest(0, allowed - used_today) end;
+  resets_at := day0 + interval '1 day';
+  return next;
+end $$;
+
+
+--
 -- Name: normalize_state(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5496,7 +7734,9 @@ CREATE FUNCTION public.owns_market(mid uuid) RETURNS boolean
 
 CREATE FUNCTION public.plan_rank(p public.market_plan) RETURNS integer
     LANGUAGE sql IMMUTABLE
-    AS $$ select case p when 'free' then 0 when 'grower' then 1 when 'farm' then 2 when 'sponsor' then 3 end; $$;
+    AS $$
+  select case p when 'free' then 0 when 'grower' then 1 when 'farm' then 2 when 'sponsor' then 3 end;
+$$;
 
 
 --
@@ -5555,6 +7795,89 @@ CREATE TABLE public.seed_drop_subscriptions (
 CREATE FUNCTION public.price_from_sub(s public.seed_drop_subscriptions) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$ select coalesce(s.price_cents, 2499); $$;
+
+
+--
+-- Name: promo_validate(text, public.market_plan, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.promo_validate(p_code text, p_plan public.market_plan, p_user uuid) RETURNS TABLE(ok boolean, reason text, campaign_id uuid, campaign_name text, stripe_promotion_code_id text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  c public.promotion_campaigns;
+  used_total int;
+  used_user  int;
+  has_sub    boolean;
+begin
+  ok := false; campaign_id := null; campaign_name := null; stripe_promotion_code_id := null;
+
+  if p_code is null or btrim(p_code) = '' then
+    reason := 'NO_CODE'; return next; return;
+  end if;
+
+  select * into c from public.promotion_campaigns
+   where code = upper(btrim(p_code));
+
+  if not found then
+    -- Deliberately the same reason as inactive: a probing client should not be able to enumerate
+    -- which codes exist by comparing error messages.
+    reason := 'INVALID_CODE'; return next; return;
+  end if;
+
+  campaign_id := c.id; campaign_name := c.campaign_name;
+
+  if not c.active then
+    reason := 'INVALID_CODE'; return next; return;
+  end if;
+  if c.starts_at is not null and now() < c.starts_at then
+    reason := 'NOT_STARTED'; return next; return;
+  end if;
+  if c.expires_at is not null and now() >= c.expires_at then
+    reason := 'EXPIRED'; return next; return;
+  end if;
+
+  -- Plan eligibility. This is the check Stripe cannot make.
+  if array_length(c.applicable_plans, 1) is not null
+     and not (p_plan = any (c.applicable_plans)) then
+    reason := 'WRONG_PLAN'; return next; return;
+  end if;
+
+  if c.max_redemptions is not null then
+    select count(*)::int into used_total from public.promotion_redemptions r
+     where r.campaign_id = c.id and r.status in ('redeemed','converted');
+    if used_total >= c.max_redemptions then
+      reason := 'FULLY_REDEEMED'; return next; return;
+    end if;
+  end if;
+
+  select count(*)::int into used_user from public.promotion_redemptions r
+   where r.campaign_id = c.id and r.user_id = p_user and r.status in ('redeemed','converted');
+  if used_user >= c.max_redemptions_per_user then
+    reason := 'ALREADY_REDEEMED'; return next; return;
+  end if;
+
+  if c.new_customers_only then
+    select exists (
+      select 1 from public.market_subscriptions ms
+       join public.markets m on m.id = ms.market_id
+      where m.owner_id = p_user and ms.kind = 'plan'
+        and ms.status in ('active','trialing','past_due','canceled','cancelled')
+    ) into has_sub;
+    if has_sub then
+      reason := 'NOT_NEW_CUSTOMER'; return next; return;
+    end if;
+  end if;
+
+  stripe_promotion_code_id := c.stripe_promotion_code_id;
+  if stripe_promotion_code_id is null then
+    -- Eligible in Gnome but unusable at Stripe. Refuse rather than silently charging full price.
+    reason := 'NOT_CONFIGURED'; return next; return;
+  end if;
+
+  ok := true; reason := 'OK'; return next;
+end $$;
 
 
 --
@@ -5677,9 +8000,11 @@ CREATE FUNCTION public.publish_listing_draft(p_draft uuid) RETURNS uuid
     SET search_path TO 'public'
     AS $$
 declare
-  uid    uuid := auth.uid();
-  d      public.listing_drafts;
-  mkt    uuid;
+  uid uuid := auth.uid();
+  d   public.listing_drafts;
+  mkt uuid;
+  days int;
+  v_expires timestamptz;
   new_id uuid;
 begin
   if uid is null then raise exception 'UNAUTHENTICATED'; end if;
@@ -5687,10 +8012,21 @@ begin
   select * into d from public.listing_drafts where id = p_draft;
   if d.id is null then raise exception 'DRAFT_NOT_FOUND'; end if;
   if d.owner_id <> uid then raise exception 'NOT_YOUR_DRAFT'; end if;
-  if d.status <> 'pending' then raise exception 'DRAFT_NOT_PENDING'; end if;
+  if d.status <> 'pending' then raise exception 'DRAFT_ALREADY_%', d.status; end if;
   if coalesce(btrim(d.title), '') = '' then raise exception 'DRAFT_TITLE_REQUIRED'; end if;
 
   select id into mkt from public.markets where owner_id = uid limit 1;
+
+  if d.listing_type = 'sale' then
+    -- The plan's lifetime, resolved the same way renew_listing resolves it.
+    select coalesce(pl.listing_lifetime_days, 7) into days
+    from public.market_effective_plan(coalesce(d.market_id, mkt)) ep
+    join public.plan_limits pl on pl.plan = ep.plan;
+    v_expires := now() + make_interval(days => coalesce(days, 7));
+  else
+    -- Defer to the canonical per-type stamping trigger (0006): wanted 30d, others 7d.
+    v_expires := null;
+  end if;
 
   insert into public.listings (
     owner_id, market_id, title, description, category, taxonomy_node_id,
@@ -5700,7 +8036,7 @@ begin
     coalesce(nullif(btrim(coalesce(d.category, '')), ''), 'produce'),
     d.taxonomy_node_id, d.listing_type,
     case when d.listing_type = 'sale' then d.price_cents else null end,
-    d.unit, d.quantity, d.photos, 'active', now() + interval '30 days'
+    d.unit, d.quantity, d.photos, 'active', v_expires
   ) returning id into new_id;
 
   update public.listing_drafts
@@ -5746,6 +8082,24 @@ begin
          count(*) filter (where plan_restricted)
     into v_kept, v_restricted from upd;
   return query select coalesce(v_kept, 0), coalesce(v_restricted, 0);
+end $$;
+
+
+--
+-- Name: record_promo_redemption(uuid, uuid, uuid, public.market_plan, text, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_promo_redemption(p_campaign uuid, p_user uuid, p_market uuid, p_plan public.market_plan, p_session text, p_subscription text, p_customer text, p_discount_cents integer) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  insert into public.promotion_redemptions
+    (campaign_id, user_id, market_id, plan, stripe_session_id,
+     stripe_subscription_id, stripe_customer_id, amount_discounted_cents)
+  values (p_campaign, p_user, p_market, p_plan, p_session, p_subscription, p_customer, p_discount_cents)
+  on conflict (stripe_session_id) do nothing;
+  return found;
 end $$;
 
 
@@ -5808,6 +8162,96 @@ begin
   end loop;
 end;
 $$;
+
+
+--
+-- Name: renew_listing(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.renew_listing(p_listing uuid) RETURNS TABLE(ok boolean, expires_at timestamp with time zone, funded text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  l    public.listings;
+  days int;
+  ev   record;
+begin
+  select * into l from public.listings where id = p_listing for update;
+  if not found then raise exception 'LISTING_NOT_FOUND' using errcode = 'P0001'; end if;
+
+  if not exists (select 1 from public.markets m
+                  where m.id = l.market_id and m.owner_id = auth.uid()) then
+    raise exception 'NOT_YOUR_LISTING' using errcode = 'P0001';
+  end if;
+
+  -- Already fresh: report the existing state, extend nothing, consume nothing.
+  if l.status = 'active' and (l.expires_at is null or l.expires_at > now()) then
+    select e.funded into ev
+    from public.listing_publish_events e
+    where e.listing_id = p_listing
+    order by e.occurred_at desc limit 1;
+
+    ok := true;
+    expires_at := l.expires_at;
+    funded := coalesce(ev.funded, 'included');
+    return next;
+    return;
+  end if;
+
+  -- Past this point the listing is DUE: either the sweep already wrote
+  -- 'expired'/'paused', or it is still 'active' with expires_at <= now() and the
+  -- sweep has not caught up. Demote that second case so the renewal below is a
+  -- real transition INTO active and the allowance trigger meters it. Without
+  -- this the UPDATE is active->active, which the trigger deliberately exempts —
+  -- a free, unmetered, indefinitely repeatable renewal.
+  if l.status = 'active' then
+    update public.listings set status = 'expired' where id = p_listing;
+  end if;
+
+  select coalesce(pl.listing_lifetime_days, 7) into days
+  from public.market_effective_plan(l.market_id) ep
+  join public.plan_limits pl on pl.plan = ep.plan;
+
+  -- The allowance trigger decides included vs paid vs refuse as the status flips to active.
+  update public.listings
+     set status = 'active', expires_at = now() + make_interval(days => coalesce(days, 7))
+   where id = p_listing;
+
+  select e.funded into ev
+  from public.listing_publish_events e
+  where e.listing_id = p_listing
+  order by e.occurred_at desc limit 1;
+
+  ok := true;
+  expires_at := now() + make_interval(days => coalesce(days, 7));
+  funded := coalesce(ev.funded, 'included');
+  return next;
+end $$;
+
+
+--
+-- Name: resolve_market_qr(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.resolve_market_qr(p_code text) RETURNS TABLE(slug text, name text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare q record;
+begin
+  select mq.code, mq.market_id, m.slug, m.name, m.status
+    into q
+    from public.market_qr mq
+    join public.markets m on m.id = mq.market_id
+   where mq.code = lower(btrim(p_code));
+  if q.code is null or q.status <> 'active' then return; end if;
+
+  insert into public.market_qr_scans (code, market_id) values (q.code, q.market_id);
+
+  slug := q.slug; name := q.name;
+  return next;
+end $$;
 
 
 --
@@ -6576,6 +9020,24 @@ end $$;
 
 
 --
+-- Name: wanted_day_start(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.wanted_day_start() RETURNS timestamp with time zone
+    LANGUAGE sql STABLE
+    AS $$
+  select date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York';
+$$;
+
+
+--
+-- Name: FUNCTION wanted_day_start(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.wanted_day_start() IS 'Start of the current Wanted-introduction day: midnight America/New_York, the project timezone convention. Every consumer of "today" must call this.';
+
+
+--
 -- Name: admin_actions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6714,6 +9176,28 @@ CREATE TABLE public.ai_daily_counter (
 
 
 --
+-- Name: ai_pending_actions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_pending_actions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    owner_id uuid NOT NULL,
+    action text NOT NULL,
+    listing_ids uuid[] NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    summary text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    request_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone DEFAULT (now() + '00:15:00'::interval) NOT NULL,
+    executed_at timestamp with time zone,
+    result jsonb,
+    CONSTRAINT ai_pending_actions_action_check CHECK ((action = ANY (ARRAY['renew'::text, 'restock'::text, 'mark_sold_bulk'::text, 'set_price_bulk'::text, 'create_drop'::text, 'create_bundle'::text]))),
+    CONSTRAINT ai_pending_actions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'executed'::text, 'cancelled'::text, 'expired'::text])))
+);
+
+
+--
 -- Name: ai_room_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6811,8 +9295,17 @@ CREATE TABLE public.ai_usage_log (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     actual_cost_cents numeric,
     free_tier boolean,
-    room_id uuid
+    room_id uuid,
+    failure_family text,
+    CONSTRAINT ai_usage_log_failure_family_check CHECK (((failure_family IS NULL) OR (failure_family = ANY (ARRAY['rate_limited'::text, 'provider_error'::text, 'invalid_output'::text, 'timeout'::text]))))
 );
+
+
+--
+-- Name: COLUMN ai_usage_log.failure_family; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ai_usage_log.failure_family IS 'Coarse cause on success=false rows: rate_limited (provider quota/429 family, fallback chain exhausted), provider_error, invalid_output, timeout. Never shown to sellers.';
 
 
 --
@@ -6980,12 +9473,20 @@ CREATE TABLE public.claims (
     selected_option_label text,
     selected_taxonomy_node_id uuid,
     is_custom_option boolean DEFAULT false NOT NULL,
+    claimer_plan_at_time public.market_plan,
     CONSTRAINT claims_claim_type_check CHECK ((claim_type = ANY (ARRAY['claim'::text, 'trade_offer'::text, 'purchase_request'::text, 'wanted_response'::text, 'plot_reservation'::text]))),
     CONSTRAINT claims_plot_reservation_chk CHECK (((claim_type <> 'plot_reservation'::text) OR ((buyer_note IS NOT NULL) AND (length(btrim(buyer_note)) > 0) AND (agreed_price_cents IS NOT NULL) AND (agreed_price_cents >= 0)))),
     CONSTRAINT claims_purchase_price_chk CHECK (((claim_type <> 'purchase_request'::text) OR ((agreed_price_cents IS NOT NULL) AND (agreed_price_cents >= 0)))),
     CONSTRAINT claims_qty_requested_chk CHECK (((quantity_requested IS NULL) OR (quantity_requested > 0))),
     CONSTRAINT claims_trade_offer_chk CHECK (((claim_type <> 'trade_offer'::text) OR ((trade_offer_text IS NOT NULL) AND (length(btrim(trade_offer_text)) > 0))))
 );
+
+
+--
+-- Name: COLUMN claims.claimer_plan_at_time; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.claims.claimer_plan_at_time IS 'Effective plan of the claimer when a wanted_response was created. Set by the gate; null for other claim types and legacy rows.';
 
 
 --
@@ -7039,6 +9540,42 @@ CREATE TABLE public.device_tokens (
     user_id uuid NOT NULL,
     platform text,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: drop_alert_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.drop_alert_deliveries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    drop_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    status text DEFAULT 'claimed'::text NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_at timestamp with time zone,
+    CONSTRAINT drop_alert_deliveries_status_check CHECK ((status = ANY (ARRAY['claimed'::text, 'submitted'::text, 'sent'::text, 'failed'::text, 'invalid_token'::text])))
+);
+
+
+--
+-- Name: drop_alert_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.drop_alert_messages (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    delivery_id uuid NOT NULL,
+    token text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    request_id bigint,
+    batch_position integer,
+    ticket_id text,
+    receipt_status text,
+    attempts integer DEFAULT 0 NOT NULL,
+    detail text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT drop_alert_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ticketed'::text, 'invalid'::text, 'failed'::text])))
 );
 
 
@@ -7100,6 +9637,17 @@ CREATE TABLE public.legacy_category_map (
 
 
 --
+-- Name: listing_components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.listing_components (
+    listing_id uuid NOT NULL,
+    component_listing_id uuid NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL
+);
+
+
+--
 -- Name: listing_drafts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7127,6 +9675,10 @@ CREATE TABLE public.listing_drafts (
     published_listing_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    import_request_id uuid,
+    import_candidate_index integer,
+    duplicate_listing_id uuid,
+    import_meta jsonb,
     CONSTRAINT listing_drafts_price_cents_check CHECK (((price_cents IS NULL) OR (price_cents >= 0))),
     CONSTRAINT listing_drafts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'published'::text, 'discarded'::text])))
 );
@@ -7137,6 +9689,27 @@ CREATE TABLE public.listing_drafts (
 --
 
 COMMENT ON TABLE public.listing_drafts IS 'AI-generated listing drafts awaiting owner approval. Inserted by the edge function (service role) only; publishing goes through a normal listings INSERT so all plan-limit and validation triggers still apply.';
+
+
+--
+-- Name: COLUMN listing_drafts.import_request_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.listing_drafts.import_request_id IS 'market-import extraction request this draft came from; pairs with import_candidate_index for idempotency.';
+
+
+--
+-- Name: COLUMN listing_drafts.duplicate_listing_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.listing_drafts.duplicate_listing_id IS 'A listing already in the seller''s Market that looks like the same product — advisory, for the review UI to offer "update existing" instead of a silent duplicate.';
+
+
+--
+-- Name: COLUMN listing_drafts.import_meta; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.listing_drafts.import_meta IS 'Small validated bag from the extraction (availability, pickup, location_text, seller_notes, per-field confidence). Never the raw AI response.';
 
 
 --
@@ -7167,6 +9740,68 @@ CREATE TABLE public.listing_promotions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     stripe_livemode boolean
 );
+
+
+--
+-- Name: listing_publish_authorizations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.listing_publish_authorizations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    market_id uuid NOT NULL,
+    listing_id uuid,
+    intent text NOT NULL,
+    amount_cents integer NOT NULL,
+    currency text DEFAULT 'usd'::text NOT NULL,
+    stripe_session_id text,
+    stripe_payment_intent_id text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    paid_at timestamp with time zone,
+    consumed_at timestamp with time zone,
+    refunded_at timestamp with time zone,
+    created_by uuid DEFAULT auth.uid(),
+    stripe_livemode boolean DEFAULT false NOT NULL,
+    CONSTRAINT listing_publish_authorizations_amount_cents_check CHECK ((amount_cents >= 0)),
+    CONSTRAINT listing_publish_authorizations_intent_check CHECK ((intent = ANY (ARRAY['publish'::text, 'renewal'::text]))),
+    CONSTRAINT listing_publish_authorizations_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'paid'::text, 'consumed'::text, 'refunded'::text, 'expired'::text])))
+);
+
+
+--
+-- Name: COLUMN listing_publish_authorizations.stripe_livemode; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.listing_publish_authorizations.stripe_livemode IS 'Which Stripe mode minted this authorization. Stamped server-side at creation from the resolved key mode and re-stamped by the webhook from event.livemode. NEVER read from client input.';
+
+
+--
+-- Name: listing_publish_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.listing_publish_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    market_id uuid NOT NULL,
+    listing_id uuid,
+    kind text NOT NULL,
+    funded text NOT NULL,
+    period_start timestamp with time zone NOT NULL,
+    period_source text NOT NULL,
+    plan_at_time public.market_plan,
+    authorization_id uuid,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor uuid DEFAULT auth.uid(),
+    CONSTRAINT listing_publish_events_funded_check CHECK ((funded = ANY (ARRAY['included'::text, 'paid'::text, 'unlimited'::text, 'admin_grant'::text]))),
+    CONSTRAINT listing_publish_events_kind_check CHECK ((kind = ANY (ARRAY['publish'::text, 'renewal'::text]))),
+    CONSTRAINT listing_publish_events_period_source_check CHECK ((period_source = ANY (ARRAY['subscription'::text, 'calendar_month'::text])))
+);
+
+
+--
+-- Name: TABLE listing_publish_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.listing_publish_events IS 'Append-only. Never UPDATE or DELETE: corrections are compensating rows, as in market_promotion_credits.';
 
 
 --
@@ -7204,6 +9839,54 @@ CREATE TABLE public.market_delivery_settings (
 
 
 --
+-- Name: market_drop_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.market_drop_items (
+    drop_id uuid NOT NULL,
+    listing_id uuid NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: TABLE market_drop_items; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.market_drop_items IS 'Membership of existing listings in a Market Drop. The listing remains the product truth; buyer reads join public_listings so canonical state always wins.';
+
+
+--
+-- Name: market_drops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.market_drops (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    market_id uuid NOT NULL,
+    created_by uuid DEFAULT auth.uid() NOT NULL,
+    title text NOT NULL,
+    description text,
+    starts_at timestamp with time zone NOT NULL,
+    ends_at timestamp with time zone NOT NULL,
+    timezone text DEFAULT 'America/New_York'::text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT drop_window_coherent CHECK ((ends_at > starts_at)),
+    CONSTRAINT market_drops_description_check CHECK (((description IS NULL) OR (length(description) <= 400))),
+    CONSTRAINT market_drops_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'scheduled'::text, 'cancelled'::text]))),
+    CONSTRAINT market_drops_title_check CHECK (((length(btrim(title)) >= 1) AND (length(btrim(title)) <= 80)))
+);
+
+
+--
+-- Name: TABLE market_drops; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.market_drops IS 'Seller-created, time-boxed collections of existing listings ("Saturday Harvest"). Presentation only: membership never affects listing lifecycle, allowance, or compliance. Not the Seed Drop.';
+
+
+--
 -- Name: market_follows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7211,7 +9894,8 @@ CREATE TABLE public.market_follows (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     market_id uuid NOT NULL,
     follower_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    drop_alerts_enabled boolean DEFAULT false NOT NULL
 );
 
 
@@ -7448,6 +10132,52 @@ CREATE TABLE public.market_promotion_credits (
 
 
 --
+-- Name: market_qr; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.market_qr (
+    code text DEFAULT "left"(replace((gen_random_uuid())::text, '-'::text, ''::text), 16) NOT NULL,
+    market_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid DEFAULT auth.uid(),
+    CONSTRAINT market_qr_code_check CHECK ((code ~ '^[0-9a-f]{16}$'::text))
+);
+
+
+--
+-- Name: TABLE market_qr; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.market_qr IS 'One durable QR identity per market. Never rotated by rename, plan change or regeneration of the printable asset — changing a code is a deliberate exceptional operation with no casual path.';
+
+
+--
+-- Name: market_qr_scans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.market_qr_scans (
+    id bigint NOT NULL,
+    code text NOT NULL,
+    market_id uuid NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: market_qr_scans_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.market_qr_scans ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.market_qr_scans_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: market_subscriptions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7513,8 +10243,50 @@ CREATE TABLE public.plan_limits (
     max_pickup_locations integer DEFAULT 1 NOT NULL,
     extra_location_fee_cents integer,
     ai_listing_assistant boolean DEFAULT false NOT NULL,
-    advanced_delivery boolean DEFAULT false NOT NULL
+    advanced_delivery boolean DEFAULT false NOT NULL,
+    display_name text,
+    monthly_publish_allowance integer,
+    included_renewals_per_period integer,
+    wanted_intros_per_day integer,
+    qr_tools boolean DEFAULT false NOT NULL,
+    listing_lifetime_days integer DEFAULT 7 NOT NULL,
+    max_sale_publishes_per_hour integer
 );
+
+
+--
+-- Name: COLUMN plan_limits.max_active_listings; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.plan_limits.max_active_listings IS 'RETIRED as an enforcement gate by 0104 — kept populated only for legacy readers.';
+
+
+--
+-- Name: COLUMN plan_limits.display_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.plan_limits.display_name IS 'Customer-facing plan name. NOT the enum value: farm displays as "Max", sponsor as "Farm".';
+
+
+--
+-- Name: COLUMN plan_limits.monthly_publish_allowance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.plan_limits.monthly_publish_allowance IS 'New listing publishes included per allowance period. NULL = unlimited. Expiry does not refund.';
+
+
+--
+-- Name: COLUMN plan_limits.included_renewals_per_period; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.plan_limits.included_renewals_per_period IS 'Free renewals per allowance period. NULL = unlimited. Does not consume a publish.';
+
+
+--
+-- Name: COLUMN plan_limits.max_sale_publishes_per_hour; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.plan_limits.max_sale_publishes_per_hour IS 'Hourly anti-abuse ceiling on Sell publishes. NULL falls back to content_screening_config.max_listings_per_hour. Deliberately set ABOVE the monthly allowance so it never becomes the binding limit for a paying seller.';
 
 
 --
@@ -7566,6 +10338,77 @@ CREATE TABLE public.plot_grow_logs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT plot_grow_logs_kind_check CHECK ((kind = ANY (ARRAY['entry'::text, 'owner_note'::text]))),
     CONSTRAINT plot_grow_logs_stage_check CHECK (((stage IS NULL) OR (stage = ANY (ARRAY['PLOT_PREP'::text, 'PLANTED'::text, 'SPROUTED'::text, 'GROWING'::text, 'FLOWERING'::text, 'FRUITING'::text, 'HARVESTING'::text, 'FINISHED'::text]))))
+);
+
+
+--
+-- Name: promotion_campaigns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.promotion_campaigns (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    code text NOT NULL,
+    campaign_name text NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    applicable_plans public.market_plan[] DEFAULT '{}'::public.market_plan[] NOT NULL,
+    discount_type text NOT NULL,
+    discount_percent numeric,
+    discount_amount_cents integer,
+    duration text NOT NULL,
+    duration_in_months integer,
+    starts_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    max_redemptions integer,
+    max_redemptions_per_user integer DEFAULT 1 NOT NULL,
+    new_customers_only boolean DEFAULT false NOT NULL,
+    stripe_coupon_id text,
+    stripe_promotion_code_id text,
+    stripe_promotion_code_id_test text,
+    stripe_promotion_code_id_live text,
+    internal_notes text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT promo_discount_coherent CHECK ((((discount_type = 'percent'::text) AND (discount_percent IS NOT NULL) AND (discount_amount_cents IS NULL)) OR ((discount_type = 'amount'::text) AND (discount_amount_cents IS NOT NULL) AND (discount_percent IS NULL)))),
+    CONSTRAINT promo_duration_coherent CHECK ((((duration = 'repeating'::text) AND (duration_in_months IS NOT NULL)) OR ((duration <> 'repeating'::text) AND (duration_in_months IS NULL)))),
+    CONSTRAINT promo_window_coherent CHECK (((starts_at IS NULL) OR (expires_at IS NULL) OR (expires_at > starts_at))),
+    CONSTRAINT promotion_campaigns_code_check CHECK (((code = upper(code)) AND (code ~ '^[A-Z0-9_-]{3,40}$'::text))),
+    CONSTRAINT promotion_campaigns_discount_amount_cents_check CHECK (((discount_amount_cents IS NULL) OR (discount_amount_cents > 0))),
+    CONSTRAINT promotion_campaigns_discount_percent_check CHECK (((discount_percent IS NULL) OR ((discount_percent > (0)::numeric) AND (discount_percent <= (100)::numeric)))),
+    CONSTRAINT promotion_campaigns_discount_type_check CHECK ((discount_type = ANY (ARRAY['percent'::text, 'amount'::text]))),
+    CONSTRAINT promotion_campaigns_duration_check CHECK ((duration = ANY (ARRAY['once'::text, 'repeating'::text, 'forever'::text]))),
+    CONSTRAINT promotion_campaigns_duration_in_months_check CHECK (((duration_in_months IS NULL) OR (duration_in_months > 0))),
+    CONSTRAINT promotion_campaigns_max_redemptions_check CHECK (((max_redemptions IS NULL) OR (max_redemptions > 0))),
+    CONSTRAINT promotion_campaigns_max_redemptions_per_user_check CHECK ((max_redemptions_per_user > 0))
+);
+
+
+--
+-- Name: COLUMN promotion_campaigns.applicable_plans; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.promotion_campaigns.applicable_plans IS 'Internal market_plan values, NOT customer-facing names. FOUNDING3 is {grower} = customer-facing "Pro". Empty = all plans.';
+
+
+--
+-- Name: promotion_redemptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.promotion_redemptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    campaign_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    market_id uuid,
+    plan public.market_plan,
+    stripe_session_id text,
+    stripe_subscription_id text,
+    stripe_customer_id text,
+    status text DEFAULT 'redeemed'::text NOT NULL,
+    amount_discounted_cents integer,
+    redeemed_at timestamp with time zone DEFAULT now() NOT NULL,
+    converted_at timestamp with time zone,
+    cancelled_at timestamp with time zone,
+    CONSTRAINT promotion_redemptions_status_check CHECK ((status = ANY (ARRAY['redeemed'::text, 'converted'::text, 'cancelled'::text, 'refunded'::text])))
 );
 
 
@@ -7626,10 +10469,35 @@ CREATE VIEW public.public_listings AS
     l.taxonomy_node_id,
     l.inventory_count,
     l.request_options,
-    l.allow_custom_request
+    l.allow_custom_request,
+    l.is_bundle,
+    ( SELECT (count(*))::integer AS count
+           FROM public.listing_components c
+          WHERE (c.listing_id = l.id)) AS component_count
    FROM (public.listings l
      JOIN public.markets m ON ((m.id = l.market_id)))
-  WHERE ((l.status = 'active'::public.listing_status) AND (l.expires_at > now()) AND (m.status = 'active'::public.market_status));
+  WHERE ((l.status = 'active'::public.listing_status) AND (l.expires_at > now()) AND (m.status = 'active'::public.market_status) AND ((NOT l.is_bundle) OR public.bundle_components_available(l.id)));
+
+
+--
+-- Name: public_market_drops; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.public_market_drops AS
+ SELECT id,
+    market_id,
+    title,
+    description,
+    starts_at,
+    ends_at,
+    timezone,
+    public.market_drop_phase(status, starts_at, ends_at) AS phase,
+    ( SELECT count(*) AS count
+           FROM (public.market_drop_items i
+             JOIN public.public_listings pl ON ((pl.id = i.listing_id)))
+          WHERE (i.drop_id = d.id)) AS available_items
+   FROM public.market_drops d
+  WHERE ((status = 'scheduled'::text) AND (ends_at > (now() - '24:00:00'::interval)));
 
 
 --
@@ -8135,6 +11003,14 @@ ALTER TABLE ONLY public.ai_daily_counter
 
 
 --
+-- Name: ai_pending_actions ai_pending_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_pending_actions
+    ADD CONSTRAINT ai_pending_actions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ai_room_messages ai_room_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8295,6 +11171,30 @@ ALTER TABLE ONLY public.device_tokens
 
 
 --
+-- Name: drop_alert_deliveries drop_alert_deliveries_drop_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.drop_alert_deliveries
+    ADD CONSTRAINT drop_alert_deliveries_drop_id_user_id_key UNIQUE (drop_id, user_id);
+
+
+--
+-- Name: drop_alert_deliveries drop_alert_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.drop_alert_deliveries
+    ADD CONSTRAINT drop_alert_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: drop_alert_messages drop_alert_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.drop_alert_messages
+    ADD CONSTRAINT drop_alert_messages_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8327,6 +11227,14 @@ ALTER TABLE ONLY public.legacy_category_map
 
 
 --
+-- Name: listing_components listing_components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_components
+    ADD CONSTRAINT listing_components_pkey PRIMARY KEY (listing_id, component_listing_id);
+
+
+--
 -- Name: listing_drafts listing_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8351,6 +11259,30 @@ ALTER TABLE ONLY public.listing_promotions
 
 
 --
+-- Name: listing_publish_authorizations listing_publish_authorizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_authorizations
+    ADD CONSTRAINT listing_publish_authorizations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: listing_publish_authorizations listing_publish_authorizations_stripe_session_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_authorizations
+    ADD CONSTRAINT listing_publish_authorizations_stripe_session_id_key UNIQUE (stripe_session_id);
+
+
+--
+-- Name: listing_publish_events listing_publish_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_events
+    ADD CONSTRAINT listing_publish_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: listings listings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8364,6 +11296,22 @@ ALTER TABLE ONLY public.listings
 
 ALTER TABLE ONLY public.market_delivery_settings
     ADD CONSTRAINT market_delivery_settings_pkey PRIMARY KEY (market_id);
+
+
+--
+-- Name: market_drop_items market_drop_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_drop_items
+    ADD CONSTRAINT market_drop_items_pkey PRIMARY KEY (drop_id, listing_id);
+
+
+--
+-- Name: market_drops market_drops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_drops
+    ADD CONSTRAINT market_drops_pkey PRIMARY KEY (id);
 
 
 --
@@ -8511,6 +11459,30 @@ ALTER TABLE ONLY public.market_promotion_credits
 
 
 --
+-- Name: market_qr market_qr_market_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_qr
+    ADD CONSTRAINT market_qr_market_id_key UNIQUE (market_id);
+
+
+--
+-- Name: market_qr market_qr_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_qr
+    ADD CONSTRAINT market_qr_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: market_qr_scans market_qr_scans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_qr_scans
+    ADD CONSTRAINT market_qr_scans_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: market_subscriptions market_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8612,6 +11584,38 @@ ALTER TABLE ONLY public.prohibited_terms
 
 ALTER TABLE ONLY public.prohibited_terms
     ADD CONSTRAINT prohibited_terms_term_category_key UNIQUE (term, category);
+
+
+--
+-- Name: promotion_campaigns promotion_campaigns_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_campaigns
+    ADD CONSTRAINT promotion_campaigns_code_key UNIQUE (code);
+
+
+--
+-- Name: promotion_campaigns promotion_campaigns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_campaigns
+    ADD CONSTRAINT promotion_campaigns_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: promotion_redemptions promotion_redemptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_redemptions
+    ADD CONSTRAINT promotion_redemptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: promotion_redemptions promotion_redemptions_stripe_session_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_redemptions
+    ADD CONSTRAINT promotion_redemptions_stripe_session_id_key UNIQUE (stripe_session_id);
 
 
 --
@@ -8999,6 +12003,27 @@ CREATE INDEX device_tokens_user_idx ON public.device_tokens USING btree (user_id
 
 
 --
+-- Name: drop_alert_deliveries_open_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX drop_alert_deliveries_open_idx ON public.drop_alert_deliveries USING btree (status) WHERE (status = ANY (ARRAY['claimed'::text, 'submitted'::text]));
+
+
+--
+-- Name: drop_alert_messages_delivery_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX drop_alert_messages_delivery_idx ON public.drop_alert_messages USING btree (delivery_id);
+
+
+--
+-- Name: drop_alert_messages_open_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX drop_alert_messages_open_idx ON public.drop_alert_messages USING btree (status, request_id);
+
+
+--
 -- Name: events_anon_recent_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9027,10 +12052,24 @@ CREATE INDEX feedback_created_idx ON public.feedback USING btree (created_at DES
 
 
 --
+-- Name: listing_components_component_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX listing_components_component_idx ON public.listing_components USING btree (component_listing_id);
+
+
+--
 -- Name: listing_drafts_batch_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX listing_drafts_batch_idx ON public.listing_drafts USING btree (batch_id);
+
+
+--
+-- Name: listing_drafts_import_idem_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX listing_drafts_import_idem_idx ON public.listing_drafts USING btree (owner_id, import_request_id, import_candidate_index) WHERE (import_request_id IS NOT NULL);
 
 
 --
@@ -9118,10 +12157,59 @@ CREATE INDEX listings_type_idx ON public.listings USING btree (listing_type);
 
 
 --
+-- Name: lpa_listing_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lpa_listing_idx ON public.listing_publish_authorizations USING btree (listing_id);
+
+
+--
+-- Name: lpa_market_status_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lpa_market_status_idx ON public.listing_publish_authorizations USING btree (market_id, intent, status);
+
+
+--
+-- Name: lpe_authorization_once; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX lpe_authorization_once ON public.listing_publish_events USING btree (authorization_id) WHERE (authorization_id IS NOT NULL);
+
+
+--
+-- Name: lpe_listing_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lpe_listing_idx ON public.listing_publish_events USING btree (listing_id, kind);
+
+
+--
+-- Name: lpe_market_period_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lpe_market_period_idx ON public.listing_publish_events USING btree (market_id, period_start, kind, funded);
+
+
+--
 -- Name: lpl_loc_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX lpl_loc_idx ON public.listing_pickup_locations USING btree (location_id);
+
+
+--
+-- Name: market_drop_items_listing_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX market_drop_items_listing_idx ON public.market_drop_items USING btree (listing_id);
+
+
+--
+-- Name: market_drops_market_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX market_drops_market_idx ON public.market_drops USING btree (market_id, status, starts_at);
 
 
 --
@@ -9157,6 +12245,13 @@ CREATE INDEX market_members_user_idx ON public.market_members USING btree (user_
 --
 
 CREATE INDEX market_metrics_market_idx ON public.market_metrics USING btree (market_id);
+
+
+--
+-- Name: market_qr_scans_code_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX market_qr_scans_code_idx ON public.market_qr_scans USING btree (code, occurred_at DESC);
 
 
 --
@@ -9311,6 +12406,20 @@ CREATE INDEX plan_grants_market_idx ON public.admin_plan_grants USING btree (mar
 --
 
 CREATE INDEX prohibited_terms_active_idx ON public.prohibited_terms USING btree (active) WHERE active;
+
+
+--
+-- Name: promo_redemptions_campaign_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promo_redemptions_campaign_idx ON public.promotion_redemptions USING btree (campaign_id, status);
+
+
+--
+-- Name: promo_redemptions_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promo_redemptions_user_idx ON public.promotion_redemptions USING btree (user_id, campaign_id);
 
 
 --
@@ -9489,6 +12598,13 @@ CREATE TRIGGER ai_agents_no_cycle_trg BEFORE INSERT OR UPDATE OF reports_to ON p
 
 
 --
+-- Name: listing_publish_authorizations authorization_mode_guard_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER authorization_mode_guard_trg BEFORE UPDATE ON public.listing_publish_authorizations FOR EACH ROW EXECUTE FUNCTION public.authorization_mode_guard();
+
+
+--
 -- Name: claims check_claim_not_blocked; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9517,6 +12633,20 @@ CREATE TRIGGER claim_messages_rate_limit BEFORE INSERT ON public.claim_messages 
 
 
 --
+-- Name: claims claims_bundle_guard_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER claims_bundle_guard_trg BEFORE INSERT ON public.claims FOR EACH ROW EXECUTE FUNCTION public.claims_bundle_guard();
+
+
+--
+-- Name: claims claims_wanted_introduction_gate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER claims_wanted_introduction_gate BEFORE INSERT ON public.claims FOR EACH ROW EXECUTE FUNCTION public.enforce_wanted_introduction();
+
+
+--
 -- Name: market_delivery_settings delivery_settings_plan_gate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9535,6 +12665,20 @@ CREATE TRIGGER enforce_promotion BEFORE INSERT OR UPDATE ON public.listing_promo
 --
 
 CREATE TRIGGER events_before_insert_guard BEFORE INSERT ON public.events FOR EACH ROW EXECUTE FUNCTION public.events_guard();
+
+
+--
+-- Name: listing_components listing_components_guard_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER listing_components_guard_trg BEFORE INSERT ON public.listing_components FOR EACH ROW EXECUTE FUNCTION public.listing_components_guard();
+
+
+--
+-- Name: listings listing_lifecycle_guard_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER listing_lifecycle_guard_trg BEFORE INSERT OR UPDATE ON public.listings FOR EACH ROW EXECUTE FUNCTION public.listing_lifecycle_guard();
 
 
 --
@@ -9559,13 +12703,6 @@ CREATE TRIGGER listings_compliance_gate BEFORE INSERT OR UPDATE ON public.listin
 
 
 --
--- Name: listings listings_enforce_plan_limit; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER listings_enforce_plan_limit BEFORE INSERT ON public.listings FOR EACH ROW EXECUTE FUNCTION public.enforce_plan_limit();
-
-
---
 -- Name: listings listings_enforce_plot_plan; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9584,6 +12721,27 @@ CREATE TRIGGER listings_fill_taxonomy BEFORE INSERT ON public.listings FOR EACH 
 --
 
 CREATE TRIGGER listings_screen_content_trg BEFORE INSERT OR UPDATE OF title, description, trade_for, taxonomy_node_id ON public.listings FOR EACH ROW EXECUTE FUNCTION public.listings_screen_content();
+
+
+--
+-- Name: market_drop_items market_drop_items_cap_stmt_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER market_drop_items_cap_stmt_trg AFTER INSERT ON public.market_drop_items REFERENCING NEW TABLE AS new_table FOR EACH STATEMENT EXECUTE FUNCTION public.market_drop_items_cap_stmt();
+
+
+--
+-- Name: market_drop_items market_drop_items_cap_trg; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER market_drop_items_cap_trg BEFORE INSERT ON public.market_drop_items FOR EACH ROW EXECUTE FUNCTION public.market_drop_items_cap();
+
+
+--
+-- Name: market_drops market_drops_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER market_drops_set_updated_at BEFORE UPDATE ON public.market_drops FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -9692,6 +12850,13 @@ CREATE TRIGGER taxonomy_no_delete_in_use BEFORE DELETE ON public.marketplace_tax
 
 
 --
+-- Name: listings trg_enforce_publish_allowance; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_enforce_publish_allowance BEFORE INSERT OR UPDATE OF status ON public.listings FOR EACH ROW EXECUTE FUNCTION public.enforce_publish_allowance();
+
+
+--
 -- Name: claims validate_claim_option; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9767,6 +12932,14 @@ ALTER TABLE ONLY public.ai_agents
 
 ALTER TABLE ONLY public.ai_chat_messages
     ADD CONSTRAINT ai_chat_messages_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ai_pending_actions ai_pending_actions_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_pending_actions
+    ADD CONSTRAINT ai_pending_actions_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -9898,6 +13071,30 @@ ALTER TABLE ONLY public.device_tokens
 
 
 --
+-- Name: drop_alert_deliveries drop_alert_deliveries_drop_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.drop_alert_deliveries
+    ADD CONSTRAINT drop_alert_deliveries_drop_id_fkey FOREIGN KEY (drop_id) REFERENCES public.market_drops(id) ON DELETE CASCADE;
+
+
+--
+-- Name: drop_alert_deliveries drop_alert_deliveries_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.drop_alert_deliveries
+    ADD CONSTRAINT drop_alert_deliveries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: drop_alert_messages drop_alert_messages_delivery_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.drop_alert_messages
+    ADD CONSTRAINT drop_alert_messages_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.drop_alert_deliveries(id) ON DELETE CASCADE;
+
+
+--
 -- Name: events events_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9927,6 +13124,30 @@ ALTER TABLE ONLY public.feedback
 
 ALTER TABLE ONLY public.germination_tests
     ADD CONSTRAINT germination_tests_lot_id_fkey FOREIGN KEY (lot_id) REFERENCES public.seed_lots(id) ON DELETE CASCADE;
+
+
+--
+-- Name: listing_components listing_components_component_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_components
+    ADD CONSTRAINT listing_components_component_listing_id_fkey FOREIGN KEY (component_listing_id) REFERENCES public.listings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: listing_components listing_components_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_components
+    ADD CONSTRAINT listing_components_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES public.listings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: listing_drafts listing_drafts_duplicate_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_drafts
+    ADD CONSTRAINT listing_drafts_duplicate_listing_id_fkey FOREIGN KEY (duplicate_listing_id) REFERENCES public.listings(id) ON DELETE SET NULL;
 
 
 --
@@ -10002,6 +13223,46 @@ ALTER TABLE ONLY public.listing_promotions
 
 
 --
+-- Name: listing_publish_authorizations listing_publish_authorizations_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_authorizations
+    ADD CONSTRAINT listing_publish_authorizations_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES public.listings(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: listing_publish_authorizations listing_publish_authorizations_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_authorizations
+    ADD CONSTRAINT listing_publish_authorizations_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.markets(id) ON DELETE CASCADE;
+
+
+--
+-- Name: listing_publish_events listing_publish_events_authorization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_events
+    ADD CONSTRAINT listing_publish_events_authorization_id_fkey FOREIGN KEY (authorization_id) REFERENCES public.listing_publish_authorizations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: listing_publish_events listing_publish_events_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_events
+    ADD CONSTRAINT listing_publish_events_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES public.listings(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: listing_publish_events listing_publish_events_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.listing_publish_events
+    ADD CONSTRAINT listing_publish_events_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.markets(id) ON DELETE CASCADE;
+
+
+--
 -- Name: listings listings_fulfilled_by_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10039,6 +13300,30 @@ ALTER TABLE ONLY public.listings
 
 ALTER TABLE ONLY public.market_delivery_settings
     ADD CONSTRAINT market_delivery_settings_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.markets(id) ON DELETE CASCADE;
+
+
+--
+-- Name: market_drop_items market_drop_items_drop_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_drop_items
+    ADD CONSTRAINT market_drop_items_drop_id_fkey FOREIGN KEY (drop_id) REFERENCES public.market_drops(id) ON DELETE CASCADE;
+
+
+--
+-- Name: market_drop_items market_drop_items_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_drop_items
+    ADD CONSTRAINT market_drop_items_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES public.listings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: market_drops market_drops_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_drops
+    ADD CONSTRAINT market_drops_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.markets(id) ON DELETE CASCADE;
 
 
 --
@@ -10226,6 +13511,22 @@ ALTER TABLE ONLY public.market_promotion_credits
 
 
 --
+-- Name: market_qr market_qr_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_qr
+    ADD CONSTRAINT market_qr_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.markets(id) ON DELETE CASCADE;
+
+
+--
+-- Name: market_qr_scans market_qr_scans_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.market_qr_scans
+    ADD CONSTRAINT market_qr_scans_code_fkey FOREIGN KEY (code) REFERENCES public.market_qr(code) ON DELETE CASCADE;
+
+
+--
 -- Name: market_subscriptions market_subscriptions_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10311,6 +13612,30 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.prohibited_terms
     ADD CONSTRAINT prohibited_terms_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: promotion_redemptions promotion_redemptions_campaign_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_redemptions
+    ADD CONSTRAINT promotion_redemptions_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.promotion_campaigns(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: promotion_redemptions promotion_redemptions_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_redemptions
+    ADD CONSTRAINT promotion_redemptions_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.markets(id) ON DELETE SET NULL;
+
+
+--
+-- Name: promotion_redemptions promotion_redemptions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_redemptions
+    ADD CONSTRAINT promotion_redemptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -10699,6 +14024,19 @@ CREATE POLICY ai_msgs_read ON public.ai_room_messages FOR SELECT USING ((EXISTS 
 
 
 --
+-- Name: ai_pending_actions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ai_pending_actions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: ai_pending_actions ai_pending_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ai_pending_owner_read ON public.ai_pending_actions FOR SELECT USING ((auth.uid() = owner_id));
+
+
+--
 -- Name: ai_action_requests ai_requests_read; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11028,6 +14366,18 @@ CREATE POLICY device_tokens_upsert_self ON public.device_tokens FOR INSERT WITH 
 
 
 --
+-- Name: drop_alert_deliveries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.drop_alert_deliveries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: drop_alert_messages; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.drop_alert_messages ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11074,6 +14424,23 @@ CREATE POLICY germination_tests_admin ON public.germination_tests USING (public.
 
 
 --
+-- Name: listing_components; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.listing_components ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: listing_components listing_components_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY listing_components_select ON public.listing_components FOR SELECT USING (((EXISTS ( SELECT 1
+   FROM public.listings l
+  WHERE ((l.id = listing_components.listing_id) AND (l.owner_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM public.public_listings pl
+  WHERE (pl.id = listing_components.listing_id)))));
+
+
+--
 -- Name: listing_drafts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11111,6 +14478,18 @@ ALTER TABLE public.listing_pickup_locations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.listing_promotions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: listing_publish_authorizations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.listing_publish_authorizations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: listing_publish_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.listing_publish_events ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: listings; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11170,6 +14549,34 @@ CREATE POLICY listings_update_owner ON public.listings FOR UPDATE USING ((auth.u
 
 
 --
+-- Name: listing_publish_authorizations lpa_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY lpa_admin_read ON public.listing_publish_authorizations FOR SELECT USING (public.is_admin());
+
+
+--
+-- Name: listing_publish_authorizations lpa_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY lpa_owner_read ON public.listing_publish_authorizations FOR SELECT USING (public.owns_market(market_id));
+
+
+--
+-- Name: listing_publish_events lpe_admin_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY lpe_admin_read ON public.listing_publish_events FOR SELECT USING (public.is_admin());
+
+
+--
+-- Name: listing_publish_events lpe_owner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY lpe_owner_read ON public.listing_publish_events FOR SELECT USING (public.owns_market(market_id));
+
+
+--
 -- Name: listing_pickup_locations lpl_owner_write; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11192,6 +14599,52 @@ CREATE POLICY lpl_select_all ON public.listing_pickup_locations FOR SELECT TO au
 --
 
 ALTER TABLE public.market_delivery_settings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: market_drop_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.market_drop_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: market_drop_items market_drop_items_owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY market_drop_items_owner_write ON public.market_drop_items TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.market_drops d
+  WHERE ((d.id = market_drop_items.drop_id) AND public.owns_market(d.market_id))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.market_drops d
+  WHERE ((d.id = market_drop_items.drop_id) AND public.owns_market(d.market_id)))));
+
+
+--
+-- Name: market_drop_items market_drop_items_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY market_drop_items_read ON public.market_drop_items FOR SELECT TO authenticated, anon USING ((EXISTS ( SELECT 1
+   FROM public.market_drops d
+  WHERE ((d.id = market_drop_items.drop_id) AND ((d.status = 'scheduled'::text) OR public.owns_market(d.market_id))))));
+
+
+--
+-- Name: market_drops; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.market_drops ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: market_drops market_drops_owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY market_drops_owner_write ON public.market_drops TO authenticated USING (public.owns_market(market_id)) WITH CHECK (public.owns_market(market_id));
+
+
+--
+-- Name: market_drops market_drops_public_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY market_drops_public_read ON public.market_drops FOR SELECT TO authenticated, anon USING (((status = 'scheduled'::text) OR public.owns_market(market_id)));
+
 
 --
 -- Name: market_follows; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11218,6 +14671,13 @@ CREATE POLICY market_follows_insert_own ON public.market_follows FOR INSERT WITH
 --
 
 CREATE POLICY market_follows_select_own ON public.market_follows FOR SELECT USING ((auth.uid() = follower_id));
+
+
+--
+-- Name: market_follows market_follows_update_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY market_follows_update_own ON public.market_follows FOR UPDATE USING ((auth.uid() = follower_id)) WITH CHECK ((auth.uid() = follower_id));
 
 
 --
@@ -11336,6 +14796,18 @@ ALTER TABLE public.market_pickup_settings ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.market_promotion_credits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: market_qr; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.market_qr ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: market_qr_scans; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.market_qr_scans ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: market_subscriptions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11701,6 +15173,39 @@ CREATE POLICY profiles_update_self ON public.profiles FOR UPDATE USING ((auth.ui
 --
 
 ALTER TABLE public.prohibited_terms ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: promotion_campaigns promo_campaigns_admin; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY promo_campaigns_admin ON public.promotion_campaigns FOR SELECT USING (public.is_admin());
+
+
+--
+-- Name: promotion_redemptions promo_redemptions_admin; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY promo_redemptions_admin ON public.promotion_redemptions FOR SELECT USING (public.is_admin());
+
+
+--
+-- Name: promotion_redemptions promo_redemptions_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY promo_redemptions_own ON public.promotion_redemptions FOR SELECT USING ((user_id = auth.uid()));
+
+
+--
+-- Name: promotion_campaigns; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.promotion_campaigns ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: promotion_redemptions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.promotion_redemptions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: listing_promotions promotions_admin_read; Type: POLICY; Schema: public; Owner: -
@@ -12147,6 +15652,14 @@ GRANT USAGE ON SCHEMA public TO postgres;
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO service_role;
+
+
+--
+-- Name: FUNCTION _ai_audit(p_user uuid, p_action text, p_listing uuid, p_prev jsonb, p_new jsonb, p_request text, p_success boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._ai_audit(p_user uuid, p_action text, p_listing uuid, p_prev jsonb, p_new jsonb, p_request text, p_success boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._ai_audit(p_user uuid, p_action text, p_listing uuid, p_prev jsonb, p_new jsonb, p_request text, p_success boolean) TO service_role;
 
 
 --
@@ -12705,12 +16218,30 @@ GRANT ALL ON FUNCTION public.admin_market(p_market uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION admin_market_allowance(p_market uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.admin_market_allowance(p_market uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.admin_market_allowance(p_market uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.admin_market_allowance(p_market uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION admin_market_entitlements(p_market uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.admin_market_entitlements(p_market uuid) TO anon;
 GRANT ALL ON FUNCTION public.admin_market_entitlements(p_market uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.admin_market_entitlements(p_market uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION admin_market_qr(p_market uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.admin_market_qr(p_market uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.admin_market_qr(p_market uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.admin_market_qr(p_market uuid) TO service_role;
 
 
 --
@@ -12792,6 +16323,24 @@ GRANT ALL ON FUNCTION public.admin_pick_seed_item(p_item uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.admin_pickup_location_overview() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.admin_pickup_location_overview() TO authenticated;
 GRANT ALL ON FUNCTION public.admin_pickup_location_overview() TO service_role;
+
+
+--
+-- Name: FUNCTION admin_promo_campaigns(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.admin_promo_campaigns() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.admin_promo_campaigns() TO authenticated;
+GRANT ALL ON FUNCTION public.admin_promo_campaigns() TO service_role;
+
+
+--
+-- Name: FUNCTION admin_promo_redemptions(p_campaign uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.admin_promo_redemptions(p_campaign uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.admin_promo_redemptions(p_campaign uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.admin_promo_redemptions(p_campaign uuid) TO service_role;
 
 
 --
@@ -13200,6 +16749,14 @@ GRANT SELECT(screening_reason) ON TABLE public.listings TO anon;
 
 
 --
+-- Name: COLUMN listings.is_bundle; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(is_bundle) ON TABLE public.listings TO anon;
+GRANT SELECT(is_bundle) ON TABLE public.listings TO authenticated;
+
+
+--
 -- Name: FUNCTION admin_resolve_screening(p_listing uuid, p_approve boolean, p_reason text, p_suspend_seller boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13556,6 +17113,15 @@ GRANT ALL ON FUNCTION public.admin_upsert_prohibited_term(p_term text, p_action 
 
 
 --
+-- Name: FUNCTION admin_upsert_promo_campaign(p_payload jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.admin_upsert_promo_campaign(p_payload jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.admin_upsert_promo_campaign(p_payload jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.admin_upsert_promo_campaign(p_payload jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION admin_upsert_seed_product(p_id uuid, p_crop text, p_variety text, p_category text, p_sku text, p_supplier text, p_supplier_code text, p_packet_size text, p_barcode text, p_cost_cents integer, p_reorder_threshold integer, p_suggested_reorder integer, p_notes text, p_archived boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13574,12 +17140,39 @@ GRANT ALL ON FUNCTION public.admin_user_email(p_user uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION admin_wanted_usage(p_user uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.admin_wanted_usage(p_user uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.admin_wanted_usage(p_user uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.admin_wanted_usage(p_user uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION ai_agents_no_cycle(); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.ai_agents_no_cycle() TO anon;
 GRANT ALL ON FUNCTION public.ai_agents_no_cycle() TO authenticated;
 GRANT ALL ON FUNCTION public.ai_agents_no_cycle() TO service_role;
+
+
+--
+-- Name: FUNCTION ai_cancel_action(p_action_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_cancel_action(p_action_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_cancel_action(p_action_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_cancel_action(p_action_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_confirm_action(p_action_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_confirm_action(p_action_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_confirm_action(p_action_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_confirm_action(p_action_id uuid) TO service_role;
 
 
 --
@@ -13591,6 +17184,60 @@ GRANT ALL ON FUNCTION public.ai_file_action_request(p_agent text, p_action text,
 
 
 --
+-- Name: FUNCTION ai_find_my_listings(p_query text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_find_my_listings(p_query text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_find_my_listings(p_query text) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_find_my_listings(p_query text) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_mark_sold(p_listing uuid, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_mark_sold(p_listing uuid, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_mark_sold(p_listing uuid, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_mark_sold(p_listing uuid, p_request text) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_my_drafts(p_missing_price boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_my_drafts(p_missing_price boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_my_drafts(p_missing_price boolean) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_my_drafts(p_missing_price boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_my_expiring(p_within_days integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_my_expiring(p_within_days integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_my_expiring(p_within_days integer) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_my_expiring(p_within_days integer) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_my_inventory(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_my_inventory() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_my_inventory() TO authenticated;
+GRANT ALL ON FUNCTION public.ai_my_inventory() TO service_role;
+
+
+--
+-- Name: FUNCTION ai_propose_action(p_action text, p_listing_ids uuid[], p_payload jsonb, p_summary text, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_propose_action(p_action text, p_listing_ids uuid[], p_payload jsonb, p_summary text, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_propose_action(p_action text, p_listing_ids uuid[], p_payload jsonb, p_summary text, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_propose_action(p_action text, p_listing_ids uuid[], p_payload jsonb, p_summary text, p_request text) TO service_role;
+
+
+--
 -- Name: FUNCTION ai_reserve_slot(p_uid uuid, p_feature text, p_cap integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13599,11 +17246,47 @@ GRANT ALL ON FUNCTION public.ai_reserve_slot(p_uid uuid, p_feature text, p_cap i
 
 
 --
+-- Name: FUNCTION ai_set_price(p_listing uuid, p_price_cents integer, p_unit text, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_set_price(p_listing uuid, p_price_cents integer, p_unit text, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_set_price(p_listing uuid, p_price_cents integer, p_unit text, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_set_price(p_listing uuid, p_price_cents integer, p_unit text, p_request text) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_set_quantity(p_listing uuid, p_quantity text, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_set_quantity(p_listing uuid, p_quantity text, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_set_quantity(p_listing uuid, p_quantity text, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_set_quantity(p_listing uuid, p_quantity text, p_request text) TO service_role;
+
+
+--
+-- Name: FUNCTION ai_update_draft(p_draft uuid, p_price_cents integer, p_unit text, p_quantity text, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ai_update_draft(p_draft uuid, p_price_cents integer, p_unit text, p_quantity text, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ai_update_draft(p_draft uuid, p_price_cents integer, p_unit text, p_quantity text, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.ai_update_draft(p_draft uuid, p_price_cents integer, p_unit text, p_quantity text, p_request text) TO service_role;
+
+
+--
 -- Name: FUNCTION ai_usage_increment(p_user uuid, p_feature text, p_cap integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.ai_usage_increment(p_user uuid, p_feature text, p_cap integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.ai_usage_increment(p_user uuid, p_feature text, p_cap integer) TO service_role;
+
+
+--
+-- Name: FUNCTION authorization_mode_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.authorization_mode_guard() TO anon;
+GRANT ALL ON FUNCTION public.authorization_mode_guard() TO authenticated;
+GRANT ALL ON FUNCTION public.authorization_mode_guard() TO service_role;
 
 
 --
@@ -13669,6 +17352,15 @@ GRANT ALL ON FUNCTION public.billing_refund_promo_credit(p_session text, p_livem
 
 REVOKE ALL ON FUNCTION public.blocked_pair(a uuid, b uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.blocked_pair(a uuid, b uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION bundle_components_available(p_listing uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.bundle_components_available(p_listing uuid) TO anon;
+GRANT ALL ON FUNCTION public.bundle_components_available(p_listing uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.bundle_components_available(p_listing uuid) TO service_role;
 
 
 --
@@ -13744,6 +17436,15 @@ GRANT ALL ON FUNCTION public.claim_status_of(cid uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION claims_bundle_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.claims_bundle_guard() TO anon;
+GRANT ALL ON FUNCTION public.claims_bundle_guard() TO authenticated;
+GRANT ALL ON FUNCTION public.claims_bundle_guard() TO service_role;
+
+
+--
 -- Name: FUNCTION complete_market_order(p_order uuid, p_record_payment boolean, p_method text, p_amount_cents integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13779,12 +17480,47 @@ GRANT ALL ON FUNCTION public.confirm_market_order(p_order uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION create_import_drafts(p_import_id uuid, p_candidates jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_import_drafts(p_import_id uuid, p_candidates jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_import_drafts(p_import_id uuid, p_candidates jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.create_import_drafts(p_import_id uuid, p_candidates jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION create_market_bundle(p_title text, p_price_cents integer, p_component_ids uuid[], p_description text, p_unit text, p_inventory integer, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_market_bundle(p_title text, p_price_cents integer, p_component_ids uuid[], p_description text, p_unit text, p_inventory integer, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_market_bundle(p_title text, p_price_cents integer, p_component_ids uuid[], p_description text, p_unit text, p_inventory integer, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.create_market_bundle(p_title text, p_price_cents integer, p_component_ids uuid[], p_description text, p_unit text, p_inventory integer, p_request text) TO service_role;
+
+
+--
+-- Name: FUNCTION create_market_drop(p_title text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_listing_ids uuid[], p_description text, p_publish boolean, p_request text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_market_drop(p_title text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_listing_ids uuid[], p_description text, p_publish boolean, p_request text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_market_drop(p_title text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_listing_ids uuid[], p_description text, p_publish boolean, p_request text) TO authenticated;
+GRANT ALL ON FUNCTION public.create_market_drop(p_title text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone, p_listing_ids uuid[], p_description text, p_publish boolean, p_request text) TO service_role;
+
+
+--
 -- Name: FUNCTION create_market_order(p_market uuid, p_items jsonb, p_start timestamp with time zone, p_end timestamp with time zone, p_note text, p_location uuid, p_fulfillment text, p_address uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.create_market_order(p_market uuid, p_items jsonb, p_start timestamp with time zone, p_end timestamp with time zone, p_note text, p_location uuid, p_fulfillment text, p_address uuid) TO anon;
 GRANT ALL ON FUNCTION public.create_market_order(p_market uuid, p_items jsonb, p_start timestamp with time zone, p_end timestamp with time zone, p_note text, p_location uuid, p_fulfillment text, p_address uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.create_market_order(p_market uuid, p_items jsonb, p_start timestamp with time zone, p_end timestamp with time zone, p_note text, p_location uuid, p_fulfillment text, p_address uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION create_publish_authorization(p_market uuid, p_intent text, p_listing uuid, p_session text, p_amount_cents integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_publish_authorization(p_market uuid, p_intent text, p_listing uuid, p_session text, p_amount_cents integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_publish_authorization(p_market uuid, p_intent text, p_listing uuid, p_session text, p_amount_cents integer) TO service_role;
 
 
 --
@@ -13820,6 +17556,30 @@ GRANT ALL ON FUNCTION public.delivery_quote(p_market uuid, p_address uuid) TO se
 REVOKE ALL ON FUNCTION public.discard_listing_draft(p_draft uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.discard_listing_draft(p_draft uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.discard_listing_draft(p_draft uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION drop_alert_dispatch(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.drop_alert_dispatch(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.drop_alert_dispatch(p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION drop_alert_reconcile(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.drop_alert_reconcile(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.drop_alert_reconcile(p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION drop_alert_run(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.drop_alert_run() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.drop_alert_run() TO service_role;
 
 
 --
@@ -13884,6 +17644,23 @@ GRANT ALL ON FUNCTION public.enforce_promotion() TO service_role;
 
 
 --
+-- Name: FUNCTION enforce_publish_allowance(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.enforce_publish_allowance() TO anon;
+GRANT ALL ON FUNCTION public.enforce_publish_allowance() TO authenticated;
+GRANT ALL ON FUNCTION public.enforce_publish_allowance() TO service_role;
+
+
+--
+-- Name: FUNCTION enforce_wanted_introduction(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.enforce_wanted_introduction() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.enforce_wanted_introduction() TO service_role;
+
+
+--
 -- Name: FUNCTION events_guard(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -13899,6 +17676,14 @@ GRANT ALL ON FUNCTION public.events_guard() TO service_role;
 REVOKE ALL ON FUNCTION public.expire_finished_promotions() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.expire_finished_promotions() TO authenticated;
 GRANT ALL ON FUNCTION public.expire_finished_promotions() TO service_role;
+
+
+--
+-- Name: FUNCTION expire_stale_publish_authorizations(p_older_than interval); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.expire_stale_publish_authorizations(p_older_than interval) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.expire_stale_publish_authorizations(p_older_than interval) TO service_role;
 
 
 --
@@ -14007,12 +17792,47 @@ GRANT ALL ON FUNCTION public.is_plot_party(p_claim uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION listing_components_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.listing_components_guard() TO anon;
+GRANT ALL ON FUNCTION public.listing_components_guard() TO authenticated;
+GRANT ALL ON FUNCTION public.listing_components_guard() TO service_role;
+
+
+--
 -- Name: FUNCTION listing_has_verified_credential(p_listing uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.listing_has_verified_credential(p_listing uuid) TO anon;
 GRANT ALL ON FUNCTION public.listing_has_verified_credential(p_listing uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.listing_has_verified_credential(p_listing uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION listing_lifecycle_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.listing_lifecycle_guard() TO anon;
+GRANT ALL ON FUNCTION public.listing_lifecycle_guard() TO authenticated;
+GRANT ALL ON FUNCTION public.listing_lifecycle_guard() TO service_role;
+
+
+--
+-- Name: FUNCTION listing_overage_required(p_market uuid, p_listing uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.listing_overage_required(p_market uuid, p_listing uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.listing_overage_required(p_market uuid, p_listing uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION listing_type_spends_allowance(p_type public.listing_type); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.listing_type_spends_allowance(p_type public.listing_type) TO anon;
+GRANT ALL ON FUNCTION public.listing_type_spends_allowance(p_type public.listing_type) TO authenticated;
+GRANT ALL ON FUNCTION public.listing_type_spends_allowance(p_type public.listing_type) TO service_role;
 
 
 --
@@ -14071,6 +17891,14 @@ GRANT ALL ON FUNCTION public.location_available_slots(p_location uuid, p_days in
 
 
 --
+-- Name: FUNCTION mark_authorization_paid(p_session text, p_payment_intent text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_authorization_paid(p_session text, p_payment_intent text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_authorization_paid(p_session text, p_payment_intent text) TO service_role;
+
+
+--
 -- Name: FUNCTION mark_order_ready(p_order uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14098,6 +17926,23 @@ GRANT ALL ON FUNCTION public.market_active_listing_count(mid uuid) TO service_ro
 
 
 --
+-- Name: FUNCTION market_allowance_period(p_market uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.market_allowance_period(p_market uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.market_allowance_period(p_market uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.market_allowance_period(p_market uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION market_allowance_usage(p_market uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.market_allowance_usage(p_market uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.market_allowance_usage(p_market uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION market_available_slots(p_market uuid, p_days integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14122,6 +17967,33 @@ GRANT ALL ON FUNCTION public.market_boost_credits_remaining(p_market_id uuid) TO
 
 REVOKE ALL ON FUNCTION public.market_delivery_origin(p_market uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.market_delivery_origin(p_market uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION market_drop_items_cap(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.market_drop_items_cap() TO anon;
+GRANT ALL ON FUNCTION public.market_drop_items_cap() TO authenticated;
+GRANT ALL ON FUNCTION public.market_drop_items_cap() TO service_role;
+
+
+--
+-- Name: FUNCTION market_drop_items_cap_stmt(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.market_drop_items_cap_stmt() TO anon;
+GRANT ALL ON FUNCTION public.market_drop_items_cap_stmt() TO authenticated;
+GRANT ALL ON FUNCTION public.market_drop_items_cap_stmt() TO service_role;
+
+
+--
+-- Name: FUNCTION market_drop_phase(p_status text, p_starts timestamp with time zone, p_ends timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.market_drop_phase(p_status text, p_starts timestamp with time zone, p_ends timestamp with time zone) TO anon;
+GRANT ALL ON FUNCTION public.market_drop_phase(p_status text, p_starts timestamp with time zone, p_ends timestamp with time zone) TO authenticated;
+GRANT ALL ON FUNCTION public.market_drop_phase(p_status text, p_starts timestamp with time zone, p_ends timestamp with time zone) TO service_role;
 
 
 --
@@ -14195,6 +18067,15 @@ GRANT ALL ON FUNCTION public.markets_plan_change_reconcile() TO service_role;
 
 
 --
+-- Name: FUNCTION my_listing_allowance(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_listing_allowance() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_listing_allowance() TO authenticated;
+GRANT ALL ON FUNCTION public.my_listing_allowance() TO service_role;
+
+
+--
 -- Name: FUNCTION my_market(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14204,12 +18085,39 @@ GRANT ALL ON FUNCTION public.my_market() TO service_role;
 
 
 --
+-- Name: FUNCTION my_market_follower_count(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_market_follower_count() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_market_follower_count() TO authenticated;
+GRANT ALL ON FUNCTION public.my_market_follower_count() TO service_role;
+
+
+--
+-- Name: FUNCTION my_market_qr(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_market_qr() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_market_qr() TO authenticated;
+GRANT ALL ON FUNCTION public.my_market_qr() TO service_role;
+
+
+--
 -- Name: FUNCTION my_onboarding_state(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.my_onboarding_state() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.my_onboarding_state() TO authenticated;
 GRANT ALL ON FUNCTION public.my_onboarding_state() TO service_role;
+
+
+--
+-- Name: FUNCTION my_overage_required(p_listing uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_overage_required(p_listing uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_overage_required(p_listing uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.my_overage_required(p_listing uuid) TO service_role;
 
 
 --
@@ -14539,6 +18447,15 @@ GRANT ALL ON FUNCTION public.my_profile() TO service_role;
 
 
 --
+-- Name: FUNCTION my_wanted_allowance(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_wanted_allowance() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_wanted_allowance() TO authenticated;
+GRANT ALL ON FUNCTION public.my_wanted_allowance() TO service_role;
+
+
+--
 -- Name: FUNCTION normalize_state(p_state text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14701,6 +18618,14 @@ GRANT ALL ON FUNCTION public.price_from_sub(s public.seed_drop_subscriptions) TO
 
 
 --
+-- Name: FUNCTION promo_validate(p_code text, p_plan public.market_plan, p_user uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.promo_validate(p_code text, p_plan public.market_plan, p_user uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.promo_validate(p_code text, p_plan public.market_plan, p_user uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION promote_listing_purchased(p_listing uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14755,6 +18680,14 @@ GRANT ALL ON FUNCTION public.reconcile_pickup_locations(p_market uuid) TO servic
 
 
 --
+-- Name: FUNCTION record_promo_redemption(p_campaign uuid, p_user uuid, p_market uuid, p_plan public.market_plan, p_session text, p_subscription text, p_customer text, p_discount_cents integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_promo_redemption(p_campaign uuid, p_user uuid, p_market uuid, p_plan public.market_plan, p_session text, p_subscription text, p_customer text, p_discount_cents integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_promo_redemption(p_campaign uuid, p_user uuid, p_market uuid, p_plan public.market_plan, p_session text, p_subscription text, p_customer text, p_discount_cents integer) TO service_role;
+
+
+--
 -- Name: FUNCTION record_sale(p_market uuid, p_listing uuid, p_claim uuid, p_quantity numeric, p_gross_cents integer, p_discount_cents integer, p_fee_cents integer, p_payment_method text, p_buyer_label text, p_notes text, p_source text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -14769,6 +18702,25 @@ GRANT ALL ON FUNCTION public.record_sale(p_market uuid, p_listing uuid, p_claim 
 
 REVOKE ALL ON FUNCTION public.release_seed_drop_items(p_order uuid, p_reason text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.release_seed_drop_items(p_order uuid, p_reason text) TO service_role;
+
+
+--
+-- Name: FUNCTION renew_listing(p_listing uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.renew_listing(p_listing uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.renew_listing(p_listing uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.renew_listing(p_listing uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION resolve_market_qr(p_code text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.resolve_market_qr(p_code text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.resolve_market_qr(p_code text) TO anon;
+GRANT ALL ON FUNCTION public.resolve_market_qr(p_code text) TO authenticated;
+GRANT ALL ON FUNCTION public.resolve_market_qr(p_code text) TO service_role;
 
 
 --
@@ -15015,6 +18967,15 @@ GRANT ALL ON FUNCTION public.void_sale(p_txn uuid, p_reason text) TO service_rol
 
 
 --
+-- Name: FUNCTION wanted_day_start(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.wanted_day_start() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.wanted_day_start() TO authenticated;
+GRANT ALL ON FUNCTION public.wanted_day_start() TO service_role;
+
+
+--
 -- Name: TABLE admin_actions; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15045,8 +19006,6 @@ GRANT ALL ON SEQUENCE public.admin_audit_log_id_seq TO service_role;
 -- Name: TABLE admin_plan_grants; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.admin_plan_grants TO anon;
-GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.admin_plan_grants TO authenticated;
 GRANT ALL ON TABLE public.admin_plan_grants TO service_role;
 
 
@@ -15082,6 +19041,15 @@ GRANT ALL ON TABLE public.ai_chat_messages TO service_role;
 --
 
 GRANT ALL ON TABLE public.ai_daily_counter TO service_role;
+
+
+--
+-- Name: TABLE ai_pending_actions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.ai_pending_actions TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.ai_pending_actions TO authenticated;
+GRANT ALL ON TABLE public.ai_pending_actions TO service_role;
 
 
 --
@@ -15206,9 +19174,9 @@ GRANT ALL ON SEQUENCE public.billing_events_id_seq TO service_role;
 -- Name: TABLE billing_products; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public.billing_products TO anon;
-GRANT ALL ON TABLE public.billing_products TO authenticated;
 GRANT ALL ON TABLE public.billing_products TO service_role;
+GRANT SELECT ON TABLE public.billing_products TO anon;
+GRANT SELECT ON TABLE public.billing_products TO authenticated;
 
 
 --
@@ -15283,6 +19251,20 @@ GRANT ALL ON TABLE public.device_tokens TO service_role;
 
 
 --
+-- Name: TABLE drop_alert_deliveries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.drop_alert_deliveries TO service_role;
+
+
+--
+-- Name: TABLE drop_alert_messages; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.drop_alert_messages TO service_role;
+
+
+--
 -- Name: TABLE events; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15319,6 +19301,15 @@ GRANT ALL ON TABLE public.legacy_category_map TO service_role;
 
 
 --
+-- Name: TABLE listing_components; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.listing_components TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.listing_components TO authenticated;
+GRANT ALL ON TABLE public.listing_components TO service_role;
+
+
+--
 -- Name: TABLE listing_drafts; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15346,6 +19337,24 @@ GRANT ALL ON TABLE public.listing_promotions TO service_role;
 
 
 --
+-- Name: TABLE listing_publish_authorizations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.listing_publish_authorizations TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.listing_publish_authorizations TO authenticated;
+GRANT ALL ON TABLE public.listing_publish_authorizations TO service_role;
+
+
+--
+-- Name: TABLE listing_publish_events; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.listing_publish_events TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.listing_publish_events TO authenticated;
+GRANT ALL ON TABLE public.listing_publish_events TO service_role;
+
+
+--
 -- Name: TABLE market_delivery_settings; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15355,12 +19364,37 @@ GRANT ALL ON TABLE public.market_delivery_settings TO service_role;
 
 
 --
+-- Name: TABLE market_drop_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.market_drop_items TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.market_drop_items TO authenticated;
+GRANT ALL ON TABLE public.market_drop_items TO service_role;
+
+
+--
+-- Name: TABLE market_drops; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.market_drops TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.market_drops TO authenticated;
+GRANT ALL ON TABLE public.market_drops TO service_role;
+
+
+--
 -- Name: TABLE market_follows; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.market_follows TO anon;
 GRANT ALL ON TABLE public.market_follows TO authenticated;
 GRANT ALL ON TABLE public.market_follows TO service_role;
+
+
+--
+-- Name: COLUMN market_follows.drop_alerts_enabled; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(drop_alerts_enabled) ON TABLE public.market_follows TO authenticated;
 
 
 --
@@ -15640,6 +19674,29 @@ GRANT ALL ON TABLE public.market_promotion_credits TO service_role;
 
 
 --
+-- Name: TABLE market_qr; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.market_qr TO service_role;
+
+
+--
+-- Name: TABLE market_qr_scans; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.market_qr_scans TO service_role;
+
+
+--
+-- Name: SEQUENCE market_qr_scans_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.market_qr_scans_id_seq TO anon;
+GRANT ALL ON SEQUENCE public.market_qr_scans_id_seq TO authenticated;
+GRANT ALL ON SEQUENCE public.market_qr_scans_id_seq TO service_role;
+
+
+--
 -- Name: TABLE market_subscriptions; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15694,6 +19751,21 @@ GRANT ALL ON TABLE public.plot_grow_logs TO service_role;
 
 
 --
+-- Name: TABLE promotion_campaigns; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.promotion_campaigns TO service_role;
+
+
+--
+-- Name: TABLE promotion_redemptions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.promotion_redemptions TO service_role;
+GRANT SELECT ON TABLE public.promotion_redemptions TO authenticated;
+
+
+--
 -- Name: TABLE public_active_promotions; Type: ACL; Schema: public; Owner: -
 --
 
@@ -15709,6 +19781,15 @@ GRANT SELECT ON TABLE public.public_active_promotions TO authenticated;
 GRANT ALL ON TABLE public.public_listings TO service_role;
 GRANT SELECT ON TABLE public.public_listings TO anon;
 GRANT SELECT ON TABLE public.public_listings TO authenticated;
+
+
+--
+-- Name: TABLE public_market_drops; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.public_market_drops TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,MAINTAIN,UPDATE ON TABLE public.public_market_drops TO authenticated;
+GRANT ALL ON TABLE public.public_market_drops TO service_role;
 
 
 --
@@ -15935,5 +20016,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BeDsL5NweNtYFu2ueoJICDhhkmX2FuyoA1eq6ceN9QtOHUbGngbqK9SRal8EQr1
+\unrestrict wsUXKhobI5yZFX2aehDPYqsu72lmiO0JF2uqkYOzccpzIecTnosQ2qeHIHLt9id
 

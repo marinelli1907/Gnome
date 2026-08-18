@@ -9,3 +9,4 @@ supabase/tests/.build/
 # Local-only secrets for scripts. Never committed.
 .env.stripe.local
 .env.*.local
+supabase/baseline/*.bak

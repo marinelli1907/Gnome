@@ -1,7 +1,8 @@
 # Schema baseline
 
 `public_schema.sql` is a complete, verified dump of the `public` schema as it exists in production
-(project `fgybyghwcjlstqxkclch`), captured 2026-08-16 from Postgres 17.6.
+(project `fgybyghwcjlstqxkclch`), captured 2026-08-17 from Postgres 17.6 — after the
+0104-0125 monetization, Drops, Bundles, lifecycle-guard and payment-hardening rounds.
 
 ## Why this exists
 
@@ -18,8 +19,8 @@ schema, which is strictly better for the purpose.
 
 ## What it contains
 
-452 objects: 82 tables, 197 functions, 141 RLS policies, 4 views — and, importantly, **234 column-
-level grants**. Those grants are load-bearing in this schema, not incidental: `public.listings` uses
+90 tables, 248 functions, 155 RLS policies, 5 views — and, importantly, **261 column-level
+grants** among 1,093 GRANT statements. Those grants are load-bearing in this schema, not incidental: `public.listings` uses
 per-column grants, and one ungranted column anywhere in a PostgREST select list returns 42501 for the
 entire query. A dump taken with `--no-privileges` would look complete and rebuild a subtly broken
 database, so do not regenerate this file that way.
