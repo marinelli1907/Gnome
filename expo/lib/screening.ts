@@ -24,7 +24,7 @@ import type { Listing } from '@/types';
 
 /** Marketplace rules — the public policy page a blocked listing points at. */
 const RULES_URL = `${WEB_BASE}/trust`;
-const APPEAL_MAILTO = 'mailto:hello@gnomefarmersmarket.com?subject=Listing%20review';
+const APPEAL_MAILTO = 'mailto:daniel@boonesystems.com?subject=Listing%20review';
 
 /** Wording for the held state, single-sourced so the badge and the copy agree. */
 export const UNDER_REVIEW_LABEL = 'Under review';

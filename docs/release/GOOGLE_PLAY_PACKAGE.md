@@ -251,14 +251,13 @@ It is a product blocker: Gnome's entire claim/approve/chat loop depends on push.
 > first (which also removes `profile_snapshot`, a copy of the buyer's seed
 > profile the page's retention promise did not allow to survive).
 >
-> ⚠️ **The email fallback is currently undeliverable.** The page (and `/privacy`
-> and `/terms`) advertise `hello@gnomefarmersmarket.com`, but the domain has
-> **no MX records** and the A-record host (the web VPS) listens on no SMTP
-> port, so mail to that address bounces or blackholes. The PRIMARY deletion
-> path (sign in on the page, or in-app) is self-serve and unaffected, but the
-> "can't sign in at all" path is advertised and dead — and the same address is
-> the Play listing's contact email (§3.3). Set up mailboxes or forwarding for
-> the domain before submission.
+> **Email fallback fixed 2026-08-17.** The pages originally advertised
+> `hello@gnomefarmersmarket.com`, but that domain has **no MX records** and the
+> A-record host listens on no SMTP port — mail to it bounces or blackholes. All
+> twelve occurrences (web pages, `SUPPORT_EMAIL`, the app's support and appeal
+> mailtos) now use `daniel@boonesystems.com`, whose domain runs Google
+> Workspace mail (MX verified). Swap back only after real mail hosting or
+> forwarding exists for gnomefarmersmarket.com.
 
 Original finding, for the record:
 
@@ -461,7 +460,7 @@ Notebook and a Grow Log. Settings → Send feedback goes straight to the builder
 
 | Field | Value | Verified |
 |---|---|---|
-| Email | `hello@gnomefarmersmarket.com` | Appears on `/privacy` and `/terms` — ⚠️ **cannot currently receive mail** (no MX for the domain, no SMTP on the A-record host; verified 2026-08-17). Set up the mailbox before submitting |
+| Email | `daniel@boonesystems.com` | Swapped 2026-08-17 from `hello@gnomefarmersmarket.com`, which cannot receive mail (no MX for that domain). boonesystems.com runs Google Workspace mail — MX verified deliverable. Appears on `/privacy`, `/terms` and `/delete-account` |
 | Website | `https://gnomefarmersmarket.com` | HTTP 200 today |
 | Privacy Policy | `https://gnomefarmersmarket.com/privacy` | HTTP 200 today |
 | Countries | United States only | The app is US-scoped: `countrycodes=us` on the geocoder, US state table in `expo/lib/location.ts`, USD throughout |
@@ -643,7 +642,7 @@ are never public and photo metadata including GPS is stripped before upload.
 No background location is requested.
 
 CONTACT
-hello@gnomefarmersmarket.com
+daniel@boonesystems.com
 ```
 
 ### 7.3 App content declarations

@@ -193,7 +193,7 @@ export default function TermsPage() {
       </p>
       <p>
         <strong>Cancelling.</strong> You can cancel at any time by emailing{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>{' '}
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>{' '}
         — we&rsquo;ll cancel the subscription and stop the next charge. Your plan
         keeps working through the period you&rsquo;ve already paid for, and your
         Market then returns to the free tier. Listings you already posted run
@@ -254,7 +254,7 @@ export default function TermsPage() {
         You can stop using Gnome at any time. You can delete your account from
         Settings in the Gnome app — that removes your profile, listings, and
         uploads, and it can&rsquo;t be undone. If you signed up on the web, email{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>{' '}
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>{' '}
         and we&rsquo;ll delete it for you. If you have a paid plan,{' '}
         <strong>cancel it first</strong> — or say so in the same email — because
         deleting your account does not by itself stop a subscription from
@@ -285,7 +285,7 @@ export default function TermsPage() {
         We may update these terms; we&rsquo;ll change the date at the top, and
         continued use means acceptance. These terms are governed by Ohio law.
         Questions:{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>.
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>.
       </p>
     </main>
   );

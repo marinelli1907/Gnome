@@ -30,7 +30,7 @@ export default function PrivacyPage() {
         Gnome (Gnome Farmers Market) is operated by Boone Systems LLC, Ohio,
         USA. This policy covers the Gnome mobile app and gnomefarmersmarket.com.
         Reach us any time at{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>.
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>.
       </p>
 
       <h2>What we collect</h2>
@@ -355,7 +355,7 @@ export default function PrivacyPage() {
         listings and conversations for everyone, not just from your view. The
         website does not have a self-service delete button yet — if you only
         use the web, email{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>{' '}
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>{' '}
         from your account&rsquo;s email address and we will delete it for you.
       </p>
 
@@ -391,7 +391,7 @@ export default function PrivacyPage() {
         advertising, and doesn&rsquo;t profile you for decisions with legal
         effects, so there is nothing to opt out of on those fronts. To exercise
         any right, email{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>{' '}
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>{' '}
         — we&rsquo;ll verify you through your account email and respond within the
         time your state allows. If we turn a request down, reply and tell us
         why you disagree; a person will look at it again.
@@ -408,7 +408,7 @@ export default function PrivacyPage() {
       <h2>Contact</h2>
       <p>
         Boone Systems LLC, Ohio, USA — reach a human at{' '}
-        <a href="mailto:hello@gnomefarmersmarket.com">hello@gnomefarmersmarket.com</a>.
+        <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>.
         Questions about this policy are always welcome, and so is being told
         we got something wrong.
       </p>

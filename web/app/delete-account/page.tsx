@@ -74,8 +74,8 @@ export default function DeleteAccountPage() {
         <p style={{ marginTop: 0 }}>
           You can do the same thing in the Gnome app under <strong>Settings → Delete account</strong>.
           If you can&rsquo;t sign in at all, email{' '}
-          <a href="mailto:hello@gnomefarmersmarket.com?subject=Account%20deletion%20request">
-            hello@gnomefarmersmarket.com
+          <a href="mailto:daniel@boonesystems.com?subject=Account%20deletion%20request">
+            daniel@boonesystems.com
           </a>{' '}
           from the address on the account and we&rsquo;ll verify you and delete it for you.
         </p>

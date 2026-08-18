@@ -199,7 +199,7 @@ export default function SettingsScreen() {
             the contact route App Review looks for alongside them. */}
         <Pressable
           onPress={() => Linking.openURL(
-            'mailto:hello@gnomefarmersmarket.com?subject=Gnome%20support'
+            'mailto:daniel@boonesystems.com?subject=Gnome%20support'
           )}
           style={styles.legalLink}
           accessibilityRole="link"

@@ -345,7 +345,7 @@ export interface ServerError {
 export const RULES_HREF = '/trust';
 export const TERMS_PROHIBITED_HREF = '/terms#prohibited';
 /** The published contact address used across the site (privacy, terms). */
-export const SUPPORT_EMAIL = 'hello@gnomefarmersmarket.com';
+export const SUPPORT_EMAIL = 'daniel@boonesystems.com';
 
 // Title per code, plus copy for the codes the server raises BARE (a bare token
 // must never reach a screen). Titles and bare-code copy are kept word-for-word
