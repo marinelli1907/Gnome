@@ -13,7 +13,7 @@
 // never happens here.
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, Pressable,
+  ActivityIndicator, Alert, FlatList, Image, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -406,14 +406,16 @@ export default function ImportScreen() {
             Upload photos or screenshots
           </Text>
         </Pressable>
-        <Pressable
-          style={[styles.pickBtnSquare, assets.length >= MAX_SOURCES && styles.pickBtnOff]}
-          onPress={() => void addFromCamera()}
-          disabled={assets.length >= MAX_SOURCES}
-          accessibilityLabel="Take a photo"
-        >
-          <Camera size={18} color={assets.length >= MAX_SOURCES ? Colors.textTertiary : Colors.primary} />
-        </Pressable>
+        {Platform.OS === 'ios' && (
+          <Pressable
+            style={[styles.pickBtnSquare, assets.length >= MAX_SOURCES && styles.pickBtnOff]}
+            onPress={() => void addFromCamera()}
+            disabled={assets.length >= MAX_SOURCES}
+            accessibilityLabel="Take a photo"
+          >
+            <Camera size={18} color={assets.length >= MAX_SOURCES ? Colors.textTertiary : Colors.primary} />
+          </Pressable>
+        )}
       </View>
       <Text style={styles.limitNote}>Up to {MAX_SOURCES} images.</Text>
 

@@ -5,7 +5,7 @@
 // memory server-side — never stored. Entitlement comes from the backend's
 // resolved plan (paid OR complimentary Grower/Farm/Sponsor).
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useRouter } from 'expo-router';
@@ -62,10 +62,15 @@ export default function AiListingScreen() {
 
   const capture = async (fromCamera: boolean) => {
     setFailed(null);
-    const perm = fromCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission needed', 'Allow access to continue.'); return; }
+    // The library path needs no permission gate: the SDK 54 picker is the
+    // system photo picker, and Android blocks the legacy storage permissions
+    // outright — requestMediaLibraryPermissionsAsync would auto-deny there and
+    // dead-end a flow the OS is happy to run. The camera is iOS-only (CAMERA is
+    // stripped from the Android manifest), so only that path asks.
+    if (fromCamera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Permission needed', 'Allow camera access to continue.'); return; }
+    }
     const res = fromCamera
       ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
       : await ImagePicker.launchImageLibraryAsync({ quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
@@ -154,7 +159,9 @@ export default function AiListingScreen() {
       </Text>
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Button label="📷 Take photo" onPress={() => void capture(true)} disabled={busy} style={{ flex: 1 }} />
+        {Platform.OS === 'ios' && (
+          <Button label="📷 Take photo" onPress={() => void capture(true)} disabled={busy} style={{ flex: 1 }} />
+        )}
         <Button label="🖼 Library" variant="secondary" onPress={() => void capture(false)} disabled={busy} style={{ flex: 1 }} />
       </View>
 
@@ -173,7 +180,7 @@ export default function AiListingScreen() {
         <View style={styles.failBox}>
           <Text style={styles.failText}>{failed}</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            <Button label="Try another photo" variant="secondary" onPress={() => void capture(true)} style={{ flex: 1 }} />
+            <Button label="Try another photo" variant="secondary" onPress={() => void capture(Platform.OS === 'ios')} style={{ flex: 1 }} />
             <Button label="Create manually" onPress={() => router.replace('/(tabs)/post')} style={{ flex: 1 }} />
           </View>
         </View>

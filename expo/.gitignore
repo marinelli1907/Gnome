@@ -43,3 +43,7 @@ yarn-error.*
 core
 node_modules
 .expo
+
+# EAS local signing — never commit
+credentials.json
+credentials/
