@@ -27,6 +27,7 @@
     },
     "android": {
       "package": "app.boonesystems.gnome",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyC0Qi2VbDydLWCWry4WURFVyGUMZv0QrUI"
