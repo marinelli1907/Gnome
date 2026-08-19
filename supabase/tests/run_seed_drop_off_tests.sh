@@ -41,7 +41,9 @@ const GATE = path.join(root, 'supabase/functions/_shared/seed_drop_gate.ts');
 // The complete purchasable set: three plan subscriptions, the boost, the pickup
 // add-on, and the two $0.99 overage keys (0106). Anything else — above all any
 // seed key — must be refused by the checkout allowlist.
-const MARKETPLACE = ['GNOME_FARM_MONTHLY', 'GNOME_GROWER_MONTHLY', 'GNOME_SPONSOR_MONTHLY',
+// GNOME_SPONSOR_MONTHLY left this list in 0126: the sponsor tier retired from
+// sale, so the gate BLOCKING it is now the correct behavior, not drift.
+const MARKETPLACE = ['GNOME_FARM_MONTHLY', 'GNOME_GROWER_MONTHLY',
                      'GNOME_LISTING_PROMOTION', 'GNOME_PICKUP_LOCATION_ADDON',
                      'GNOME_LISTING_PUBLISH', 'GNOME_LISTING_RENEWAL'];
 

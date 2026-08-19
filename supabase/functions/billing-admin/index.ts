@@ -58,7 +58,11 @@ const CANON: {
 }[] = [
   { key: 'GNOME_GROWER_MONTHLY', amount: 999, kind: 'subscription', description: 'Grower plan, monthly', active: true, recurring: 'month' },
   { key: 'GNOME_FARM_MONTHLY', amount: 2999, kind: 'subscription', description: 'Farm plan, monthly', active: true, recurring: 'month' },
-  { key: 'GNOME_SPONSOR_MONTHLY', amount: 9900, kind: 'subscription', description: 'Farm plan (internal enum sponsor), monthly', active: true, recurring: 'month' },
+  // Retired by 0126 — customer-facing "Farm" is GNOME_FARM_MONTHLY at $29.99.
+  // active:false here matters: this CATALOG's insert path is what a clean
+  // environment gets, and a reseed must not resurrect a retired $99 SKU into
+  // a live checkout allowlist (that exact resurrection was a review finding).
+  { key: 'GNOME_SPONSOR_MONTHLY', amount: 9900, kind: 'subscription', description: 'Legacy Farm (retired 0126; internal comp rung only)', active: false, recurring: 'month' },
   { key: 'GNOME_PICKUP_LOCATION_ADDON', amount: 500, kind: 'addon', description: 'Extra pickup location, per unit monthly', active: true, recurring: 'month' },
   { key: 'GNOME_LISTING_PROMOTION', amount: 399, kind: 'one_time', description: 'Featured listing promotion, 7 days', active: true },
   { key: 'GNOME_LISTING_PUBLISH', amount: 99, kind: 'one_time', description: 'Publish one additional listing beyond the monthly allowance', active: true },

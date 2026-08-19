@@ -26,7 +26,9 @@
 export const CHECKOUT_ALLOWED_KEYS: readonly string[] = [
   'GNOME_GROWER_MONTHLY',
   'GNOME_FARM_MONTHLY',
-  'GNOME_SPONSOR_MONTHLY',
+  // GNOME_SPONSOR_MONTHLY retired 0126: customer-facing "Farm" is now the
+  // GNOME_FARM_MONTHLY row at $29.99; the sponsor enum survives as the
+  // internal comp rung only and is not purchasable.
   'GNOME_LISTING_PROMOTION',
   'GNOME_PICKUP_LOCATION_ADDON',
   'GNOME_LISTING_PUBLISH',
