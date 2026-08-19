@@ -3,8 +3,10 @@
 import { useCallback } from 'react';
 
 const IOS_URL = process.env.NEXT_PUBLIC_IOS_APP_URL || 'https://apps.apple.com/';
-const ANDROID_URL =
-  process.env.NEXT_PUBLIC_ANDROID_APP_URL || 'https://play.google.com/store/apps';
+// Empty on purpose: Gnome has no Google Play listing yet, so there is no
+// Android store to fall back to. Set NEXT_PUBLIC_ANDROID_APP_URL to the real
+// Play URL only once the app is published there.
+const ANDROID_URL = process.env.NEXT_PUBLIC_ANDROID_APP_URL || '';
 
 /**
  * Tries to open the native app via the `gnome://` deep link; if nothing handles
@@ -25,14 +27,17 @@ export default function OpenInApp({
     const isAndroid = /android/i.test(navigator.userAgent);
     const store = isAndroid ? ANDROID_URL : IOS_URL;
 
-    const fallback = setTimeout(() => {
-      window.location.href = store;
-    }, 1200);
+    // Only arm the store fallback when there is a store to send them to.
+    if (store) {
+      const fallback = setTimeout(() => {
+        window.location.href = store;
+      }, 1200);
 
-    // If the app opens, the page is backgrounded and the timer is cleared.
-    const cancel = () => clearTimeout(fallback);
-    document.addEventListener('visibilitychange', cancel, { once: true });
-    window.addEventListener('pagehide', cancel, { once: true });
+      // If the app opens, the page is backgrounded and the timer is cleared.
+      const cancel = () => clearTimeout(fallback);
+      document.addEventListener('visibilitychange', cancel, { once: true });
+      window.addEventListener('pagehide', cancel, { once: true });
+    }
 
     window.location.href = deepLink;
   }, [listingId]);

@@ -195,7 +195,7 @@ export default async function HomePage() {
               Post in seconds: snap a photo and our AI drafts the listing for you.
             </p>
             <ul className="checks">
-              <li>Free to start — your first 10 listings cost nothing</li>
+              <li>Free to start — 3 Sell listings a month cost nothing</li>
               <li>AI writes your listings from a photo</li>
               <li>Boost a listing when you want the spotlight</li>
             </ul>

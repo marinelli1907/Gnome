@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   description: 'The terms for using Gnome, the neighborhood farmers market.',
 };
 
-const UPDATED = 'August 13, 2026';
+const UPDATED = 'August 18, 2026';
 
 // These terms are the contract users actually accept (the app's sign-in screen
 // and the web login link here), so everything below has to match what the code
@@ -252,10 +252,12 @@ export default function TermsPage() {
       <h2>16. Ending it</h2>
       <p>
         You can stop using Gnome at any time. You can delete your account from
-        Settings in the Gnome app — that removes your profile, listings, and
-        uploads, and it can&rsquo;t be undone. If you signed up on the web, email{' '}
+        Settings in the Gnome app, or on the web at{' '}
+        <a href="/delete-account">gnomefarmersmarket.com/delete-account</a> —
+        either way it removes your profile, listings, and uploads, and it
+        can&rsquo;t be undone. If you can&rsquo;t sign in at all, email{' '}
         <a href="mailto:daniel@boonesystems.com">daniel@boonesystems.com</a>{' '}
-        and we&rsquo;ll delete it for you. If you have a paid plan,{' '}
+        from the address on the account and we&rsquo;ll delete it for you. If you have a paid plan,{' '}
         <strong>cancel it first</strong> — or say so in the same email — because
         deleting your account does not by itself stop a subscription from
         renewing. Sections 9, 17, and 18 survive your account ending.
