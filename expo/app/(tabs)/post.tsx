@@ -36,6 +36,7 @@ import { useCreateListing, useMyCredentials, useMyMarket, logEvent } from '@/lib
 import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { purchaseOverage } from '@/lib/billing';
+import { canBuyDigitalInApp, OVERAGE_UNAVAILABLE_TITLE, OVERAGE_UNAVAILABLE_BODY } from '@/lib/digitalPurchase';
 import { getCurrentCoords } from '@/lib/location';
 import type { ListingType } from '@/types';
 
@@ -366,12 +367,19 @@ export default function PostScreen() {
         // so a successful $0.99 purchase can simply run the same submit again.
         void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'allowance' } });
         Alert.alert(
-          'Included listings used up',
-          'You’ve used your included Sell listings for this period. Your draft is saved right here either way.',
+          canBuyDigitalInApp ? 'Included listings used up' : OVERAGE_UNAVAILABLE_TITLE,
+          canBuyDigitalInApp
+            ? 'You’ve used your included Sell listings for this period. Your draft is saved right here either way.'
+            : OVERAGE_UNAVAILABLE_BODY,
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'See plans', onPress: () => router.push('/upgrade') },
-            { text: 'Publish for $0.99', onPress: () => void payAndRetryPublish() },
+            // D1: Android has no in-app digital purchase until Play Billing
+            // (v1.2). The draft is preserved either way; the plan comparison is
+            // the honest alternative, not a dead end.
+            ...(canBuyDigitalInApp
+              ? [{ text: 'Publish for $0.99', onPress: () => void payAndRetryPublish() }]
+              : []),
           ],
         );
       } else if (err?.code === 'PLAN_LIMIT_REACHED') {

@@ -132,12 +132,17 @@ month, with a 7-day expiry. Those are different products. Active-slot semantics
 is the better model and matches what a seller expects, but it is a real change
 to `enforce_publish_allowance` and it interacts with the expiry rules.
 
-**Two claims on that card are commitments, not features**, and neither exists in
-the product today:
-- "Priority support" — implies a response-time commitment. There is currently no
-  support SLA and one mailbox.
-- "Advanced analytics" — verify what analytics actually ships before Farm's card
-  promises a tier of it.
+**Two claims on the mockup's Farm card were commitments, not features** —
+"priority support" (implies a response-time SLA that does not exist; there is
+one mailbox) and "advanced analytics" (a tier of analytics that does not ship).
+
+**Resolved by owner decision D5 (2026-08-19): neither may appear.** They never
+reached shipping code — the app's Farm card and the web pricing page were both
+built from `plan_limits`, so they describe only real capabilities (unlimited
+Sell listings and renewals, unlimited Wanted responses, custom Market QR tools,
+10 pickup locations, 10 promotions/month, AI Listing Assistant, delivery
+scheduling). Any future Farm copy is held to the same rule: if the feature is
+not in `plan_limits` or a shipped screen, it does not go on the card.
 
 ---
 

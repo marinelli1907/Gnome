@@ -73,14 +73,21 @@ export default function TabLayout() {
       <Tabs.Screen
         name="ai"
         options={{
-          title: 'Gnome AI',
+          // D3: 'Gnome AI' was the second-widest label and truncated at
+          // Android's Large font setting. 'Ask AI' keeps the meaning.
+          title: 'Ask AI',
           tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="activity"
         options={{
-          title: 'My Gnome',
+          // D3: label only — the route is still `activity`, so every
+          // router.push('/(tabs)/activity'), deep link and notification target
+          // is untouched. "My Gnome" was the widest label in the bar and
+          // ellipsized at the default font size on a 360dp phone; "Market" is
+          // narrower and says what the screen actually is.
+          title: 'Market',
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
       />

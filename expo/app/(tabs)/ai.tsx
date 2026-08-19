@@ -30,6 +30,7 @@ import { pickImages, uploadListingImages } from '@/lib/images';
 import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 import { purchaseOverage } from '@/lib/billing';
+import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 
 /**
  * Server-bound action payloads riding on an assistant reply (market management).
@@ -405,17 +406,24 @@ export default function AiTab() {
     }
     if (r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
       // Draft rows persist server-side, so the retry after purchase is just publishing again.
+      // D1: no in-app digital purchase on Android until Play Billing (v1.2).
+      // The draft persists server-side either way.
       Alert.alert(
         'Included listings used up',
-        'You’ve used your included Sell listings for this period. The draft stays saved.',
+        canBuyDigitalInApp
+          ? 'You’ve used your included Sell listings for this period. The draft stays saved.'
+          : 'You’ve used your included Sell listings for this period. The draft stays saved — upgrade for unlimited Sell listings.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Publish for $0.99', onPress: async () => {
+          ...(!canBuyDigitalInApp
+            ? [{ text: 'See plans', onPress: () => router.push('/upgrade') }]
+            : []),
+          ...(!canBuyDigitalInApp ? [] : [{ text: 'Publish for $0.99', onPress: async () => {
             const outcome = await purchaseOverage(null);
             if (outcome === 'paid' || outcome === 'not_needed') void publish(d);
             else if (outcome === 'pending') Alert.alert('Payment received', 'Stripe is confirming. Tap publish again in a few seconds — you will not be charged twice.');
             else if (outcome === 'error') Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged.');
-          } },
+          } }]),
         ],
       );
       return;
@@ -603,9 +611,17 @@ export default function AiTab() {
                 paidFlow[item.id] === 'done' ? null : (
                   <View key={item.id} style={styles.proposalCard}>
                     <Text style={styles.proposalTitle}>{m.paymentAsk!.verb} {item.title}</Text>
-                    <Text style={styles.proposalMeta}>Another 7 days · $0.99 one time</Text>
+                    <Text style={styles.proposalMeta}>
+                      {canBuyDigitalInApp
+                        ? 'Another 7 days · $0.99 one time'
+                        : 'Included renewals used up — Pro renews without limits'}
+                    </Text>
                     <View style={styles.cardActions}>
-                      {paidFlow[item.id] === 'processing' ? (
+                      {/* D1: Android cannot sell this in-app until Play Billing
+                          (v1.2), so the card offers the plan instead of a price. */}
+                      {!canBuyDigitalInApp ? (
+                        <Button label="See plans" onPress={() => router.push('/upgrade')} />
+                      ) : paidFlow[item.id] === 'processing' ? (
                         <Button label="Finish renewal" onPress={() => void finishPaidRenewal(item)} />
                       ) : (
                         <Button
