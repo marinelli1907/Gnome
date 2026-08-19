@@ -72,7 +72,10 @@ export default function DeleteAccountPage() {
 
         <h2 style={{ marginBottom: 8, marginTop: 32 }}>Other ways to ask</h2>
         <p style={{ marginTop: 0 }}>
-          You can do the same thing in the Gnome app under <strong>Settings → Delete account</strong>.
+          {/* Verbatim from expo/app/settings.tsx — this exact path is written into
+              both stores' submission text, so the wording must not drift. */}
+          You can do the same thing in the Gnome app under{' '}
+          <strong>Profile → Settings → Delete my account</strong>.
           If you can&rsquo;t sign in at all, email{' '}
           <a href="mailto:daniel@boonesystems.com?subject=Account%20deletion%20request">
             daniel@boonesystems.com

@@ -9,7 +9,7 @@ export default function MarketCard({ market }: { market: WebMarket }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={market.banner_url} alt={market.name} style={{ width: '100%', height: 110, objectFit: 'cover' }} />
       ) : (
-        <div style={{ height: 110, background: 'linear-gradient(120deg,var(--green),var(--sage))' }} />
+        <div style={{ height: 110, background: 'linear-gradient(120deg,var(--garden-green),var(--harvest-yellow))' }} />
       )}
       <div className="body" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <div className="avatar">

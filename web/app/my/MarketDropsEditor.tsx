@@ -173,7 +173,7 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
         <span style={{ fontSize: 13 }}>No Market Drops yet.</span>
       )}
       {drops.map((d) => (
-        <div key={d.id} style={{ border: '1px solid var(--border, #ddd)', borderRadius: 10, padding: '8px 10px', display: 'grid', gap: 4 }}>
+        <div key={d.id} style={{ border: '1px solid var(--border, #E5E7EB)', borderRadius: 10, padding: '8px 10px', display: 'grid', gap: 4 }}>
           <strong style={{ fontSize: 14 }}>
             {d.title}
             {' '}

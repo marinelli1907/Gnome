@@ -359,7 +359,7 @@ export default function GnomeAssistant() {
                 {!!t.proposal && !settled[t.proposal.action_id] && (
                   <div className="gp-proposal" style={{
                     margin: '6px 0 0', padding: '10px 12px', borderRadius: 12,
-                    border: '1px solid var(--leaf, #4a7c46)', display: 'grid', gap: 6,
+                    border: '1px solid var(--ai-purple, #8E44AD)', display: 'grid', gap: 6,
                   }}>
                     <strong style={{ fontSize: 14 }}>{t.proposal.summary}</strong>
                     {t.proposal.count > 1 && (
@@ -380,7 +380,7 @@ export default function GnomeAssistant() {
                   paidFlow[item.id] === 'done' ? null : (
                     <div key={item.id} className="gp-proposal" style={{
                       margin: '6px 0 0', padding: '10px 12px', borderRadius: 12,
-                      border: '1px solid var(--leaf, #4a7c46)', display: 'grid', gap: 6,
+                      border: '1px solid var(--ai-purple, #8E44AD)', display: 'grid', gap: 6,
                     }}>
                       <strong style={{ fontSize: 14 }}>{t.paymentAsk!.verb} {item.title}</strong>
                       <span style={{ fontSize: 13, opacity: 0.75 }}>Another 7 days · $0.99 one time</span>

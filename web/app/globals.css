@@ -1,15 +1,88 @@
+/* ============================================================================
+   Gnome identity v4 — the one-file flip (docs/design/GNOME_IDENTITY.md).
+   White canvas, charcoal type, five gnome hues. Change a value here and the
+   whole site re-skins; nothing below this block hard-codes a brand color.
+
+   THREE CUTS PER HUE, because one is not enough and the arithmetic says so.
+   Contrast is symmetric, so a single measured number covers both "white label
+   on this fill" and "this color as text on white".
+
+     cut          use                                        vs #FFF   vs #F1F5F9
+     brand        fills, art, pins, gradients, never text      —          —
+     ink          buttons, links, badges, 1-up on white       4.51+      4.12
+     deep         text on a tint or on Light Gray; band ends  6.00+      6.00+
+
+   Measured (WCAG 2.1, computed not asserted):
+     Gnome Red      brand #E53935 4.23 · ink #E32C27 4.51 · deep #B71C1C 6.57
+     Garden Green   brand #43B649 2.62 · ink #328736 4.51 · deep #215E24 7.80
+     Trade Blue     brand #1E88E5 3.68 · ink #1878CD 4.56 · deep #125A9B 7.09
+     AI Purple      brand #8E44AD 5.87 (passes as-is) · deep #6C3382 8.63
+     Harvest Yellow #FFC107 1.63 — NEVER takes a white label. Charcoal on it
+                    measures 9.76. There is deliberately no --harvest-*-ink.
+     Charcoal #222222 15.91 · Slate #6B7280 4.83 · Light Gray #F1F5F9 1.10
+
+   The "deep" cuts are the contrast-safe additions §1a licenses: brand red's
+   deep is the app's own primaryDark, and green/blue/purple deeps are derived
+   the same way and measured above. They exist because ink-on-Light-Gray is
+   4.12 — under AA body — and a 12–16% tag tint pulls ink to ~3.8.
+   ========================================================================== */
 :root {
-  --green: #1B4332;        /* Deep Garden Green */
-  --green-light: #2D6A4F;
-  --sage: #87A96B;
-  --tomato: #BC4749;
-  --gold: #E9C46A;
-  --bg: #FEFAE0;           /* Warm Cream */
-  --bg-2: #F4F1E4;
-  --surface: #FFFDF8;
-  --text: #1F2421;         /* Charcoal */
-  --muted: #6B705C;
-  --border: #DAD7CD;
+  /* --- brand hues: fills, illustration, map pins. Not text. --- */
+  --gnome-red: #E53935;
+  --garden-green: #43B649;
+  --trade-blue: #1E88E5;
+  --ai-purple: #8E44AD;
+  --harvest-yellow: #FFC107;
+
+  /* --- interactive cuts: carry a white label, and read as text on white --- */
+  --gnome-red-ink: #E32C27;
+  --garden-green-ink: #328736;
+  --trade-blue-ink: #1878CD;
+  --ai-purple-ink: #8E44AD;
+  /* Yellow's label is charcoal, full stop. */
+  --on-yellow: #222222;
+
+  /* --- deep cuts: text on tints/Light Gray, and the dark band gradients --- */
+  --gnome-red-deep: #B71C1C;
+  --gnome-red-deepest: #8C1512;
+  --garden-green-deep: #215E24;
+  --garden-green-deepest: #16401A;
+  --trade-blue-deep: #125A9B;
+  --trade-blue-deepest: #0C3F6D;
+  --ai-purple-deep: #6C3382;
+
+  /* --- canvas --- */
+  --bg: #FFFFFF;           /* white canvas */
+  --bg-2: #F1F5F9;         /* Light Gray — surfaces, wells, dividers */
+  --surface: #FFFFFF;
+  --text: #222222;         /* Charcoal, 15.91 */
+  --muted: #6B7280;        /* Slate, 4.83 */
+  --border: #E5E7EB;
+  --border-strong: #6B7280; /* 4.83 — inputs and anything that must read as UI */
+  /* Slate on the Light Gray well measures 4.41 — just under AA body — and the
+     brand ink measures 4.12 there. Text sitting ON --bg-2 uses these instead:
+     6.90 and 6.00 respectively. --bg-2 is a spec value and does not move. */
+  --muted-on-tint: #4B5563;
+
+  /* --- status. Color is never the only signal (§1b): every one of these ships
+         with its word or icon. --- */
+  --danger: #C62828;       /* 5.62 on white, 5.13 on Light Gray, white-on-it 5.62 */
+  --warning-ink: #B45309;  /* 5.02 */
+  --success-ink: #328736;  /* 4.51 */
+
+  /* --- shadows are charcoal now, not forest --- */
+  --shadow-rgb: 17, 24, 39;
+
+  /* --- LEGACY NAMES, re-pointed. Same trick as expo/constants/colors.ts: the
+         old names keep resolving so ~77 call sites re-skin without an edit,
+         but they now hold their nearest new-identity hue. Prefer the hue names
+         above in new code. --- */
+  --green: var(--gnome-red-ink);        /* the site's brand ink is Gnome Red */
+  --green-light: var(--gnome-red);
+  --green-deep: var(--gnome-red-deep);  /* brand ink where a tint/gray is behind */
+  --sage: var(--garden-green-ink);
+  --tomato: var(--gnome-red-ink);
+  --gold: var(--harvest-yellow);
 }
 
 * { box-sizing: border-box; }
@@ -21,11 +94,11 @@ img { display: block; }
 
 /* Header / footer */
 .site-header {
-  background: rgba(255, 253, 248, .92);
+  background: rgba(255, 255, 255, .92);
   backdrop-filter: blur(10px) saturate(1.1);
   -webkit-backdrop-filter: blur(10px) saturate(1.1);
   border-bottom: 1px solid var(--border);
-  box-shadow: 0 2px 14px rgba(20, 48, 35, .04);
+  box-shadow: 0 2px 14px rgba(var(--shadow-rgb), .05);
   position: sticky; top: 0; z-index: 10;
 }
 /* padding-top/bottom only — the shorthand "10px 0" was zeroing .container's
@@ -45,7 +118,9 @@ img { display: block; }
 
 /* Hero */
 .hero { padding: 56px 0 24px; max-width: 720px; }
-.hero h1 { font-size: 42px; line-height: 1.1; margin: 0 0 14px; color: var(--green); letter-spacing: -0.5px; }
+/* Charcoal headline on a white canvas — 15.91. Color lives in the kicker,
+   the accent word and the CTA, not in the whole sentence. */
+.hero h1 { font-size: 42px; line-height: 1.1; margin: 0 0 14px; color: var(--text); letter-spacing: -0.5px; }
 .hero p { font-size: 18px; color: var(--muted); margin: 0 0 24px; line-height: 1.5; }
 .hero .row { display: flex; gap: 12px; flex-wrap: wrap; }
 
@@ -68,23 +143,32 @@ img { display: block; }
 .rail > * { scroll-snap-align: start; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; transition: transform .1s ease, box-shadow .1s ease; }
-.card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(20,48,35,.10); }
+.card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(var(--shadow-rgb),.10); }
 .card .imgwrap { position: relative; aspect-ratio: 1.3 / 1; background: var(--bg-2); }
 .card .imgwrap img { width: 100%; height: 100%; object-fit: cover; }
 .card .imgwrap .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 52px; }
 .card .body { padding: 14px; }
 .card .title { font-size: 17px; font-weight: 700; margin: 0 0 2px; }
-.card .market { font-size: 13px; color: var(--sage); font-weight: 600; }
+.card .market { font-size: 13px; color: var(--garden-green-ink); font-weight: 600; }
 .card .meta { font-size: 13px; color: var(--muted); margin-top: 4px; }
 
+/* Listing-type badges — the hue assignment is expo/lib/listingType.ts
+   TYPE_COLOR, so a badge means the same thing in both places:
+   sale=red, free=green, trade=blue, wanted=purple, plot=red.
+   §1b: the hue never carries the meaning alone — every badge prints its word,
+   and plot/sale share a hue precisely because the word is what separates them.
+   Every fill is an interactive cut, so the white label measures ≥4.51.
+   (The app's trade uses the BRAND blue #1E88E5, 3.68 under a white label; the
+   web uses the interactive cut of the same hue. Flagged for the app lane.) */
 .badge { position: absolute; top: 12px; left: 12px; color: #fff; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 8px; }
-.badge.free { background: var(--green); }
-.badge.trade { background: var(--sage); }
-.badge.sale { background: var(--tomato); }
-.badge.wanted { background: var(--muted); }
-.badge.plot { background: #8a5a2b; }
-.valuechip { position: absolute; top: 12px; right: 12px; background: rgba(255,253,248,.94); color: var(--text); font-size: 14px; font-weight: 800; padding: 5px 10px; border-radius: 10px; }
-.promoted { position: absolute; top: 42px; left: 12px; background: var(--gold); color: var(--text); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px; }
+.badge.free { background: var(--garden-green-ink); }   /* white 4.51 */
+.badge.trade { background: var(--trade-blue-ink); }    /* white 4.56 */
+.badge.sale { background: var(--gnome-red-ink); }      /* white 4.51 */
+.badge.wanted { background: var(--ai-purple-ink); }    /* white 5.87 */
+.badge.plot { background: var(--gnome-red-ink); }      /* white 4.51 */
+.valuechip { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.94); color: var(--text); font-size: 14px; font-weight: 800; padding: 5px 10px; border-radius: 10px; }
+/* Harvest Yellow with a CHARCOAL label — 9.76. White here would be 1.63. */
+.promoted { position: absolute; top: 42px; left: 12px; background: var(--harvest-yellow); color: var(--on-yellow); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px; }
 
 /* Listing detail */
 .detail { display: grid; grid-template-columns: 1.4fr 1fr; gap: 32px; padding: 28px 0 56px; }
@@ -95,18 +179,23 @@ img { display: block; }
 .gallery .thumbs img { width: 72px; height: 72px; border-radius: 10px; }
 .detail h1 { font-size: 30px; margin: 8px 0 6px; }
 .detail .value { font-size: 24px; font-weight: 800; color: var(--text); margin: 4px 0; }
-.detail .value.sale { color: var(--tomato); }
+.detail .value.sale { color: var(--gnome-red-ink); }  /* 4.51 on white */
 .detail .meta-line { color: var(--muted); font-size: 15px; margin: 6px 0 16px; }
 .detail .desc { font-size: 16px; line-height: 1.6; }
-.detail .note { background: var(--bg-2); border-radius: 12px; padding: 12px 14px; color: var(--muted); font-size: 13px; margin-top: 16px; line-height: 1.5; }
+.detail .note { background: var(--bg-2); border-radius: 12px; padding: 12px 14px; color: var(--muted-on-tint); font-size: 13px; margin-top: 16px; line-height: 1.5; }
+/* Tinted tags. A 12–16% wash of a hue over white lands a couple of points
+   under white, which drags an *ink* cut to ~3.8 — under AA body. So tinted
+   tags take the DEEP cut. Measured against the composited tint:
+     free 6.75 · sale 5.55 · trade 6.02 · wanted 7.05 · plot 5.55 · verified 6.75 */
 .tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
-.tag.type-free { background: rgba(27,67,50,.1); color: var(--green); }
-.tag.type-trade { background: rgba(135,169,107,.18); color: #4f6b3c; }
-.tag.type-sale { background: rgba(188,71,73,.12); color: var(--tomato); }
-.tag.type-wanted { background: rgba(107,112,92,.15); color: var(--muted); }
-.tag.type-plot { background: rgba(138,90,43,.14); color: #8a5a2b; }
-.tag.featured { background: var(--gold); color: var(--text); }
-.tag.verified { background: rgba(27,67,50,.1); color: var(--green); }
+.tag.type-free { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
+.tag.type-trade { background: rgba(30,136,229,.14); color: var(--trade-blue-deep); }
+.tag.type-sale { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
+.tag.type-wanted { background: rgba(142,68,173,.14); color: var(--ai-purple-deep); }
+.tag.type-plot { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
+/* Harvest Yellow, charcoal label — 9.76. */
+.tag.featured { background: var(--harvest-yellow); color: var(--on-yellow); }
+.tag.verified { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
 
 /* Sidebar / market card */
 .sidebar { display: flex; flex-direction: column; gap: 16px; }
@@ -118,7 +207,7 @@ img { display: block; }
 
 /* Market header */
 .market-head { padding: 0 0 8px; }
-.banner { width: 100%; height: 200px; border-radius: 18px; object-fit: cover; background: linear-gradient(120deg, var(--green), var(--sage)); margin: 20px 0; }
+.banner { width: 100%; height: 200px; border-radius: 18px; object-fit: cover; background: linear-gradient(120deg, var(--garden-green), var(--harvest-yellow)); margin: 20px 0; }
 .market-title { display: flex; align-items: center; gap: 16px; }
 .market-title h1 { font-size: 30px; margin: 0; }
 .type-counts { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
@@ -140,33 +229,33 @@ img { display: block; }
 .rep-stats > div { flex: 1; text-align: center; display: flex; flex-direction: column; }
 .rep-stats strong { font-size: 20px; }
 .rep-stats span { font-size: 12px; color: var(--muted); }
-.rep-resp { color: var(--green); font-weight: 600; font-size: 13px; text-align: center; margin-top: 10px; }
+.rep-resp { color: var(--success-ink); font-weight: 600; font-size: 13px; text-align: center; margin-top: 10px; }  /* 4.51 */
 .rep-since { color: var(--muted); font-size: 12px; text-align: center; margin-top: 6px; }
 .rep-compact { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
 .contact-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .contact-links a { color: var(--green); font-weight: 600; font-size: 14px; }
 
 /* ---------- Homepage v2 ---------- */
-.kicker { display: inline-block; font-size: 13px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--green-light); background: rgba(45,106,79,.08); border-radius: 999px; padding: 6px 12px; margin-bottom: 14px; }
+.kicker { display: inline-block; font-size: 13px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--on-yellow); background: rgba(255,193,7,.28); border-radius: 999px; padding: 6px 12px; margin-bottom: 14px; }
 
 .hero2 { display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; padding: 64px 28px 40px; }
-.hero2-copy h1 { font-size: 52px; line-height: 1.05; letter-spacing: -1px; color: var(--green); margin: 0 0 16px; }
-.hero2-copy h1 em { font-style: italic; color: var(--tomato); }
+.hero2-copy h1 { font-size: 52px; line-height: 1.05; letter-spacing: -1px; color: var(--text); margin: 0 0 16px; }
+.hero2-copy h1 em { font-style: italic; color: var(--gnome-red-ink); }  /* the one coloured word: 4.51 */
 .hero2-copy p { font-size: 19px; color: var(--muted); line-height: 1.55; margin: 0 0 22px; max-width: 560px; }
 .hero-points { display: flex; gap: 18px; flex-wrap: wrap; list-style: none; padding: 0; margin: 20px 0 0; }
 .hero-points li { font-size: 14px; font-weight: 600; color: var(--muted); }
-.hero-points li::before { content: '✓ '; color: var(--green-light); font-weight: 800; }
+.hero-points li::before { content: '✓ '; color: var(--garden-green-ink); font-weight: 800; }  /* 4.51 */
 
 .hero2-visual { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.hero-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 16px 14px; box-shadow: 0 10px 26px rgba(20,48,35,.08); }
+.hero-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 16px 14px; box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.08); }
 .hero-card-emoji { font-size: 40px; margin-bottom: 8px; }
 .hero-card-title { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
 .hc-0 { transform: rotate(-2.5deg); }
 .hc-1 { transform: rotate(1.5deg) translateY(14px); }
 .hc-2 { transform: rotate(2deg) translateY(-6px); }
-.hc-3 { transform: rotate(-1.5deg) translateY(8px); background: linear-gradient(160deg, var(--surface), #FBF6E3); }
+.hc-3 { transform: rotate(-1.5deg) translateY(8px); background: linear-gradient(160deg, var(--surface), #FFF8E1); }
 
-.band { display: flex; align-items: center; gap: 22px; background: linear-gradient(115deg, var(--green), var(--green-light)); color: #fff; border-radius: 22px; padding: 26px 28px; margin: 8px 0 4px; box-shadow: 0 14px 34px rgba(27,67,50,.22); }
+.band { display: flex; align-items: center; gap: 22px; color: #fff; border-radius: 22px; padding: 26px 28px; margin: 8px 0 4px; box-shadow: 0 14px 34px rgba(var(--shadow-rgb),.22); }
 .band:hover .band-arrow { transform: translateX(4px); }
 .band-emoji { font-size: 44px; }
 .band-copy { flex: 1; }
@@ -182,10 +271,10 @@ img { display: block; }
 .cat-label { font-weight: 700; font-size: 14px; color: var(--text); }
 
 .split { display: grid; grid-template-columns: 1.1fr .9fr; gap: 36px; align-items: center; background: var(--bg-2); border-radius: 22px; padding: 36px; }
-.split h2 { font-size: 30px; margin: 0 0 10px; color: var(--green); letter-spacing: -.5px; }
+.split h2 { font-size: 30px; margin: 0 0 10px; color: var(--text); letter-spacing: -.5px; }
 .checks { list-style: none; padding: 0; margin: 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
 .checks li { font-size: 15px; color: var(--text); }
-.checks li::before { content: '✓  '; color: var(--green-light); font-weight: 800; }
+.checks li::before { content: '✓  '; color: var(--garden-green-ink); font-weight: 800; }  /* 4.51 */
 .mini-stack { display: flex; flex-direction: column; gap: 12px; }
 .split-placeholder .hero-card { max-width: 300px; margin: 0 auto; }
 
@@ -202,7 +291,7 @@ img { display: block; }
 .footer-cols a { color: var(--muted); font-weight: 500; font-size: 14px; }
 .footer-cols a:hover { color: var(--green); }
 .footer-brand { font-weight: 800; color: var(--green); font-size: 18px; margin-bottom: 8px; }
-.footer-badge { width: 88px; height: 88px; border-radius: 50%; margin-bottom: 12px; box-shadow: 0 6px 18px rgba(27,67,50,.16); }
+.footer-badge { width: 88px; height: 88px; border-radius: 50%; margin-bottom: 12px; box-shadow: 0 6px 18px rgba(var(--shadow-rgb),.16); }
 
 /* Browse: inline "enter your address" row */
 .locrow { display: flex; gap: 8px; max-width: 520px; margin-top: 10px; }
@@ -216,9 +305,9 @@ img { display: block; }
 @media (max-width: 480px) { .locate-box { flex-direction: column; } }
 
 /* Preview (demo) listing labels */
-.preview-chip { position: absolute; bottom: 12px; right: 12px; background: rgba(31,36,33,.72); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 8px; }
-.preview-note { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; font-size: 14px; color: var(--muted); margin: 10px 0 14px; }
-.preview-note a { color: var(--green); font-weight: 700; }
+.preview-chip { position: absolute; bottom: 12px; right: 12px; background: rgba(var(--shadow-rgb),.72); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 8px; }
+.preview-note { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; font-size: 14px; color: var(--muted-on-tint); margin: 10px 0 14px; }
+.preview-note a { color: var(--green-deep); font-weight: 700; }  /* on --bg-2: 6.00 */
 
 /* Nav "Grow" dropdown — CSS-only, hover + keyboard focus */
 .nav-grow { position: relative; display: inline-flex; }
@@ -228,12 +317,12 @@ img { display: block; }
   display: none; position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   flex-direction: column; gap: 2px; min-width: 190px; padding: 8px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  box-shadow: 0 12px 30px rgba(20,48,35,.14); z-index: 20;
+  box-shadow: 0 12px 30px rgba(var(--shadow-rgb),.14); z-index: 20;
 }
 .nav-grow-menu::before { content: ''; position: absolute; top: -12px; left: 0; right: 0; height: 12px; }
 .nav-grow:hover .nav-grow-menu, .nav-grow:focus-within .nav-grow-menu { display: flex; }
 .nav-grow-menu a { padding: 8px 10px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--text); white-space: nowrap; }
-.nav-grow-menu a:hover { background: var(--bg-2); color: var(--green); }
+.nav-grow-menu a:hover { background: var(--bg-2); color: var(--green-deep); }  /* 6.00 */
 .footer-tag { color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 260px; }
 .legal { border-top: 1px solid var(--border); padding: 18px 0 28px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
@@ -286,7 +375,7 @@ img { display: block; }
 /* Above the sticky header (10) and the assistant launcher (60/61). */
 .mobile-nav-scrim {
   position: fixed; inset: 0; z-index: 70;
-  background: rgba(20, 48, 35, .34);
+  background: rgba(var(--shadow-rgb), .34);
   -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
   display: flex; justify-content: flex-end; align-items: flex-start;
   padding: 74px 14px 14px;
@@ -295,7 +384,7 @@ img { display: block; }
   width: min(320px, 100%); max-height: calc(100dvh - 92px); overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
-  box-shadow: 0 18px 44px rgba(20, 48, 35, .2);
+  box-shadow: 0 18px 44px rgba(var(--shadow-rgb), .2);
   padding: 10px; display: flex; flex-direction: column; gap: 2px;
 }
 .mn-close {
@@ -305,14 +394,14 @@ img { display: block; }
   background: none; border: 0; border-radius: 12px;
   color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer;
 }
-.mn-close:hover, .mn-close:focus-visible { background: var(--bg-2); color: var(--green); }
+.mn-close:hover, .mn-close:focus-visible { background: var(--bg-2); color: var(--green-deep); }
 .mn-item {
   display: flex; flex-direction: column; gap: 1px;
   padding: 12px 14px; border-radius: 12px; min-height: 48px; justify-content: center;
   font-weight: 700; font-size: 16px; color: var(--text);
 }
-.mn-item:hover, .mn-item:focus-visible { background: var(--bg-2); color: var(--green); }
-.mn-item.is-here { background: var(--bg-2); color: var(--green); }
+.mn-item:hover, .mn-item:focus-visible { background: var(--bg-2); color: var(--green-deep); }  /* 6.00 */
+.mn-item.is-here { background: var(--bg-2); color: var(--green-deep); }  /* 6.00 */
 .mn-heading {
   margin: 10px 0 2px; padding: 0 14px;
   font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
@@ -320,8 +409,8 @@ img { display: block; }
 }
 .mn-sub { padding-left: 14px; }
 .mn-title { font-weight: 700; font-size: 15px; }
-.mn-desc { font-weight: 500; font-size: 12.5px; color: var(--muted); }
-.mn-sub:hover .mn-desc, .mn-sub.is-here .mn-desc { color: var(--muted); }
+.mn-desc { font-weight: 500; font-size: 12.5px; color: var(--muted-on-tint); }
+.mn-sub:hover .mn-desc, .mn-sub.is-here .mn-desc { color: var(--muted-on-tint); }
 .mn-ctas {
   display: flex; flex-direction: column; gap: 8px;
   margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
@@ -334,17 +423,17 @@ img { display: block; }
 
 /* ---------- Sell + Garden planner (interactive pages) ---------- */
 .authcard { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 24px; max-width: 460px; }
-.authcard h2 { margin: 0 0 4px; font-size: 22px; color: var(--green); }
+.authcard h2 { margin: 0 0 4px; font-size: 22px; color: var(--text); }
 .authcard .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; line-height: 1.5; }
 .authrow { display: flex; gap: 10px; }
 .authrow input { flex: 1; min-width: 0; }
 .authhint { color: var(--muted); font-size: 13px; margin: 10px 0 0; line-height: 1.5; }
-.autherror { color: var(--tomato); font-weight: 600; font-size: 14px; margin: 10px 0 0; }
+.autherror { color: var(--danger); font-weight: 600; font-size: 14px; margin: 10px 0 0; }  /* 5.62 */
 .linkbtn { background: none; border: none; padding: 0; color: var(--green); font-weight: 700; font-size: inherit; cursor: pointer; }
 
 input, select, textarea {
   font: inherit; color: var(--text); background: var(--surface);
-  border: 1.5px solid var(--border); border-radius: 12px; padding: 11px 14px; width: 100%;
+  border: 1.5px solid var(--border-strong); border-radius: 12px; padding: 11px 14px; width: 100%;
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); }
 
@@ -356,8 +445,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 @media (max-width: 560px) { .field-row { flex-direction: column; } .field.state { max-width: none; } }
 
 .seg { display: flex; gap: 6px; background: var(--bg-2); border-radius: 14px; padding: 5px; flex-wrap: wrap; }
-.seg-btn { flex: 1; min-width: 90px; border: none; background: transparent; border-radius: 10px; padding: 10px 8px; font-weight: 700; font-size: 14px; color: var(--muted); cursor: pointer; }
-.seg-btn.active { background: var(--surface); color: var(--green); box-shadow: 0 2px 8px rgba(20,48,35,.10); }
+.seg-btn { flex: 1; min-width: 90px; border: none; background: transparent; border-radius: 10px; padding: 10px 8px; font-weight: 700; font-size: 14px; color: var(--muted-on-tint); cursor: pointer; }
+.seg-btn.active { background: var(--surface); color: var(--green); box-shadow: 0 2px 8px rgba(var(--shadow-rgb),.10); }
 
 .photorow { display: flex; gap: 10px; flex-wrap: wrap; }
 .photocell { position: relative; width: 84px; height: 84px; }
@@ -374,7 +463,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 .bubble { border-radius: 16px; padding: 12px 16px; font-size: 15px; line-height: 1.55; max-width: 92%; }
 .bubble.user { align-self: flex-end; background: var(--green); color: #fff; }
 .bubble.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); }
-.bubble.assistant h4 { margin: 10px 0 4px; font-size: 15px; color: var(--green); }
+.bubble.assistant h4 { margin: 10px 0 4px; font-size: 15px; color: var(--ai-purple); }  /* 5.87 */
 .bubble.assistant p { margin: 6px 0; }
 .bubble.assistant ul { margin: 6px 0; padding-left: 20px; }
 .bubble.assistant li { margin: 3px 0; }
@@ -396,13 +485,13 @@ h1, h2, .hero2-copy h1, .section h2, .section-head h2, .band-copy h2,
 @media (max-width: 560px) { .section-head h2 { font-size: 20px; } }
 .brand, .footer-brand { display: inline-flex; align-items: center; gap: 8px; }
 .brand-mark { flex: none; }
-.brand-badge { flex: none; width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 2px 8px rgba(20,48,35,.14); }
+.brand-badge { flex: none; width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 2px 8px rgba(var(--shadow-rgb),.14); }
 
 /* Paper grain over the whole page (SVG turbulence, ~invisible but felt). */
 body {
   background-image:
-    radial-gradient(1100px 500px at 85% -80px, rgba(233,196,106,.16), transparent 60%),
-    radial-gradient(900px 420px at -120px 300px, rgba(135,169,107,.12), transparent 60%),
+    radial-gradient(1100px 500px at 85% -80px, rgba(255,193,7,.10), transparent 60%),
+    radial-gradient(900px 420px at -120px 300px, rgba(67,182,73,.07), transparent 60%),
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12 0 0 0 0 0.16 0 0 0 0 0.10 0 0 0 0.035 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
 }
 
@@ -416,7 +505,7 @@ body {
 .hero-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; position: relative; z-index: 1; padding-right: 108px; }
 .hero-gnome {
   position: absolute; right: -14px; bottom: -34px; z-index: 2;
-  filter: drop-shadow(0 10px 18px rgba(20,48,35,.18));
+  filter: drop-shadow(0 10px 18px rgba(var(--shadow-rgb),.18));
   transform-origin: 50% 95%;
   animation: gnome-sway 5.5s ease-in-out infinite;
 }
@@ -429,14 +518,14 @@ body {
 .hero-card {
   border: 2px solid var(--green);
   border-radius: 14px;
-  box-shadow: 4px 5px 0 rgba(27,67,50,.16);
+  box-shadow: 4px 5px 0 rgba(var(--shadow-rgb),.16);
   position: relative;
   padding: 16px 14px 12px;
 }
 .hero-card::before {
   content: '';
   position: absolute; inset: 5px;
-  border: 1.5px dashed rgba(27,67,50,.28);
+  border: 1.5px dashed rgba(229,57,53,.30);
   border-radius: 9px;
   pointer-events: none;
 }
@@ -444,54 +533,55 @@ body {
   content: 'GNOME · HOMEGROWN';
   position: absolute; top: 9px; right: 10px;
   font-size: 8px; font-weight: 800; letter-spacing: .08em;
-  color: rgba(27,67,50,.38);
+  color: rgba(183,28,28,.60);
 }
 .hero-card-emoji { font-size: 44px; }
 
 /* Category tiles: sticker hover + playful tilt on alternates. */
-.cat-tile { box-shadow: 3px 4px 0 rgba(27,67,50,.10); border-width: 1.5px; }
-.cat-tile:hover { transform: translateY(-3px) rotate(-1deg); border-color: var(--green); box-shadow: 5px 7px 0 rgba(27,67,50,.16); }
+.cat-tile { box-shadow: 3px 4px 0 rgba(var(--shadow-rgb),.10); border-width: 1.5px; }
+.cat-tile:hover { transform: translateY(-3px) rotate(-1deg); border-color: var(--green); box-shadow: 5px 7px 0 rgba(var(--shadow-rgb),.16); }
 .cat-tile:nth-child(even):hover { transform: translateY(-3px) rotate(1deg); }
 
 /* Buttons: tactile press. */
-.btn { transition: transform .08s ease, box-shadow .08s ease; box-shadow: 0 3px 0 rgba(20,48,35,.25); }
+.btn { transition: transform .08s ease, box-shadow .08s ease; box-shadow: 0 3px 0 rgba(var(--shadow-rgb),.25); }
 .btn:hover { transform: translateY(-1px); }
-.btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(20,48,35,.25); }
+.btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(var(--shadow-rgb),.25); }
 .btn-light, .btn-ghost { box-shadow: 0 3px 0 rgba(0,0,0,.18); }
 
 /* Vine divider above section titles. */
 .vine { display: block; margin: 0 0 6px; }
 
 /* Steps: gold numbered coins + serif titles. */
-.step { border-width: 1.5px; box-shadow: 3px 4px 0 rgba(27,67,50,.08); }
+.step { border-width: 1.5px; box-shadow: 3px 4px 0 rgba(var(--shadow-rgb),.08); }
 .step .n { font-size: 26px; }
 .step h3 { font-family: var(--font-display), Georgia, serif; font-size: 18px; font-weight: 600; }
 
 /* Bands: deepen with gradient + inner glow; gnome peeks over the final band. */
-.band { background: linear-gradient(115deg, #143023, var(--green) 55%, var(--green-light)); }
-.band-plot { background: linear-gradient(115deg, #4a3218, #6b4a24 55%, #8a5a2b); box-shadow: 0 14px 34px rgba(74,50,24,.22); }
+.band { background: linear-gradient(115deg, var(--gnome-red-deepest), var(--gnome-red-deep)); }
+/* Unused today; Trade Blue is the community/neighbor hue if a plot band returns. */
+.band-plot { background: linear-gradient(115deg, var(--trade-blue-deepest), var(--trade-blue-deep)); box-shadow: 0 14px 34px rgba(var(--shadow-rgb),.22); }
 .final-band {
   position: relative;
   background:
-    radial-gradient(600px 200px at 50% -60px, rgba(233,196,106,.25), transparent 70%),
-    linear-gradient(160deg, #143023, var(--green));
+    radial-gradient(600px 200px at 50% -60px, rgba(255,193,7,.28), transparent 70%),
+    linear-gradient(160deg, var(--gnome-red-deepest), var(--gnome-red-deep));
   overflow: visible;
   margin-top: 84px;
 }
 .final-gnome {
   position: absolute; top: -76px; left: 50%; transform: translateX(-50%);
-  filter: drop-shadow(0 6px 10px rgba(20,48,35,.3));
+  filter: drop-shadow(0 6px 10px rgba(var(--shadow-rgb),.3));
 }
 
 /* Cards site-wide: slightly livelier hover. */
-.card:hover { transform: translateY(-3px) rotate(-.3deg); box-shadow: 0 10px 26px rgba(20,48,35,.13); }
+.card:hover { transform: translateY(-3px) rotate(-.3deg); box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.13); }
 
 /* Chips: sprout-green hover fill. */
 .chip { transition: all .1s ease; }
-.chip:hover { background: rgba(45,106,79,.08); transform: translateY(-1px); }
+.chip:hover { background: rgba(229,57,53,.07); transform: translateY(-1px); }
 
 /* Kicker: gold stamp look. */
-.kicker { background: rgba(233,196,106,.28); color: #6b5417; }
+.kicker { background: rgba(255,193,7,.28); color: var(--on-yellow); }  /* charcoal on a yellow wash: 13.75 */
 
 @media (max-width: 860px) {
   .hero2-copy h1 { font-size: 42px; }
@@ -502,7 +592,7 @@ body {
 
 /* Legal pages */
 .legalpage { max-width: 720px; padding-top: 40px; padding-bottom: 64px; }
-.legalpage h1 { font-family: var(--font-display), Georgia, serif; color: var(--green); margin-bottom: 4px; }
+.legalpage h1 { font-family: var(--font-display), Georgia, serif; color: var(--text); margin-bottom: 4px; }
 .legalpage .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
 .legalpage h2 { font-size: 20px; margin: 28px 0 8px; }
 .legalpage p { line-height: 1.65; font-size: 15.5px; }
@@ -517,7 +607,7 @@ body {
 .filter-panel {
   display: flex; flex-direction: column; gap: 16px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
-  padding: 16px 18px; box-shadow: 0 10px 26px rgba(20,48,35,.08); max-width: 760px;
+  padding: 16px 18px; box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.08); max-width: 760px;
 }
 .fp-section { display: flex; flex-direction: column; gap: 8px; }
 .filter-label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -538,7 +628,7 @@ body {
 .tax-drill {
   display: flex; flex-direction: column; gap: 10px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
-  padding: 14px 16px; box-shadow: 0 10px 26px rgba(20,48,35,.08); max-width: 760px;
+  padding: 14px 16px; box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.08); max-width: 760px;
 }
 .tax-drill .chip { cursor: pointer; }
 .tax-drill-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -559,15 +649,16 @@ body {
   background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
   padding: 24px; transition: transform .15s ease, box-shadow .15s ease;
 }
-.pillar:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(20,48,35,.12); }
-.pillar h3 { margin: 0; font-family: var(--font-display), Georgia, serif; font-size: 21px; color: var(--green); }
+.pillar:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(var(--shadow-rgb),.12); }
+.pillar h3 { margin: 0; font-family: var(--font-display), Georgia, serif; font-size: 21px; color: var(--text); }
 .pillar p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.5; flex: 1; }
 .pillar-emoji { font-size: 30px; }
 .pillar-cta { color: var(--green); font-weight: 800; font-size: 14px; }
 .pillar:hover .pillar-cta { text-decoration: underline; }
 
 /* Grow band — a full-bleed forest section for visual rhythm */
-.grow-band { background: linear-gradient(115deg, #143023, var(--green) 60%, var(--green-light)); padding: 44px 0 48px; margin: 28px 0; }
+/* "Grow with Gnome" belongs to the green gnome (§2). */
+.grow-band { background: linear-gradient(115deg, var(--garden-green-deepest), var(--garden-green-deep)); padding: 44px 0 48px; margin: 28px 0; }
 .grow-band .section-head h2 { color: #fff; }
 .grow-band-sub { color: rgba(255,255,255,.82); margin: 0 0 22px; font-size: 15px; max-width: 560px; }
 .grow-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -580,7 +671,7 @@ body {
 .grow-card:hover { background: rgba(255,253,248,.14); transform: translateY(-3px); }
 .grow-card h3 { margin: 0; color: #fff; font-family: var(--font-display), Georgia, serif; font-size: 20px; }
 .grow-card p { margin: 0; color: rgba(255,255,255,.82); font-size: 14px; line-height: 1.5; flex: 1; }
-.grow-card .pillar-cta { color: var(--gold); }
+.grow-card .pillar-cta { color: var(--harvest-yellow); }  /* on the deep green band: 4.78 */
 
 /* Pricing + trust strips */
 .pricing-strip {
@@ -606,7 +697,7 @@ body {
   position: fixed; right: 18px; bottom: 18px; z-index: 60;
   width: 60px; height: 60px; border-radius: 50%;
   background: var(--surface); border: 1.5px solid var(--border);
-  box-shadow: 0 10px 26px rgba(20,48,35,.22);
+  box-shadow: 0 10px 26px rgba(var(--shadow-rgb),.22);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
   transition: transform .15s ease;
 }
@@ -620,14 +711,14 @@ body {
   width: 380px; max-width: calc(100vw - 36px); max-height: min(560px, 72dvh);
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(20,48,35,.28); overflow: hidden;
+  box-shadow: 0 24px 60px rgba(var(--shadow-rgb),.28); overflow: hidden;
 }
 @media (max-width: 640px) {
   .gnome-panel { right: 0; left: 0; bottom: 0; width: 100%; max-width: none; max-height: 88dvh; border-radius: 20px 20px 0 0; }
 }
 .gp-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
 .gp-head strong { display: block; color: var(--green); font-size: 15px; }
-.gp-sub { display: block; font-size: 12px; color: var(--muted); }
+.gp-sub { display: block; font-size: 12px; color: var(--muted-on-tint); }  /* on --bg-2: 6.90 */
 .gp-close { margin-left: auto; background: none; border: none; font-size: 16px; color: var(--muted); cursor: pointer; padding: 6px 8px; }
 .gp-close:hover { color: var(--text); }
 .gp-log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
@@ -640,11 +731,11 @@ body {
 .gp-auth .authcard { max-width: none; border: none; padding: 8px 4px; }
 
 /* Market storefront themes — subtle preset accents on the default banner */
-.banner.theme-garden { background: linear-gradient(120deg, #1B4332, #2D6A4F 60%, #87A96B); }
-.banner.theme-harvest { background: linear-gradient(120deg, #7a3f1d, #b5651d 55%, #E9C46A); }
-.banner.theme-herb { background: linear-gradient(120deg, #2D6A4F, #87A96B 60%, #cfe3b8); }
-.banner.theme-farm_stand { background: linear-gradient(120deg, #6b1d1f, #BC4749 60%, #E9C46A); }
-.banner.theme-minimal { background: linear-gradient(120deg, #DAD7CD, #F4F1E4); }
+.banner.theme-garden { background: linear-gradient(120deg, var(--garden-green-deepest), var(--garden-green-ink) 60%, var(--garden-green)); }
+.banner.theme-harvest { background: linear-gradient(120deg, var(--gnome-red-deepest), var(--gnome-red) 55%, var(--harvest-yellow)); }
+.banner.theme-herb { background: linear-gradient(120deg, var(--garden-green-deep), var(--garden-green) 60%, #A7E3AB); }
+.banner.theme-farm_stand { background: linear-gradient(120deg, var(--gnome-red-deep), var(--gnome-red) 60%, var(--harvest-yellow)); }
+.banner.theme-minimal { background: linear-gradient(120deg, var(--border), var(--bg-2)); }
 .market-tagline { font-family: var(--font-display), Georgia, serif; font-style: italic; font-size: 19px; color: var(--green); margin: 2px 0 8px; }
 
 /* Admin: lot rows with real buttons (was tiny links inside chips) */
@@ -661,9 +752,9 @@ body {
   padding: 14px 16px; cursor: pointer; text-align: left; transition: transform .12s ease;
 }
 .dash-card:hover { transform: translateY(-2px); }
-.dash-card.hot { border-color: var(--tomato); }
+.dash-card.hot { border-color: var(--danger); }
 .dc-value { font-size: 26px; font-weight: 800; color: var(--green); line-height: 1; }
-.dash-card.hot .dc-value { color: var(--tomato); }
+.dash-card.hot .dc-value { color: var(--danger); }  /* 5.62 */
 .dc-label { font-size: 12px; color: var(--muted); font-weight: 600; }
 
 /* Plot reservation thread (claim chat + growth updates) */
@@ -671,8 +762,8 @@ body {
 .thread .chatlog { max-height: 420px; overflow-y: auto; }
 .thread-composer { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .thread-composer input[type='text'], .thread-composer input:not([type]) { flex: 1; min-width: 160px; height: 40px; }
-.growth-update { background: var(--surface); border: 1.5px solid var(--sage); border-radius: 16px; padding: 12px 14px; max-width: 92%; }
-.growth-update .gu-head { font-weight: 800; font-size: 13px; color: var(--green); margin-bottom: 6px; }
+.growth-update { background: var(--surface); border: 1.5px solid var(--garden-green); border-radius: 16px; padding: 12px 14px; max-width: 92%; }
+.growth-update .gu-head { font-weight: 800; font-size: 13px; color: var(--garden-green-ink); margin-bottom: 6px; }  /* growth is green */
 .growth-update img { width: 100%; max-width: 420px; border-radius: 12px; margin: 4px 0 6px; }
 .growth-update p { margin: 0; font-size: 15px; line-height: 1.5; }
 .chip.active { background: var(--green); color: #fff; border-color: var(--green); }
@@ -680,7 +771,7 @@ body {
 
 /* My Market dashboard */
 .mm-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
-.mm-head h1 { font-family: var(--font-display), Georgia, serif; color: var(--green); margin: 0 0 4px; font-size: 34px; }
+.mm-head h1 { font-family: var(--font-display), Georgia, serif; color: var(--text); margin: 0 0 4px; font-size: 34px; }
 .mm-stats { color: var(--muted); font-size: 14px; margin: 0; }
 .mm-stats strong { color: var(--text); }
 .mm-actions { display: flex; gap: 8px; }
@@ -697,8 +788,8 @@ body {
 .mm-btns { display: flex; gap: 6px; flex: none; }
 .mm-btn { border: 1.5px solid var(--border); background: var(--surface); border-radius: 10px; padding: 7px 12px; font-size: 13px; font-weight: 700; color: var(--green); cursor: pointer; }
 .mm-btn:hover { border-color: var(--green); }
-.mm-btn.danger { color: var(--tomato); }
-.mm-btn.danger:hover { border-color: var(--tomato); }
+.mm-btn.danger { color: var(--danger); }  /* 5.62 */
+.mm-btn.danger:hover { border-color: var(--danger); }
 .mm-btn:disabled { opacity: .5; cursor: default; }
 @media (max-width: 560px) {
   .mm-row { flex-wrap: wrap; }
@@ -720,14 +811,14 @@ body {
 .chiprow button.chip { cursor: pointer; }
 .geo-note { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
 .browse-cardwrap { position: relative; }
-.distance-pill { position: absolute; bottom: 12px; right: 12px; background: rgba(27,67,50,.88); color: #fff; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.distance-pill { position: absolute; bottom: 12px; right: 12px; background: rgba(var(--shadow-rgb),.88); color: #fff; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
 
 /* Pricing tiers */
 .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin: 8px 0 20px; }
 .tier { position: relative; background: var(--surface); border: 1.5px solid var(--border); border-radius: 20px; padding: 26px 24px; display: flex; flex-direction: column; gap: 6px; }
-.tier.highlight { border-color: var(--green); box-shadow: 0 12px 30px rgba(27,67,50,.14); }
-.tier-flag { position: absolute; top: -12px; left: 24px; background: var(--gold); color: var(--text); font-size: 12px; font-weight: 800; border-radius: 999px; padding: 4px 12px; }
-.tier h2 { font-family: var(--font-display), Georgia, serif; color: var(--green); margin: 0; font-size: 24px; }
+.tier.highlight { border-color: var(--green); box-shadow: 0 12px 30px rgba(var(--shadow-rgb),.14); }
+.tier-flag { position: absolute; top: -12px; left: 24px; background: var(--harvest-yellow); color: var(--on-yellow); font-size: 12px; font-weight: 800; border-radius: 999px; padding: 4px 12px; }
+.tier h2 { font-family: var(--font-display), Georgia, serif; color: var(--text); margin: 0; font-size: 24px; }
 .tier-price { font-size: 34px; font-weight: 800; margin: 0; color: var(--text); }
 .tier-price span { font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 4px; }
 .tier-blurb { color: var(--muted); margin: 0 0 6px; font-size: 14.5px; }
@@ -744,19 +835,19 @@ body {
 .notice .notice-sub { color: var(--muted); font-size: 13.5px; }
 .notice-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
 .notice-links a, .notice-links .linkbtn { color: var(--green); font-weight: 700; font-size: 14px; }
-.notice.review { border-left-color: var(--gold); }
-.notice.stop { border-left-color: var(--tomato); }
-.notice.stop h3 { color: var(--tomato); }
-.notice.wait { border-left-color: var(--sage); }
+.notice.review { border-left-color: var(--harvest-yellow); }
+.notice.stop { border-left-color: var(--danger); }
+.notice.stop h3 { color: var(--danger); }  /* 5.62 */
+.notice.wait { border-left-color: var(--garden-green); }
 /* The same explanation, sized to sit under one row in a list. */
-.notice-inline { background: var(--bg-2); border: 1px dashed var(--border); border-radius: 12px; padding: 10px 14px; margin: 6px 0 2px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
-.notice-inline a, .notice-inline .linkbtn { color: var(--green); font-weight: 700; }
-.tag.review { background: rgba(233,196,106,.32); color: #6b5417; }
+.notice-inline { background: var(--bg-2); border: 1px dashed var(--border); border-radius: 12px; padding: 10px 14px; margin: 6px 0 2px; font-size: 13.5px; line-height: 1.55; color: var(--muted-on-tint); }
+.notice-inline a, .notice-inline .linkbtn { color: var(--green-deep); font-weight: 700; }  /* 6.00 */
+.tag.review { background: rgba(255,193,7,.32); color: var(--on-yellow); }  /* 13.26 */
 
 /* Plan card on My Market */
 .plan-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin: 14px 0 4px; flex-wrap: wrap; }
 .plan-name { text-transform: capitalize; margin-right: 10px; }
-.plan-usage { color: var(--muted); font-size: 13.5px; }
+.plan-usage { color: var(--muted-on-tint); font-size: 13.5px; }  /* on --bg-2: 6.90 */
 
 /* Build My Market import review (/my/import). Single column by design — the
    candidate list stays readable at 375px with no horizontal overflow. */
@@ -768,7 +859,7 @@ body {
 .imp-name { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
 .imp-sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; overflow-wrap: anywhere; }
 .imp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.imp-chip { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(188,71,73,.12); color: var(--tomato); }
+.imp-chip { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }  /* 5.55 */
 .imp-conflict { background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-top: 10px; font-size: 14px; }
 .imp-conflict-values { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
 .imp-conflict-values .chip { cursor: pointer; }
@@ -779,3 +870,10 @@ body {
   .imp-card-head { flex-wrap: wrap; }
   .imp-card-head .mm-btns { width: 100%; justify-content: flex-start; }
 }
+
+/* ---------- Gnome AI surfaces: the purple gnome's room (§2) ----------
+   Scoped on purpose. `.bubble` is shared with the plot reservation thread,
+   which is a conversation between two neighbours, not an AI chat. */
+.gnome-panel .bubble.user, .planner .bubble.user { background: var(--ai-purple); }  /* white 5.87 */
+.gnome-panel .gp-head strong { color: var(--ai-purple); }                            /* 5.87 */
+.gnome-launcher { border-color: var(--ai-purple); }

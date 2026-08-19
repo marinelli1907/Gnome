@@ -123,7 +123,7 @@ export default function ShareMarketCard() {
                   <img
                     src={preview}
                     alt={`QR code for ${qr.name}`}
-                    style={{ width: 200, maxWidth: '100%', border: '1px solid var(--line, #e6e1d6)', borderRadius: 8 }}
+                    style={{ width: 200, maxWidth: '100%', border: '1px solid var(--border, #E5E7EB)', borderRadius: 8 }}
                   />
                 ) : !exportErr ? (
                   <p className="sub">Preparing your QR…</p>

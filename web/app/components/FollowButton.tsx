@@ -108,7 +108,7 @@ export default function FollowButton({ marketId }: { marketId: string }) {
         {busy ? '…' : following ? '✓ Following' : '+ Follow this Market'}
       </button>
       {error && (
-        <span style={{ fontSize: 12, color: 'var(--red, #b3261e)' }}>
+        <span style={{ fontSize: 12, color: 'var(--danger, #C62828)' }}>
           That didn’t stick — try again.
         </span>
       )}

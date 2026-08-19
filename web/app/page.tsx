@@ -259,8 +259,12 @@ export default async function HomePage() {
         <div className="pricing-strip">
           <div>
             <h2>Start free. Grow when you need more.</h2>
+            {/* Three tiers, monthly only. Migration 0126 retired "Max" as a
+                display name and moved Farm to $29.99; the old $99 rung is the
+                comp-only "Legacy Farm" row and must never be advertised.
+                Annual is post-launch (D4), so no /year price appears here. */}
             <p className="sub" style={{ margin: '4px 0 0' }}>
-              Free forever · Pro $9.99/mo · Max $29.99/mo · Farm $99/mo —
+              Free forever · Pro $9.99/mo · Farm $29.99/mo —
               and <strong>Gnome takes 0% of neighbor-to-neighbor sales</strong>.
             </p>
           </div>

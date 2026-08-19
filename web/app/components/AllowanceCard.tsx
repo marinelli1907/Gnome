@@ -129,7 +129,7 @@ export default function AllowanceCard() {
         <div
           style={{
             display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
-            marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line, #e6e1d6)',
+            marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border, #E5E7EB)',
           }}
         >
           <span className="dc-label">{resetLabel(r)}</span>

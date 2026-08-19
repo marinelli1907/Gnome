@@ -65,23 +65,26 @@ export async function brandedQrPng(code: string, marketName: string): Promise<st
   if (!ctx) throw new Error('canvas unavailable');
 
   // Card
-  ctx.fillStyle = '#F6F2E9';                       // Gnome parchment
+  // Identity v4: Light Gray mount, white card, Gnome Red rule and headings,
+  // Charcoal body. Printed at 4-6in this is a physical sign, so the QR keeps a
+  // pure white quiet zone and every label is a deep cut for print contrast.
+  ctx.fillStyle = '#F1F5F9';                       // Light Gray mount
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#FFFFFF';
   const pad = 48;
   ctx.fillRect(pad, pad, W - pad * 2, H - pad * 2);
-  ctx.strokeStyle = '#2F5D3A';                     // Gnome green
+  ctx.strokeStyle = '#E32C27';                     // Gnome Red rule
   ctx.lineWidth = 6;
   ctx.strokeRect(pad, pad, W - pad * 2, H - pad * 2);
 
   const center = W / 2;
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#2F5D3A';
+  ctx.fillStyle = '#B71C1C';                       // deep cut: 6.57 on white
   ctx.font = '600 56px Georgia, serif';
   ctx.fillText('SHOP OUR MARKET', center, 180);
 
   // Market name, shrunk to fit rather than clipped.
-  ctx.fillStyle = '#1F2A1F';
+  ctx.fillStyle = '#222222';                       // Charcoal, 15.91
   let size = 84;
   do {
     ctx.font = `700 ${size}px Georgia, serif`;
@@ -98,10 +101,10 @@ export async function brandedQrPng(code: string, marketName: string): Promise<st
   });
   ctx.drawImage(qrImg, center - QR_SIZE / 2, 380, QR_SIZE, QR_SIZE);
 
-  ctx.fillStyle = '#1F2A1F';
+  ctx.fillStyle = '#222222';
   ctx.font = '400 44px Georgia, serif';
   ctx.fillText('Scan to see what’s available', center, 1360);
-  ctx.fillStyle = '#2F5D3A';
+  ctx.fillStyle = '#B71C1C';
   ctx.font = '600 40px Georgia, serif';
   ctx.fillText('🌱 Gnome Farmers Market', center, 1440);
 

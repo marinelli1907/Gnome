@@ -177,7 +177,7 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
           Sign out
         </button>
       </div>
-      {msg && <p className="authhint" style={{ marginTop: 10, color: 'var(--green)', fontWeight: 700 }}>{msg}</p>}
+      {msg && <p className="authhint" style={{ marginTop: 10, color: 'var(--success-ink)', fontWeight: 700 }}>{msg}</p>}
       <p className="authhint" style={{ marginTop: 8 }}>
         Want a password (or a new one)?{' '}
         <button className="linkbtn" onClick={onSetPassword}>Set password</button>
@@ -373,7 +373,7 @@ export default function LoginClient() {
       )}
 
       {error && <p className="autherror">{error}</p>}
-      {notice && <p className="authhint" style={{ color: 'var(--green)', fontWeight: 700 }}>{notice}</p>}
+      {notice && <p className="authhint" style={{ color: 'var(--success-ink)', fontWeight: 700 }}>{notice}</p>}
     </div>
   );
 }
