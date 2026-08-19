@@ -146,7 +146,7 @@ export type ImportAllowance = {
 };
 
 export const PLAN_DISPLAY: Record<string, string> = {
-  free: 'Free', grower: 'Pro', farm: 'Max', sponsor: 'Farm',
+  free: 'Free', grower: 'Pro', farm: 'Farm', sponsor: 'Legacy Farm',
 };
 export const planDisplay = (plan?: string | null) => (plan && PLAN_DISPLAY[plan]) || 'Free';
 

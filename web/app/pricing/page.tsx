@@ -4,7 +4,7 @@ import PricingCTA from './PricingCTA';
 export const metadata: Metadata = {
   title: 'Pricing — grow your Market',
   description:
-    'Gnome is free to start. Upgrade to Pro, Max, or Farm for more Sell listings, included renewals, premium QR tools, and full AI access.',
+    'Gnome is free to start. Upgrade to Pro or Farm for unlimited Sell listings, premium QR tools, and full AI access.',
   alternates: { canonical: '/pricing' },
 };
 
@@ -92,8 +92,8 @@ const locationsLine = (r: PlanRow | undefined, fallback: string) => {
 };
 
 // Customer-facing names ONLY. The internal enum values behind them are
-// deliberately different (grower → "Pro", farm → "Max", sponsor → "Farm" —
-// see PLAN_KEY below and migration 0104) and must never render.
+// deliberately different (grower → "Pro", farm → "Farm" since 0126; the
+// retired sponsor row displays "Legacy Farm" and must never render).
 const TIERS = [
   {
     name: 'Free',
@@ -125,7 +125,6 @@ const TIERS = [
     features: [
       '@PUBLISHES',
       '@RENEWALS',
-      'Extra Sell listing: $0.99',
       '@WANTED',
       '@QR',
       '@LOCATIONS',
@@ -138,50 +137,31 @@ const TIERS = [
     cta: { productKey: 'GNOME_GROWER_MONTHLY', label: 'Upgrade to Pro' },
   },
   {
-    name: 'Max',
+    name: 'Farm',
     price: '$29.99',
     cadence: '/month',
-    blurb: 'For high-volume sellers, farm stands, and established producers.',
+    blurb: 'For working farms, farm stands, and established producers.',
     features: [
       '@PUBLISHES',
       '@RENEWALS',
-      'Extra Sell listing: $0.99',
       '@WANTED',
       '@QR',
       '@LOCATIONS',
-      'Offer plots — pre-sell your whole season',
       '10 listing promotions every month',
+      'Offer plots — pre-sell your whole season',
       'Featured eligibility + verified review',
       'Everything in Pro',
     ],
-    cta: { productKey: 'GNOME_FARM_MONTHLY', label: 'Upgrade to Max' },
-  },
-  {
-    name: 'Farm',
-    price: '$99',
-    cadence: '/month',
-    blurb: 'For working farms and producers who never want to count listings.',
-    features: [
-      '@PUBLISHES',
-      '@RENEWALS',
-      '@WANTED',
-      '@QR',
-      '@LOCATIONS',
-      '10 listing promotions every month',
-      'Offer plots — pre-sell your whole season',
-      'Everything in Max',
-    ],
-    cta: { productKey: 'GNOME_SPONSOR_MONTHLY', label: 'Upgrade to Farm' },
+    cta: { productKey: 'GNOME_FARM_MONTHLY', label: 'Upgrade to Farm' },
   },
 ];
 
 export default async function PricingPage() {
   const limits = await fetchPlanLimits();
-  // Customer-facing name → internal plan_limits row. The mapping is
-  // counter-intuitive on purpose ('farm' is the row behind "Max", 'sponsor'
-  // the row behind "Farm") because renaming enum values would rewrite live
-  // billing rows for a cosmetic gain. Do not "correct" it.
-  const PLAN_KEY: Record<string, string> = { Free: 'free', Pro: 'grower', Max: 'farm', Farm: 'sponsor' };
+  // Customer-facing name → internal plan_limits row. Since 0126 the enum row
+  // 'farm' IS customer-facing Farm ($29.99); 'sponsor' is the retired Legacy
+  // Farm comp rung and has no card here. 'grower' remains Pro.
+  const PLAN_KEY: Record<string, string> = { Free: 'free', Pro: 'grower', Farm: 'farm' };
   const FALLBACK: Record<string, Record<string, string>> = {
     Free: {
       '@PUBLISHES': '3 Sell listings included per month',
@@ -191,18 +171,11 @@ export default async function PricingPage() {
       '@LOCATIONS': '1 pickup location',
     },
     Pro: {
-      '@PUBLISHES': '20 Sell listings included per month',
-      '@RENEWALS': '3 free renewals included — then $0.99 each',
+      '@PUBLISHES': 'Unlimited Sell listings',
+      '@RENEWALS': 'Unlimited free renewals',
       '@WANTED': '5 Wanted responses per day',
       '@QR': 'Premium QR tools for your Market',
       '@LOCATIONS': '2 pickup locations — add more for $5/mo each',
-    },
-    Max: {
-      '@PUBLISHES': '40 Sell listings included per month',
-      '@RENEWALS': '10 free renewals included — then $0.99 each',
-      '@WANTED': '15 Wanted responses per day',
-      '@QR': 'Premium QR tools for your Market',
-      '@LOCATIONS': '5 pickup locations',
     },
     Farm: {
       '@PUBLISHES': 'Unlimited Sell listings',

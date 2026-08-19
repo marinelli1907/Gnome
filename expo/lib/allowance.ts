@@ -19,7 +19,7 @@
 
 /** One row of my_listing_allowance(). NULL means unlimited, never 0 / -1 / 999999. */
 export type AllowanceRow = {
-  display_name: string;              // "Free" | "Pro" | "Max" | "Farm" — never the enum
+  display_name: string;              // "Free" | "Pro" | "Farm" (0126) — never the enum
   period_start: string;
   period_end: string;
   period_source: 'subscription' | 'calendar_month';
@@ -53,9 +53,11 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
  */
 export const NEXT_PLAN: Record<string, { name: string; price: string } | null> = {
   Free: { name: 'Pro', price: '$9.99/month' },
-  Pro: { name: 'Max', price: '$29.99/month' },
-  Max: { name: 'Farm', price: '$99/month' },
+  Pro: { name: 'Farm', price: '$29.99/month' },
   Farm: null,
+  // Retired rungs (0126): 'Max' no longer exists as a display name, and Legacy
+  // Farm (the old $99 sponsor row) is a comp tier with nothing above it.
+  'Legacy Farm': null,
 };
 
 /** "Resets Sep 16" — from the server's period_end, never a locally computed billing date. */
@@ -208,11 +210,12 @@ export function upgradeHint(row: AllowanceRow): { name: string; price: string } 
  *
  * plan_limits.display_name on the server is the authority; this exists so those surfaces stop
  * printing the raw enum at customers, which they were doing. Note how counter-intuitive the mapping
- * is — 'farm' is customer-facing "Max" and 'sponsor' is customer-facing "Farm" — which is exactly
- * why no surface should be interpolating the enum directly.
+ * was — pre-0126, 'farm' displayed as "Max" and 'sponsor' as "Farm" — which is exactly
+ * why no surface should be interpolating the enum directly. Since 0126 the enum
+ * and display finally agree on 'farm'; sponsor is the retired comp rung.
  */
 export const PLAN_DISPLAY: Record<string, string> = {
-  free: 'Free', grower: 'Pro', farm: 'Max', sponsor: 'Farm',
+  free: 'Free', grower: 'Pro', farm: 'Farm', sponsor: 'Legacy Farm',
 };
 export const planDisplay = (plan?: string | null) =>
   (plan && PLAN_DISPLAY[plan]) || 'Free';

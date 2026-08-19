@@ -40,10 +40,10 @@ const tierCaveat = (l?: PlanLimit) => {
   return `Extra Sell listings $0.99 · renewals after the first ${l.included_renewals_per_period}: $0.99.`;
 };
 
-// All four sellable tiers, in ladder order. Labels come from planDisplay — customer-facing names
-// only, and the mapping is deliberately counter-intuitive (farm→Max, sponsor→Farm), which is
-// exactly why no screen may interpolate the enum.
-const ORDER: MarketPlan[] = ['free', 'grower', 'farm', 'sponsor'];
+// The three sellable tiers, in ladder order (0126: Free / Pro / Farm). Labels
+// come from planDisplay — customer-facing names only; the retired sponsor rung
+// ("Legacy Farm", the old $99 tier) is comp-only and deliberately not shown.
+const ORDER: MarketPlan[] = ['free', 'grower', 'farm'];
 
 /** Resolved entitlements: plan + subscription + purchased add-ons, from the
  *  backend's single source (my_plan_entitlements, 0064). */
