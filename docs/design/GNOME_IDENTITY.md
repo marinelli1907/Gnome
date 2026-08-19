@@ -98,18 +98,25 @@ gnome characters). Original Gnome branding only.
 
 ---
 
-## 3. Navigation — five tabs
+## 3. Navigation — SIX tabs, shorter labels (owner decision D3, 2026-08-19)
 
-The mockup settles the open question: **Browse · Map · Post · Gnome AI · My
-Gnome**. Profile moves inside My Gnome.
+The mockup showed five tabs with Profile folded into My Gnome. **D3 overrides
+that: Gnome keeps six tabs and fixes the truncation with shorter labels.**
 
-Constraints that survive the change and must be verified, not assumed:
-- **Account deletion stays reachable and obvious** — it is a Play requirement
-  and currently lives under Profile → Settings.
-- Every route that currently pushes to a profile path must be redirected;
-  notification routing (`expo/lib/useNotificationRouting.ts`) included.
-- Verify label fit at larger accessibility text sizes, which is what actually
-  broke "My Gnome" at six tabs.
+The measurement is why. Dropping Profile buys about one font-scale step — "My
+Gnome" ellipsizes at 1.02× with six tabs and 1.26× with five, while Android's
+own font settings go to 1.15×, 1.30× and 2.0×. Shortening the label beats it at
+any tab count: the bar now reads **Browse · Map · Post · Ask AI · Market ·
+Profile**, and "Market" survives to roughly 1.9×. It is also a one-file change
+with no routing consequences, where the merge would have moved the
+Play-required account-deletion control deeper and invalidated the deletion path
+written verbatim into both stores' submission text.
+
+Load-bearing detail: the renamed tab's ROUTE is still `activity`. Only the
+`title` changed, so every `router.push('/activity')`, deep link and
+notification target still resolves — verified across the app, including
+`expo/lib/useNotificationRouting.ts`. Account deletion stays exactly where the
+store submissions say it is: Profile → Settings → Delete my account.
 
 ---
 
@@ -122,8 +129,18 @@ Three tiers, as shown: **Free $0 · Pro $9.99/mo · Farm $29.99/mo**
   the **$0.99 extra Sell listing** presented in-card as the bridge to Pro.
 - **Pro** — unlimited Sell listings, full Market, QR Market, expanded AI, seller
   tools, basic analytics.
-- **Farm** — everything in Pro, advanced tools, advanced analytics, priority
-  support.
+- **Farm** — everything in Pro, plus the strongest tooling that actually ships.
+
+**Owner decisions that qualify this section (2026-08-19):**
+- **D1** — Android v1.1 ships with **no in-app digital purchase UI**. The $0.99
+  is preserved in product and backend, not deleted and not redirected to
+  Stripe; native Play Billing is the v1.2 target. The Free card's "$0.99 extra"
+  is therefore true on web and iOS, and on Android reads as an upgrade prompt.
+- **D2** — the "3 ACTIVE Sell listings" semantics is the target but does **not**
+  ship in v1.1. Current safe enforcement (publishes per month) stays for the RC
+  while the active-slot engine is built and adversarially tested separately.
+- **D4** — annual pricing is post-launch. Launch pricing is monthly only:
+  Free / Pro $9.99 / Farm $29.99.
 
 **Note the semantic change**, because it is the substantive engineering
 consequence of this design: the card says "3 **active** sell listings", while
