@@ -42,6 +42,9 @@ export default function PricingCTA({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Holds a created-but-not-yet-opened checkout URL while the test-mode warning
+  // is on screen. Non-null means "we told them, and they have not continued".
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
 
   const cls = `btn ${primary ? 'btn-primary' : 'btn-secondary'}`;
 
@@ -69,8 +72,22 @@ export default function PricingCTA({
 
       // Say so plainly rather than sending someone to a Stripe page that will
       // refuse their real card without explaining why.
+      //
+      // This used to setNote(...) and then assign window.location.href in the
+      // same synchronous block. React batches state updates and the navigation
+      // won the race every time, so the warning NEVER painted: a real visitor
+      // clicking "Upgrade to Pro" went straight to a test-mode Stripe page and
+      // had their real card declined with no explanation. Telling someone
+      // afterwards does not count as telling them.
+      //
+      // So in test mode the redirect now waits for an explicit second click.
+      // The session is already created and stays valid, so continuing costs
+      // nothing; the difference is that the person knows what they are
+      // continuing into.
       if (mode === 'test') {
-        setNote('Opening Stripe in test mode — a real card will not be charged. Use 4242 4242 4242 4242.');
+        setNote('Payments are in test mode — a real card will not be charged, and nothing will be activated. Continue only if you are testing checkout.');
+        setPendingUrl(url);
+        return;
       }
       window.location.href = url;
     } catch {
@@ -86,6 +103,15 @@ export default function PricingCTA({
         {busy ? 'Opening checkout…' : label}
       </button>
       {note && <p className="notice-inline" style={{ marginTop: 8 }}>{note}</p>}
+      {pendingUrl && (
+        <button
+          className="btn btn-secondary"
+          style={{ marginTop: 8 }}
+          onClick={() => { window.location.href = pendingUrl; }}
+        >
+          Continue to test checkout
+        </button>
+      )}
       {err && <p className="notice-inline" style={{ marginTop: 8 }}>{err}</p>}
     </>
   );
