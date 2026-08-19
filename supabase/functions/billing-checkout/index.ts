@@ -73,12 +73,13 @@ const SUBSCRIPTION_KEYS = new Set([
 const OVERAGE_KEYS = new Set(['GNOME_LISTING_PUBLISH', 'GNOME_LISTING_RENEWAL']);
 
 // Plan a subscription key grants, as the INTERNAL enum. Customer-facing names
-// differ and must never be used for this: 'farm' is customer-facing "Max" and
-// 'sponsor' is customer-facing "Farm".
+// differ and must never be used for this: since 0126 'farm' is customer-facing
+// "Farm"; 'sponsor' is the retired Legacy Farm comp rung (mapping kept for
+// legacy events only — the key is no longer in the checkout allowlist).
 const PLAN_FOR_KEY: Record<string, string> = {
   GNOME_GROWER_MONTHLY: 'grower',   // Pro
-  GNOME_FARM_MONTHLY: 'farm',       // Max
-  GNOME_SPONSOR_MONTHLY: 'sponsor', // Farm
+  GNOME_FARM_MONTHLY: 'farm',       // Farm ($29.99, 0126)
+  GNOME_SPONSOR_MONTHLY: 'sponsor', // Legacy Farm (retired)
 };
 
 const SEED_DROP_KEYS = new Set([
