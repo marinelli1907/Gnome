@@ -137,7 +137,19 @@ export default function UpgradeScreen() {
         </View>
       ) : null}
 
-      <UpgradePromptCard plan={plan} reason="limit" />
+      {/* The banner makes a claim about the seller's own allowance, so it only
+          renders when the claim is true: "limit" at 0 remaining, "nudge" at 1.
+          It used to render unconditionally with reason="limit" — a fresh Free
+          account saw "You've used this period's included listings" while the
+          meter two cards up said 0 of 3 used. With allowance to spare (or an
+          unlimited plan, remaining === null) the tier cards below are the
+          pitch, and no card states something false about the account. */}
+      {row && row.publishes_remaining !== null && row.publishes_remaining <= 1 ? (
+        <UpgradePromptCard
+          plan={plan}
+          reason={row.publishes_remaining === 0 ? 'limit' : 'nudge'}
+        />
+      ) : null}
 
       <View style={{ height: 18 }} />
       {ORDER.map((p) => {
