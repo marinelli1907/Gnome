@@ -1,7 +1,7 @@
 # Gnome 1.1.0 — Android release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-18 against `cdf1f58`.
+Updated 2026-08-19 against `7d3be90`.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -13,15 +13,18 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 
 | Blocker | Status | Owner | Next action |
 |---|---|---|---|
-| **B1** Google Maps | **CLOSED** | — | Re-verify after first upload with the Play signing SHA-1 (§3) |
+| **B1** Google Maps | **CLOSED — re-verified 2026-08-19** | — | Re-verify after first upload with the Play signing SHA-1 (§3) |
 | **B2** FCM push | **CONFIGURED / NOT PROVEN** | Daniel + Claude | Physical Android run (§2) |
 | **B3** Deletion URL + contact | **CLOSED** | — | — |
-| **B4** Purchase posture | **DECISION REQUIRED** | **Daniel** | §6 — decision drives code, then the final AAB |
+| **B4** Purchase posture | **DECIDED — D1** | — | Gate shipped (`ffb2d28`); copy leaks open, see §9 |
 | **§4.3b** Gemini data safety | **DECISION REQUIRED** | **Daniel** | §7 — decision drives the Data safety answers |
 | Website ↔ app parity | **CLOSED** (3 fixes, `90b7c36`) | — | Deploy web; two owner items in §8 |
 | `/pricing` test-mode redirect | **FIXED** (`9945b24`) | — | Deploy web |
+| **App icon + feature graphic** | **BLOCKER — art does not exist** | **Daniel** | §10 — now the critical path |
+| **D1 copy leaks** | **BLOCKER — 7 surfaces, not 2** | Claude | §9 — pure code fix |
+| Reviewer notes (Play + iOS) | **BLOCKER — misstate the product** | Claude | §9 — text already drafted |
 | Store assets | **DRAFTED** (`8714ca4`) | Claude + Daniel | Screenshots from the final RC |
-| **Final AAB** | **HOLD** | Claude | Blocked on B4 — see §1 |
+| **Final AAB** | **HOLD** | Claude | Blocked on §9 + §10, not on B4 |
 | **Play upload** | **HOLD** | Daniel | Blocked on final AAB |
 
 ### Remodel sprint — landed 2026-08-18/19
@@ -34,7 +37,13 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | billing-checkout v11 / billing-admin v13 | **DEPLOYED** — sponsor SKU out of every allowlist + reseed path | verified |
 | Money suites post-0126 | seed_drop_off ALL PASS · payment_hardening 34/34 · renew_window 24/24 | PG17 clean room |
 
-**Remodel decisions still open (Daniel):**
+**Owner decisions D1–D5 — ALL DECIDED 2026-08-19.** Recorded in
+`../design/GNOME_IDENTITY.md`. D1 Android ships with no in-app digital purchase
+UI (gate `expo/lib/digitalPurchase.ts`); D2 active-slot semantics not in the RC;
+D3 six tabs with short labels; D4 annual post-launch; D5 no claims for features
+that do not ship. The list below is kept for the reasoning behind each.
+
+**Remodel decisions as they stood before D1–D5 (historical):**
 1. **Android launch posture for the $0.99** — the billing lane's verified finding:
    store billing is *cheaper* than Stripe at this price point (~$0.15 vs ~$0.33
    per sale) and Apple requires IAP parity eventually, but Play Billing is 4–6
@@ -335,3 +344,177 @@ declaration, which is itself a Play violation. That option does not exist.
    are packs of digital promotion credits, the clearest Play-Billing-side items
    in the catalogue. Both are `active=false` with no price today; they need the
    same B4 answer before they ever ship.
+
+---
+
+## 9. Store readiness — what the audit found, and what I verified myself
+
+Agent E audited the submission text against 0126 and D1–D5 on 2026-08-19. I
+re-checked every load-bearing claim below against the code rather than taking
+the report at its word, because a wrong blocker costs more than a missed one.
+**Verified** means I reproduced it; where my reading differs from the report's,
+that is stated.
+
+### 9.1 The real blocker — D1 leaks into copy in seven surfaces, not two
+
+**Verified.** `expo/lib/digitalPurchase.ts` gates the three *checkout* call
+sites correctly. It does not gate the *strings*. These five carry `$0.99` and do
+not import the gate at all:
+
+| File | What an Android user reads |
+|---|---|
+| `expo/components/UpgradePromptCard.tsx:65` | "Publish more for $0.99 each, or upgrade to … — $9.99/mo." under a CTA reading **Upgrade** |
+| `expo/lib/taxonomy.ts:295` | "Publish this one for $0.99, or upgrade for more each month." |
+| `expo/lib/allowance.ts:190` | "Additional listing: $0.99" (also `:149`, `:195`) |
+| `expo/app/(tabs)/ai.tsx:176` | "publishing this basket needs a $0.99 extra publish" — this file *does* import the gate elsewhere, but this branch is ungated |
+| `expo/lib/importReview.ts:165` | "publish extras for $0.99 each." |
+
+`UpgradePromptCard` is the sharp one. It renders from
+`expo/components/mygnome/MyMarketCard.tsx:98`, which renders from
+`expo/app/(tabs)/activity.tsx:84` — **the Market tab**. An Android reviewer who
+exhausts the free allowance is shown in-app pricing for a digital good on a
+first-level tab, while the store declaration says In-app purchases: No.
+
+This is the item that decides the submission date. It is a pure code fix with no
+schema, no migration and no product decision attached.
+
+### 9.2 Reviewer notes that misdescribe the product
+
+**Verified.** `docs/release/GOOGLE_PLAY_PACKAGE.md:704-709` tells Google "This
+version sells nothing." D1 preserved the $0.99 in product and backend; it is
+live on web and iOS from the same `billing-checkout`. The corrected text is
+already drafted at `PLAY_STORE_LISTING.md:733-741` and simply never moved into
+the file that gets pasted into the console.
+
+The iOS pair is worse. `APP_STORE_PACKAGE.md:457-461` and
+`APP_STORE_PRIVACY.md:726` both assert there is no Stripe call path in the
+binary. There is: `expo/lib/billing.ts:63` invokes `billing-checkout`, and
+`purchaseOverage` is called from `post.tsx:253`, `ai.tsx:286`, `ai.tsx:422` and
+`listing/[id].tsx:127` — all four **live on iOS**, since the gate is
+`Platform.OS !== 'android'`. This also reopens the 3.1.1 analysis at
+`APP_STORE_PACKAGE.md:474-512`, which was written assuming nothing is buyable.
+
+### 9.3 The link-out path — real, open, but not the date-driver
+
+Agent E called this the blocker that determines the submission date. **I do not
+agree, and the difference is worth recording.**
+
+The path is real and I verified every hop: `expo/app/settings.tsx:173,181,189`
+opens the public legal pages, `web/app/layout.tsx:92` puts a global **Pricing**
+link on every one of them, and `web/app/pricing/PricingCTA.tsx:60` invokes
+`billing-checkout`.
+
+Three facts move it off the critical path:
+
+1. It is `Linking.openURL` — the **external browser**, not an in-app webview.
+   That is the distinction Play's Payments policy actually turns on, and it is
+   the same property every app has that links to its own homepage.
+2. `billing_config.payments_live_enabled` is **false** (verified by SELECT on
+   production, 2026-08-19). No live price exists on any platform. The checkout
+   cannot complete a real purchase today.
+3. §8.2 already records the open product question of whether `/pricing` should
+   advertise plans nobody can buy — this is the same question, and it is
+   Daniel's.
+
+So: a path to close before live payments are ever enabled, not a reason to hold
+the upload. Tracked, not blocking.
+
+### 9.4 Verified corrections to stale text
+
+- **`delivery_eligible` is dead.** `PLAY_STORE_LISTING.md:175-182` tells the
+  reviewer a Free account "will not find a delivery setting." I grepped the
+  whole repo: the column appears only in `0005_markets.sql:128,132`, two
+  baseline dumps, and `expo/types/index.ts:101`. **Nothing reads it.** The real
+  gate is `enforce_delivery_plan` (`0063_market_delivery_settings.sql:88-97`),
+  which lets a free market deliver 15 miles for a flat fee. The note would send
+  a reviewer looking in the wrong place.
+- **Two competing full descriptions.** `GOOGLE_PLAY_PACKAGE.md:452-509` is
+  pre-remodel, names a listing type the app does not ship ("Give away" — the
+  shipped labels are in `expo/lib/listingType.ts:41-45`), and carries no
+  superseded marker. Whoever fills the console can paste the wrong one.
+- **Retired tier names survive** in `SUBSCRIPTION_POSTURE.md:39-42,444-448`
+  ("Neighbor", "Grower"), `docs/MONETIZATION.md:11-12,71` (still a four-tier
+  table with **MAX**, and it declares itself source-of-truth), and
+  `docs/billing/STRIPE_LIVE_ACTIVATION.md:21` (calls the $29.99 SKU "Max" — the
+  runbook Daniel would follow when creating the live Stripe product, so the
+  wrong name would land on receipts).
+- **"My Gnome" survives in five in-app strings** after D3:
+  `(tabs)/activity.tsx:82`, `(tabs)/profile.tsx:82`, `(tabs)/post.tsx:350`,
+  `listing/[id].tsx:403`, `lib/screening.ts:54`.
+
+### 9.5 What the audit checked and found correct
+
+`PLAY_STORE_LISTING.md` §1.1–§1.4 (name, short and full description, release
+notes) — no tier name, no price, no annual, correct D3 tab labels, correct
+listing-type labels. D5 is clean everywhere customer-facing: repo-wide, every
+hit for "priority support" and "advanced analytics" is a doc *prohibiting* the
+phrase. D4 is clean — no annual price in any customer surface.
+`web/app/pricing/page.tsx` resolves from live `plan_limits` and matches 0126.
+The account-deletion path is stated identically and correctly in all three
+store docs. Migration 0126 asserts its own success, including a guard that
+fails loudly if `display_name = 'Max'` survives.
+
+---
+
+## 10. The art is now the critical path
+
+This was already recorded as a blocker in `PLAY_STORE_LISTING.md` §3.2. The
+emulator run on 2026-08-19 turned it from a sampled-hex argument into something
+you can look at, and added a second defect that recolouring alone would not fix.
+
+**The identity flip could not reach the raster assets.** `constants/colors.ts`
+re-skinned ~70 importers through one file, but `expo/assets/images/` was last
+touched at `123b362`, long before `18e64cf`. So `icon.png`, `adaptive-icon.png`,
+`splash-icon.png` and `badge.png` are all still the olive-green/cream artwork —
+the exact identity the remodel exists to leave behind. `badge.png` is the
+wordmark in the Browse header; `icon.png` is what the Play Store shows first.
+
+**Three separate problems, and only one of them is colour:**
+
+1. **Off-identity.** Dark-green figure on cream, with an olive field. The
+   competitor-proximity problem that started the remodel.
+2. **Mechanically wrong as an adaptive icon.** `adaptive-icon.png` is
+   byte-identical to `icon.png` (md5 `7a1d3c50…`) — a full-bleed 1024×1024
+   illustration used as an adaptive *foreground*. Android masks the foreground
+   to its safe zone, so the gnome's hat is clipped and the banner is cut at both
+   edges. On the emulator launcher it is the **only icon on the screen that is
+   not a clean circle**; it sits among Gmail, Chrome and Maps looking broken
+   rather than merely different. Recolouring the same art would not fix this —
+   an adaptive foreground needs its subject inside the safe zone.
+3. **Illegible at size.** "GNOME" is barely readable at launcher scale and
+   "FARMERS MARKET" is unreadable mush. A detailed vegetable illustration cannot
+   survive 48dp.
+
+`app.json` also still sets `adaptiveIcon.backgroundColor` and
+`splash.backgroundColor` to Parchment `#F6F2E9` — the last two dead-palette
+hexes in the repo. `splash-icon.png` is on transparent ground, so it would sit
+correctly on white once the artwork is replaced.
+
+**And the feature graphic does not exist at all.** 1024 × 500, no alpha,
+required — Play will not let you publish without it. A repo-wide search finds no
+such asset.
+
+**Why this changes the plan:** the icon, the adaptive foreground and the feature
+graphic are all art, and the mascot direction is on hold pending Daniel's pick.
+That makes the character decision the critical path to launch rather than a
+parallel nicety — and it argues for treating the hero gnome, the icon and the
+feature graphic as **one commission**, so the store, the launcher and the app
+tell the same story.
+
+### 10.1 Also found, not blocking — the map is blank for the first ~90 seconds on a cold device
+
+On a cold-booted emulator the Map tab renders an empty grey box. It is not B1:
+zero `API key not found`, zero authorization failures, the React instance alive
+on the same PID throughout. `MapsInitializer` fell back to the **LEGACY**
+renderer and Play services was still compiling `MapsDynamite.apk` 52 seconds
+*after* the capture; once warm, tiles, pins and Google attribution all render
+correctly.
+
+The cause is that `components/MapListings.native.tsx` has no loading state — no
+`onMapReady`, no placeholder, just `<MapView>` inside a `flex: 1` view, so the
+container's background shows through until tiles paint. This matters because a
+Play reviewer runs exactly this scenario: fresh install, cold device, first
+open. Fix is an `onMapReady` overlay; it is additive and touches no MapView
+prop, no provider and no marker. **Deliberately not done yet** — Map edits are
+the highest-risk edits in this codebase, the AAB is held on art anyway, and
+queuing it lets one Map regression cover both.
