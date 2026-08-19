@@ -468,7 +468,7 @@ export default function PostScreen() {
             onPress={draftWithAi}
             disabled={aiBusy}
           >
-            <Sparkles size={16} color={Colors.primary} />
+            <Sparkles size={16} color={Colors.aiPurple} />
             <Text style={styles.aiBtnText}>
               {aiBusy ? 'Looking at your photo…' : 'Draft it for me from the photo'}
             </Text>
@@ -686,12 +686,12 @@ const styles = StyleSheet.create({
   aiBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 14,
-    borderWidth: 1.5, borderColor: Colors.primary + '55',
+    borderWidth: 1.5, borderColor: Colors.aiPurple + '55',
   },
   aiBannerEmoji: { fontSize: 20 },
   aiBannerTitle: { fontSize: 14.5, fontFamily: fonts.bold, color: Colors.text },
   aiBannerSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
-  aiBannerArrow: { fontSize: 16, color: Colors.primary, fontFamily: fonts.bold },
+  aiBannerArrow: { fontSize: 16, color: Colors.aiPurple, fontFamily: fonts.bold },
   importHint: { marginTop: -6, marginBottom: 14, paddingHorizontal: 2 },
   importHintText: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 18 },
   importHintLink: { fontFamily: fonts.semibold, color: Colors.primary },
@@ -713,7 +713,9 @@ const styles = StyleSheet.create({
   typeBtnDisabled: { opacity: 0.4 },
   typeEmoji: { fontSize: 22, fontFamily: fonts.regular },
   typeText: { fontSize: 14, color: Colors.textSecondary, fontFamily: fonts.semibold },
-  typeTextActive: { color: Colors.primary },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  typeTextActive: { color: Colors.primaryDark },
   marketLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -756,6 +758,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   addPhotoText: { fontSize: 10, color: Colors.primary, textAlign: 'center', fontFamily: fonts.semibold },
+  // The two AI entry points are the purple gnome's, not the market gnome's.
+  // This also fixes a contrast miss: brand red on a 6% red wash was 4.11:1,
+  // AI Purple on a 6% purple wash measures 5.37:1.
   aiBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -764,17 +769,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '10',
+    borderColor: Colors.aiPurple,
+    backgroundColor: Colors.aiPurple + '10',
     marginTop: -8,
     marginBottom: 20,
   },
   aiBtnBusy: { opacity: 0.6 },
-  aiBtnText: { fontSize: 14, color: Colors.primary, fontFamily: fonts.bold },
+  aiBtnText: { fontSize: 14, color: Colors.aiPurple, fontFamily: fonts.bold },
   typeFields: { gap: 0 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   optChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: Colors.primary + '14', borderWidth: 1, borderColor: Colors.primary },
-  optChipText: { fontSize: 13.5, color: Colors.primary, fontFamily: fonts.semibold },
+  optChipText: { fontSize: 13.5, color: Colors.primaryDark, fontFamily: fonts.semibold },
   optRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   optInput: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: Colors.text, fontFamily: fonts.regular },
   optAdd: { backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },

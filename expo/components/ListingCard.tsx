@@ -191,7 +191,9 @@ const styles = StyleSheet.create({
   valueChipText: { fontSize: 14, fontFamily: fonts.bold, color: Colors.text },
   body: { padding: 14, gap: 4 },
   title: { fontSize: 19, fontFamily: fonts.displayBold, color: Colors.text },
-  market: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.secondary },
+  // Garden Green brand #43B649 is a fill colour, not a text colour (2.62:1 on
+  // white). Same hue, interactive cut: #328736 on white = 4.51:1.
+  market: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.gardenGreenInteractive },
   bundle: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.sell },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2, flexWrap: 'wrap' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },

@@ -544,7 +544,7 @@ export default function AiTab() {
     >
       <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
         <View style={styles.header}>
-          <Sparkles size={18} color={Colors.primary} />
+          <Sparkles size={18} color={Colors.aiPurple} />
           <Text style={styles.title}>Gnome AI</Text>
         </View>
 
@@ -707,7 +707,7 @@ export default function AiTab() {
             style={styles.photoBtn}
             accessibilityLabel="Add photos to draft listings"
           >
-            <ImagePlus size={22} color={analyzing > 0 ? Colors.textTertiary : Colors.primary} />
+            <ImagePlus size={22} color={analyzing > 0 ? Colors.textTertiary : Colors.aiPurple} />
           </Pressable>
           <TextInput
             style={styles.input}
@@ -855,34 +855,45 @@ const styles = StyleSheet.create({
   optionsWrap: { gap: 6 },
   proposalCard: {
     backgroundColor: Colors.surface, borderRadius: 14, padding: 12, gap: 6,
-    borderWidth: 1, borderColor: Colors.primary,
+    borderWidth: 1, borderColor: Colors.aiPurple,
   },
   proposalTitle: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.text, lineHeight: 20 },
   proposalMeta: { fontFamily: fonts.regular, fontSize: 13, color: Colors.textSecondary },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  theirs: { alignSelf: 'flex-start', backgroundColor: Colors.surface },
-  mine: { alignSelf: 'flex-end', backgroundColor: Colors.primary },
-  theirsText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.text, lineHeight: 22 },
-  mineText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.textOnPrimary, lineHeight: 22 },
+  // The assistant's bubble is the AI's own voice: the neutral chat surface
+  // with an AI Purple hairline, so purple owns the room without two purple
+  // fills that would stop telling the speakers apart. Charcoal #222222 on
+  // #F1F5F9 measures 14.5:1.
+  theirs: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.chatBubbleAI,
+    borderWidth: 1,
+    borderColor: Colors.aiPurple,
+  },
+  // White on AI Purple #8E44AD measures 5.87:1.
+  mine: { alignSelf: 'flex-end', backgroundColor: Colors.chatBubbleUser },
+  theirsText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.chatBubbleAIText, lineHeight: 22 },
+  mineText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.chatBubbleUserText, lineHeight: 22 },
   thinking: { fontFamily: fonts.regular, fontSize: 14, color: Colors.textSecondary },
   error: { fontFamily: fonts.regular, fontSize: 14, color: Colors.error, paddingHorizontal: 4 },
   retry: {
     alignSelf: 'flex-start', backgroundColor: Colors.surface, borderRadius: 14,
-    paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: Colors.primary,
+    paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: Colors.aiPurple,
   },
-  retryText: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.primary },
+  // AI Purple on white: 5.87:1.
+  retryText: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.aiPurple },
 
   draftsWrap: { gap: 10, marginTop: 6 },
   draftsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   draftsTitle: { fontFamily: fonts.semibold, fontSize: 15, color: Colors.text },
-  publishAll: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.primary },
+  publishAll: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.aiPurple },
   publishAllBusy: { color: Colors.textTertiary },
   card: {
     flexDirection: 'row', gap: 10, backgroundColor: Colors.surface, borderRadius: 14,
     borderWidth: 1, borderColor: Colors.borderLight, overflow: 'hidden',
   },
   cardPhoto: { width: 92, height: '100%', minHeight: 120, backgroundColor: Colors.backgroundSecondary },
-  cardEditing: { borderColor: Colors.primary },
+  cardEditing: { borderColor: Colors.aiPurple },
   cardBody: { flex: 1, padding: 12, gap: 4 },
   editLabel: { fontFamily: fonts.semibold, fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
   editInput: {
@@ -899,7 +910,7 @@ const styles = StyleSheet.create({
   flag: { fontFamily: fonts.regular, fontSize: 12, color: Colors.warning, marginTop: 2 },
   lowConf: { fontFamily: fonts.regular, fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 },
-  link: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.primary },
+  link: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.aiPurple },
   linkMuted: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.textTertiary },
 
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingTop: 6 },
@@ -916,7 +927,8 @@ const styles = StyleSheet.create({
   },
   sendBtn: {
     width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.primary,
+    // White glyph on AI Purple #8E44AD: 5.87:1 (icons need 3:1).
+    backgroundColor: Colors.aiPurple,
   },
   sendBtnOff: { opacity: 0.4 },
 });

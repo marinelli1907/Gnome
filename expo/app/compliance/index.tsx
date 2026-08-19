@@ -39,14 +39,18 @@ const STATUS_LABEL: Record<SellerCredential['status'], string> = {
   REVOKED: 'Revoked',
 };
 
+// Semantic tokens, not one-off hexes. Two corrections: APPROVED was brand red,
+// which reads as an alarm on the one status that is good news, and the rest
+// duplicated the status palette by hand. Every pill also renders STATUS_LABEL,
+// so the word carries the state (identity §1b).
 const STATUS_COLOR: Record<SellerCredential['status'], string> = {
   NOT_SUBMITTED: Colors.textTertiary,
-  PENDING: '#2563EB',
-  APPROVED: Colors.primary,
-  DENIED: '#DC2626',
-  EXPIRED: '#B45309',
-  RENEWAL_REQUIRED: '#B45309',
-  REVOKED: '#DC2626',
+  PENDING: Colors.info,
+  APPROVED: Colors.success,
+  DENIED: Colors.error,
+  EXPIRED: Colors.warning,
+  RENEWAL_REQUIRED: Colors.warning,
+  REVOKED: Colors.error,
 };
 
 function daysUntil(dateStr: string | null): number | null {
@@ -209,10 +213,20 @@ export default function ComplianceCenterScreen() {
               <Text style={styles.cardTitle} numberOfLines={2}>
                 {cred.credential_type}
               </Text>
-              <View style={[styles.status, { backgroundColor: STATUS_COLOR[cred.status] + '1A' }]}>
-                <Text style={[styles.statusText, { color: STATUS_COLOR[cred.status] }]}>
-                  {STATUS_LABEL[cred.status]}
-                </Text>
+              {/* The hue tints and outlines the pill; the label is charcoal.
+                  Drawn in its own hue on its own 10% wash, every one of these
+                  tokens lands between 3.9:1 and 4.4:1 — under AA. Charcoal on
+                  the wash is 13:1 or better. */}
+              <View
+                style={[
+                  styles.status,
+                  {
+                    backgroundColor: STATUS_COLOR[cred.status] + '22',
+                    borderColor: STATUS_COLOR[cred.status],
+                  },
+                ]}
+              >
+                <Text style={styles.statusText}>{STATUS_LABEL[cred.status]}</Text>
               </View>
             </View>
 
@@ -300,18 +314,23 @@ export default function ComplianceCenterScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   intro: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 19, marginBottom: 14 },
+  // Same treatment as ComplianceGate: white card, coloured rule. On a colour
+  // wash the slate body text measures ~4.4:1; on white it is 4.83:1. Rule
+  // colours on white: warning #B45309 5.02:1, info #1878CD 4.56:1.
   pausedCard: {
-    backgroundColor: '#B4530911',
-    borderColor: '#B4530955',
+    backgroundColor: Colors.surface,
+    borderColor: Colors.warning,
     borderWidth: 1,
+    borderLeftWidth: 4,
     borderRadius: 14,
     padding: 14,
     marginBottom: 14,
   },
   reviewCard: {
-    backgroundColor: Colors.info + '11',
-    borderColor: Colors.info + '55',
+    backgroundColor: Colors.surface,
+    borderColor: Colors.info,
     borderWidth: 1,
+    borderLeftWidth: 4,
     borderRadius: 14,
     padding: 14,
     marginBottom: 14,
@@ -331,15 +350,19 @@ const styles = StyleSheet.create({
   },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 },
   cardTitle: { flex: 1, fontSize: 16, fontFamily: fonts.bold, color: Colors.text },
-  status: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 12, fontFamily: fonts.bold },
+  status: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  statusText: { fontSize: 12, fontFamily: fonts.bold, color: Colors.text },
   metaLine: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2 },
-  warn: { backgroundColor: '#B4530914', borderRadius: 10, padding: 10, marginTop: 8 },
-  warnUrgent: { backgroundColor: '#DC262614' },
-  warnText: { fontSize: 13, fontFamily: fonts.semibold, color: '#B45309' },
-  warnTextUrgent: { color: '#DC2626' },
-  denial: { backgroundColor: '#DC26260D', borderRadius: 10, padding: 10, marginTop: 8 },
-  denialLabel: { fontSize: 12, fontFamily: fonts.bold, color: '#DC2626' },
+  // Tokens, and the urgent cut is darkened: #DC2626 on its own 8% wash is
+  // 4.28:1, the error token #C62828 measures 4.99:1 there and 5.19:1 on the
+  // 5% wash under the denial box. Warning #B45309 on its wash is 4.81:1.
+  // Both boxes lead with a word ("Expires in N days", "Reason from review").
+  warn: { backgroundColor: Colors.warning + '14', borderRadius: 10, padding: 10, marginTop: 8 },
+  warnUrgent: { backgroundColor: Colors.error + '14' },
+  warnText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.warning },
+  warnTextUrgent: { color: Colors.error },
+  denial: { backgroundColor: Colors.error + '0D', borderRadius: 10, padding: 10, marginTop: 8 },
+  denialLabel: { fontSize: 12, fontFamily: fonts.bold, color: Colors.error },
   denialText: { fontSize: 13, fontFamily: fonts.regular, color: Colors.text, marginTop: 2, lineHeight: 18 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   actionBtn: {
@@ -353,6 +376,8 @@ const styles = StyleSheet.create({
   },
   actionPrimary: { borderColor: Colors.primary, backgroundColor: Colors.primary + '0D' },
   actionText: { fontSize: 13.5, fontFamily: fonts.semibold, color: Colors.textSecondary },
-  actionTextPrimary: { color: Colors.primary },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  actionTextPrimary: { color: Colors.primaryDark },
   disclaimer: { fontSize: 11.5, fontFamily: fonts.regular, color: Colors.textTertiary, marginTop: 14, lineHeight: 16, textAlign: 'center' },
 });

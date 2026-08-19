@@ -291,5 +291,7 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border },
   chipOn: { backgroundColor: Colors.primary + '18', borderColor: Colors.primary },
   chipText: { fontSize: 14, color: Colors.text, fontFamily: fonts.semibold },
-  chipTextOn: { color: Colors.primary },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  chipTextOn: { color: Colors.primaryDark },
 });

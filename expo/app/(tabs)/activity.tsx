@@ -155,6 +155,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: '#fff', fontSize: 11, fontFamily: fonts.bold },
+  // Harvest Yellow NEVER takes a white label — that pairing is 1.63:1 and the
+  // count was invisible. Charcoal on #FFC107 measures 9.76:1.
+  badgeText: { color: Colors.text, fontSize: 11, fontFamily: fonts.bold },
   body: { padding: 16, paddingBottom: 40 },
 });

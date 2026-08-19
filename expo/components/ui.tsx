@@ -30,11 +30,16 @@ export function Button({
   style?: ViewStyle;
 }) {
   const isDisabled = disabled || loading;
+  // `danger` used to be Harvest Yellow with a white label — 1.63:1, the exact
+  // combination the identity spec calls unshippable — and it read as
+  // celebration on Void / Decline. It is now the error token: a genuine
+  // destructive action is distinguishable from a brand-red primary action, and
+  // white on #C62828 measures 5.62:1.
   const bg =
     variant === 'primary'
       ? Colors.primary
       : variant === 'danger'
-        ? Colors.accent
+        ? Colors.error
         : variant === 'secondary'
           ? Colors.surface
           : 'transparent';
@@ -130,10 +135,29 @@ export function Avatar({
 }
 
 // --- Badge ---------------------------------------------------------------
+/**
+ * A tinted status pill. `color` is the SEMANTIC HUE — it tints the fill and
+ * draws the border; it is never used as the label colour.
+ *
+ * Why: the label used to be drawn in `color` on a 10% wash of the same colour,
+ * which fails for most of the palette and is catastrophic for some. Measured on
+ * the composited wash: brand red 3.86:1 and success green 3.98:1 both miss AA,
+ * and `Badge color={Colors.accent}` — a real call site in market/pickups — was
+ * Harvest Yellow on a yellow wash at 1.50:1, i.e. blank. (Two tokens did pass:
+ * error 4.78:1 and AI purple 5.07:1. The rule is still worth applying uniformly,
+ * because a component whose legibility depends on which hue a caller happens to
+ * pass is a trap, not a design.)
+ *
+ * Charcoal on the wash is 13:1 or better for every hue in the palette (measured
+ * worst case: charcoal #222222 on a 13% Gnome Red wash = 13.0:1; on a 13% Garden
+ * Green wash = 14.1:1). The hue still distinguishes at a glance via fill +
+ * border, and every caller passes a status WORD, so colour is not the only
+ * signal (identity §1b).
+ */
 export function Badge({ label, color = Colors.primary }: { label: string; color?: string }) {
   return (
-    <View style={[styles.badge, { backgroundColor: color + '1A' }]}>
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
+    <View style={[styles.badge, { backgroundColor: color + '22', borderColor: color }]}>
+      <Text style={styles.badgeText}>{label}</Text>
     </View>
   );
 }
@@ -221,7 +245,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   avatarFallback: {
-    backgroundColor: Colors.primaryLight,
+    // The initial is white text on this fill, so it needs the INTERACTIVE cut,
+    // not the brand cut: white on #E32C27 is 4.51:1, on #E53935 only 4.23:1
+    // (and the initial is 16px bold at the default size, not "large text").
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -230,8 +257,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
     alignSelf: 'flex-start',
+    borderWidth: 1,
   },
-  badgeText: { fontSize: 12, fontFamily: fonts.bold },
+  badgeText: { fontSize: 12, fontFamily: fonts.bold, color: Colors.text },
   empty: { alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
   emptyEmoji: { fontSize: 48, fontFamily: fonts.regular },
   emptyTitle: { fontSize: 18, fontFamily: fonts.bold, color: Colors.text, textAlign: 'center' },

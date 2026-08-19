@@ -285,7 +285,10 @@ export default function BrowseScreen() {
             hitSlop={6}
             style={styles.locateHint}
           >
-            <Text style={styles.locateHintText}>Location is needed to filter by distance — use current location</Text>
+            <Text style={styles.locateHintText}>
+              Location is needed to filter by distance —{' '}
+              <Text style={styles.locateHintAction}>use current location</Text>
+            </Text>
           </Pressable>
         ) : null}
       </View>
@@ -470,7 +473,12 @@ const styles = StyleSheet.create({
   chipRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
   distanceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 10, flexWrap: 'wrap' },
   locateHint: { flexShrink: 1, minHeight: 34, justifyContent: 'center' },
-  locateHintText: { fontSize: 12.5, fontFamily: fonts.semibold, color: Colors.primary },
+  // Guidance, not a failure. Brand red here read as an error the user had
+  // caused; slate reads as the hint it is (#6B7280 on white = 4.83:1). The
+  // tappable half is carried by an underline as well as by weight, so the
+  // affordance does not depend on colour alone (identity §1b).
+  locateHintText: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary },
+  locateHintAction: { fontFamily: fonts.semibold, textDecorationLine: 'underline' },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -521,7 +529,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     padding: 14,
     borderRadius: 14,
-    backgroundColor: Colors.primary + '10',
+    // 4% wash rather than 6%: the sub-line is slate, which measures 4.40:1 on
+    // the heavier wash and 4.57:1 on this one.
+    backgroundColor: Colors.primary + '0A',
     borderWidth: 1,
     borderColor: Colors.primary + '30',
   },
@@ -536,6 +546,6 @@ const styles = StyleSheet.create({
   },
   seedDropPillText: { fontSize: 11, fontFamily: fonts.bold, color: Colors.text },
   seedDropSub: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 1 },
-  seedDropGo: { fontSize: 22, color: Colors.primary, fontFamily: fonts.bold },
+  seedDropGo: { fontSize: 22, color: Colors.primaryDark, fontFamily: fonts.bold },
   cardWrap: { paddingHorizontal: 16 },
 });

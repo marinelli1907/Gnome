@@ -836,7 +836,9 @@ const styles = StyleSheet.create({
   issueChip: {
     backgroundColor: Colors.gold + '22', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
   },
-  issueChipText: { fontSize: 12, fontFamily: fonts.semibold, color: Colors.gold },
+  // An issue chip is a warning, and Harvest Yellow on a yellow wash was
+  // 1.55:1. #B45309 on the same wash measures 4.68:1.
+  issueChipText: { fontSize: 12, fontFamily: fonts.semibold, color: Colors.warning },
   valueChip: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
     backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.borderLight,

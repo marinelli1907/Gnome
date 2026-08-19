@@ -397,8 +397,10 @@ const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48 },
   heading: { fontSize: 24, fontFamily: 'Fraunces_700Bold', color: Colors.text, marginBottom: 6 },
   subhead: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, marginBottom: 12, lineHeight: 19 },
-  denial: { backgroundColor: '#DC26260D', borderRadius: 12, padding: 12, marginBottom: 14 },
-  denialLabel: { fontSize: 12, fontFamily: fonts.bold, color: '#DC2626' },
+  // Error token rather than a one-off hex: #C62828 on this 5% wash measures
+  // 5.19:1, where #DC2626 was 4.46:1.
+  denial: { backgroundColor: Colors.error + '0D', borderRadius: 12, padding: 12, marginBottom: 14 },
+  denialLabel: { fontSize: 12, fontFamily: fonts.bold, color: Colors.error },
   denialText: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.text, marginTop: 3, lineHeight: 19 },
   fieldLabel: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary, marginBottom: 6 },
   selector: {

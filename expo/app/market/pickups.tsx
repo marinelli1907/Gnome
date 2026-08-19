@@ -56,7 +56,9 @@ function PickupRow({ o, onPress }: { o: MarketOrder; onPress: () => void }) {
               color={Colors.info}
             />
           ) : null}
-          {needsResponse ? <Badge label="Needs response" color={Colors.accent} /> : null}
+          {/* Needs response is a warning, not a celebration — Harvest Yellow
+              belongs to rewards (identity §1). */}
+          {needsResponse ? <Badge label="Needs response" color={Colors.warning} /> : null}
         </View>
       </View>
       <ChevronRight size={18} color={Colors.textSecondary} />
@@ -224,7 +226,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 5,
   },
-  countText: { fontSize: 11, fontFamily: fonts.bold, color: Colors.textInverse },
+  // Charcoal on Harvest Yellow: 9.76:1. White on it would be 1.63:1.
+  countText: { fontSize: 11, fontFamily: fonts.bold, color: Colors.text },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

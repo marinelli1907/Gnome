@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import type { Listing, ListingType } from '@/types';
 import type { Coords } from '@/lib/location';
-import { TYPE_COLOR } from '@/lib/listingType';
+import { PIN_COLOR } from '@/components/listingSemantics';
 
 const DEFAULT = { lat: 41.5573, lng: -81.5101 }; // Richmond Heights, OH 44143
 
@@ -39,7 +39,7 @@ export default function MapListings({
             <Marker
               key={l.id}
               coordinate={{ latitude: l.approx_lat as number, longitude: l.approx_lng as number }}
-              pinColor={TYPE_COLOR[type]}
+              pinColor={PIN_COLOR[type]}
               onPress={() => onSelect?.(l)}
             />
           );

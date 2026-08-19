@@ -122,7 +122,9 @@ const styles = StyleSheet.create({
   meterHead: { fontSize: 10.5, color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: fonts.bold },
   meterMain: { fontSize: 15, color: Colors.text, marginTop: 2, fontFamily: fonts.bold },
   meterSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 1, fontFamily: fonts.regular },
-  meterHint: { fontSize: 11.5, color: Colors.gold, marginTop: 3, fontFamily: fonts.semibold },
+  // Harvest Yellow as text on white is 1.63:1. This hint warns that a meter is
+  // running out, so it takes the warning token: #B45309 on white = 5.02:1.
+  meterHint: { fontSize: 11.5, color: Colors.warning, marginTop: 3, fontFamily: fonts.semibold },
   reset: { fontSize: 11.5, color: Colors.textTertiary, fontFamily: fonts.regular },
   editBtn: {
     alignSelf: 'flex-start',
@@ -131,5 +133,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
   },
-  editText: { color: Colors.primary, fontSize: 13, fontFamily: fonts.bold },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  editText: { color: Colors.primaryDark, fontSize: 13, fontFamily: fonts.bold },
 });

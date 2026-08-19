@@ -167,7 +167,7 @@ export default function AiListingScreen() {
 
       {busy && (
         <View style={[styles.center, { marginTop: 30 }]}>
-          <ActivityIndicator color={Colors.primary} size="large" />
+          <ActivityIndicator color={Colors.aiPurple} size="large" />
           <Text style={styles.busyText}>Gnome is looking at your photo…</Text>
         </View>
       )}
@@ -245,8 +245,10 @@ const styles = StyleSheet.create({
   preview: { width: '100%', height: 200, borderRadius: 14, marginTop: 16 },
   failBox: { marginTop: 16, backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.borderLight },
   failText: { fontSize: 14.5, fontFamily: fonts.semibold, color: Colors.text },
-  draftBox: { marginTop: 16, backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1.5, borderColor: Colors.primary },
-  draftName: { fontSize: 18, fontFamily: fonts.bold, color: Colors.primary },
+  // AI Listing Assistant is the purple gnome's room (identity §2), so its
+  // accents are AI Purple, not brand red. #8E44AD on white measures 5.87:1.
+  draftBox: { marginTop: 16, backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1.5, borderColor: Colors.aiPurple },
+  draftName: { fontSize: 18, fontFamily: fonts.bold, color: Colors.aiPurple },
   conf: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textTertiary },
   draftTitle: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text, marginTop: 8 },
   draftDesc: { fontSize: 14, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 4, lineHeight: 20 },
@@ -254,7 +256,8 @@ const styles = StyleSheet.create({
   section: { fontSize: 12, fontFamily: fonts.bold, color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 12, marginBottom: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.borderLight },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  // White on #8E44AD: 5.87:1.
+  chipActive: { backgroundColor: Colors.aiPurple, borderColor: Colors.aiPurple },
   chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
   chipTextActive: { color: Colors.textInverse },
   questions: { fontSize: 13, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 10, fontStyle: 'italic' },

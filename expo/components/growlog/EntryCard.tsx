@@ -174,7 +174,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  stageChipText: { fontSize: 11.5, fontFamily: fonts.bold, color: Colors.primary },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  stageChipText: { fontSize: 11.5, fontFamily: fonts.bold, color: Colors.primaryDark },
   editedText: { fontSize: 11.5, fontFamily: fonts.regular, color: Colors.textTertiary, fontStyle: 'italic' },
   editBtn: { minHeight: 32, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
   editBtnText: { fontSize: 13, fontFamily: fonts.bold, color: Colors.primary },

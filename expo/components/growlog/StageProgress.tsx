@@ -64,7 +64,10 @@ const styles = StyleSheet.create({
   chipCurrent: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   chipDone: { backgroundColor: Colors.primary + '14', borderColor: Colors.primary + '55' },
   emoji: { fontSize: 14, fontFamily: fonts.regular },
-  label: { fontSize: 12.5, fontFamily: fonts.semibold, color: Colors.textTertiary },
+  // textTertiary #9CA3AF is 2.54:1 on white — it cannot carry a stage name.
+  label: { fontSize: 12.5, fontFamily: fonts.semibold, color: Colors.textSecondary },
   labelCurrent: { color: Colors.textInverse },
-  labelDone: { color: Colors.primary },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  labelDone: { color: Colors.primaryDark },
 });

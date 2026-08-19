@@ -221,15 +221,31 @@ export default function ComplianceGate({
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
+    borderLeftWidth: 4,
     padding: 14,
     marginBottom: 16,
     gap: 8,
   },
-  cardInfo: { backgroundColor: Colors.primary + '0D', borderColor: Colors.primary + '40' },
-  cardWarn: { backgroundColor: '#B4530911', borderColor: '#B4530955' },
-  cardBlock: { backgroundColor: Colors.accent + '11', borderColor: Colors.accent + '55' },
+  // Three severities, three tokens, and each one keeps its own WORD in the
+  // title ("A quick note…" / "Credential expired" / "Not allowed on Gnome"), so
+  // colour is reinforcement (identity §1b).
+  //
+  // Two semantic corrections: an informational note was drawn in brand red and
+  // read as an alarm, and a hard block (denied / prohibited) was drawn in
+  // Harvest Yellow, which the spec reserves for rewards and celebration.
+  //
+  // The fill is now the white card surface with a coloured rule instead of a
+  // colour wash. That is not cosmetic: on a wash, slate body text lands at
+  // 4.36-4.47:1 for every one of these hues, i.e. under AA. On white it is the
+  // published 4.83:1. Rule colours on white: info #1878CD 4.56:1, warning
+  // #B45309 5.02:1, error #C62828 5.62:1 — all clear of the 3:1 needed for a
+  // non-text boundary.
+  cardInfo: { borderColor: Colors.info, borderLeftColor: Colors.info },
+  cardWarn: { borderColor: Colors.warning, borderLeftColor: Colors.warning },
+  cardBlock: { borderColor: Colors.error, borderLeftColor: Colors.error },
   title: { fontSize: 15, fontFamily: fonts.bold, color: Colors.text },
   body: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 19 },
   primaryBtn: {
@@ -245,13 +261,21 @@ const styles = StyleSheet.create({
   linkBtn: { minHeight: 44, justifyContent: 'center' },
   linkBtnText: { color: Colors.primary, fontFamily: fonts.bold, fontSize: 14 },
   reqBox: {
+    // The card is now white too, so this inner panel is separated by a rule
+    // rather than by a fill — which also keeps every line inside it on pure
+    // white, where slate is the published 4.83:1.
     backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
     borderRadius: 10,
     padding: 12,
     gap: 4,
   },
   reqLine: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.text },
   reqSource: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textSecondary },
-  reqDisclaimer: { fontSize: 11.5, fontFamily: fonts.regular, color: Colors.textTertiary, marginTop: 4, lineHeight: 16 },
-  draftHint: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textTertiary },
+  // These two carry real information (a legal disclaimer, and "your work is
+  // saved"). textTertiary #9CA3AF is 2.54:1 on white and cannot carry either;
+  // slate #6B7280 measures 4.83:1.
+  reqDisclaimer: { fontSize: 11.5, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 4, lineHeight: 16 },
+  draftHint: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary },
 });

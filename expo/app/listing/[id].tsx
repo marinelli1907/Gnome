@@ -446,7 +446,9 @@ const styles = StyleSheet.create({
     minHeight: 32,
     marginTop: 8,
   },
-  verifiedText: { fontSize: 12.5, fontFamily: fonts.bold, color: Colors.primary },
+  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
+  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
+  verifiedText: { fontSize: 12.5, fontFamily: fonts.bold, color: Colors.primaryDark },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.regular },

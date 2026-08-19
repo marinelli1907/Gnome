@@ -199,7 +199,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: Colors.backgroundSecondary,
   },
-  clearText: { color: Colors.accent, fontFamily: fonts.semibold, fontSize: 14 },
+  // Was Harvest Yellow on the light-gray row: 1.50:1, effectively blank.
+  // #B71C1C on #F1F5F9 measures 6.05:1 (the interactive red is only 4.15:1
+  // against this surface, so the deep cut is the one that passes here).
+  clearText: { color: Colors.primaryDark, fontFamily: fonts.semibold, fontSize: 14 },
   row: {
     minHeight: 52,
     flexDirection: 'row',
