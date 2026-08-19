@@ -24,6 +24,41 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | **Final AAB** | **HOLD** | Claude | Blocked on B4 — see §1 |
 | **Play upload** | **HOLD** | Daniel | Blocked on final AAB |
 
+### Remodel sprint — landed 2026-08-18/19
+
+| Item | Status | Where |
+|---|---|---|
+| 0126 three-tier pricing (Max retired by re-point) | **APPLIED to production** (`20260819014212`) + all allowlist copies | `d4af632`, `31f502b` |
+| Web /pricing three tiers | **DEPLOYED** — live page shows Pro $9.99 / Farm $29.99, zero "Max" | verified live |
+| Identity v4 token flip (white canvas + gnome hues) | **COMMITTED** `18e64cf` — all ~70 importers re-skin via one file | emulator proof pending |
+| billing-checkout v11 / billing-admin v13 | **DEPLOYED** — sponsor SKU out of every allowlist + reseed path | verified |
+| Money suites post-0126 | seed_drop_off ALL PASS · payment_hardening 34/34 · renew_window 24/24 | PG17 clean room |
+
+**Remodel decisions still open (Daniel):**
+1. **Android launch posture for the $0.99** — the billing lane's verified finding:
+   store billing is *cheaper* than Stripe at this price point (~$0.15 vs ~$0.33
+   per sale) and Apple requires IAP parity eventually, but Play Billing is 4–6
+   engineering weeks and cannot ship in v1.1.0. Recommended: ship v1.1.0 with no
+   Android purchase surface (an explanatory wall; $0 revenue cost — verified
+   zero live prices exist), land Play Billing as v1.2.0. This KEEPS the $0.99 —
+   on web now, in-app via store billing next release.
+2. **"3 ACTIVE Sell listings" semantics** — the Free card's slot model vs the
+   current publishes-per-month metering. Real engine change with a concurrency
+   design; first draft had a cap-bypass the adversarial pass caught. Ships
+   separately, not tonight.
+3. **Five tabs vs six** — the nav lane measured it: dropping Profile only moves
+   the truncation break from 1.02× to 1.26× font scale, while shortening the
+   labels ("Home", "Ask AI") fixes it at any tab count to ~1.9×. The mockup
+   shows five tabs; the data says the label is the problem. Pick: mockup-faithful
+   five, five + short labels, or six + short labels.
+4. **Annual Pro $99 / Farm $299** — no annual machinery exists anywhere; needs
+   two owner-created Stripe products plus a billing_interval column. Post-launch.
+5. **Farm card copy** — "priority support" (no SLA exists) and "advanced
+   analytics" (verify what ships) are commitments, not features.
+6. **Gnome character art** — the app ships zero in-app illustration today; the
+   55 EmptyState call sites take an emoji prop, which is the natural insertion
+   point. Real illustration work; emoji interim is honest.
+
 ### What the sprint changed about the shape of the problem
 
 Two lanes were adversarially re-derived, and both had a load-bearing claim fail.
