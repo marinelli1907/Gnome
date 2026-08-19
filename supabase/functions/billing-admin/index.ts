@@ -43,9 +43,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 // kind/description/currency/active are carried here, not just the amount,
 // because a key that has never been seeded (a partially-built environment) is
 // INSERTED whole. They mirror the migration seeds verbatim (0083 §product keys,
-// 0124 §4 — including the bundles' active=false) so a rebuilt environment and a
-// migrated one describe the same SKU identically rather than drifting apart by
-// one word. On rows that already EXIST these fields are never written: the
+// 0124 §4, 0126 §retirement — including the bundles' active=false) so a rebuilt
+// environment and a migrated one describe the same SKU identically rather than
+// drifting apart by one word. On rows that already EXIST these fields are never written: the
 // migrations are the pricing authority, and this action's writes are limited to
 // the per-environment Stripe test ids it exists to provision.
 const CANON: {
