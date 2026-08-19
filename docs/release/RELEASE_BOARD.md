@@ -182,6 +182,38 @@ whole app until force-stop, including tabs the user never opened.
 
 ---
 
+## 5b. Pre-remodel checkpoint, and the fact that de-risks the tier change
+
+**Recoverable checkpoint:** tag `rc-prerebrand-2026-08-18` at `5299627` on
+`feat/ai-market-import`, pushed. It records the working RC: APK vc4 `fb126697`
+(from `0705f34`, carries Firebase), AAB vc4 `e9ecc210` (from `be8bb2e`, does
+NOT), Maps closed, Firebase configured, B2 unproven, payments off. If the
+remodel goes wrong, that is the commit to return to.
+
+**Verified in production before planning the Free/Pro/Max/Farm -> Free/Pro/Farm
+migration** (13 markets, so this was checked exhaustively rather than sampled):
+
+| Check | Result |
+|---|---|
+| `market_subscriptions` rows, ever | **0** |
+| `admin_plan_grants` rows, ever | **0** |
+| Markets on `farm` (= customer-facing "Max") | **0** |
+| Markets on `sponsor` (= customer-facing "Farm") | **0** |
+| Only non-free market | `Maria G.'s Market` on `grower`, with no subscription backing it |
+| Paid publishes ever / authorizations consumed | 2 / 2 — both from §13 QA |
+
+**No one has ever held a paid subscription on Gnome.** Removing Max therefore
+migrates zero customers, and there is no production subscription state that a
+tier change could damage. This is a pre-customer rename, not a data migration.
+
+Two things that does NOT make trivial, so they stay in scope: the **code** work
+is unchanged (entitlement checks in SQL and in both clients, `plan_limits`,
+pricing UI, Stripe product objects), and the **naming trap** is unchanged — the
+enum value `farm` is customer-facing "Max" while `sponsor` is customer-facing
+"Farm", so a plan that reads the enum literally will restructure the wrong tier.
+
+---
+
 ## 6. B4 — purchase posture (Daniel decides)
 
 **The finding.** The $0.99 publish/renewal overage buys something delivered
