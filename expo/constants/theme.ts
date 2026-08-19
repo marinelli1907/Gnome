@@ -6,16 +6,20 @@
 // NOTE: hex values are the current best interpretation of the v2 palette names
 // and should be confirmed against the design file during M5.
 
+// Re-pointed to the v4 identity (docs/design/GNOME_IDENTITY.md). This export
+// had ZERO live call sites but still held the pre-rebrand cream/green values —
+// a loaded gun for the next person who imported it. It now mirrors
+// constants/colors.ts; prefer importing Colors directly in new code.
 export const palette = {
-  primary: '#1B4332', // Deep Garden Green
-  secondary: '#87A96B', // Sage
-  accent: '#BC4749', // Tomato Red
-  gold: '#E9C46A', // Harvest Gold
-  background: '#FEFAE0', // Warm Cream
+  primary: '#E32C27',    // Gnome Red (interactive cut — carries white text)
+  secondary: '#43B649',  // Garden Green
+  accent: '#FFC107',     // Harvest Yellow — charcoal text only, never white
+  gold: '#FFC107',
+  background: '#FFFFFF', // White canvas
   surface: '#FFFFFF',
-  text: '#1B1B1B',
-  textSecondary: '#5C5C5C',
-  border: '#E8E2D0',
+  text: '#222222',
+  textSecondary: '#6B7280',
+  border: '#E5E7EB',
 } as const;
 
 // Loaded via @expo-google-fonts/* in the root layout. Use these family names
