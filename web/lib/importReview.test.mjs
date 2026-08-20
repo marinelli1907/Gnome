@@ -96,11 +96,17 @@ const freeOver = m.allowanceSummary({ plan: 'free', publishes_allowed: 3, publis
 ck('free-over-allowance names the plan and the honest number',
   freeOver.text.includes('Free plan includes 3 Sell publishes this month'), freeOver.text);
 ck('free-over-allowance may suggest upgrading', freeOver.suggestUpgrade === true);
+const freeOverNoExtras = m.allowanceSummary({ plan: 'free', publishes_allowed: 3, publishes_used: 0,
+  publishes_remaining: 3, sale_candidates_selected: 17, exceeds_included_allowance: true },
+  { canBuyExtras: false });
+ck('free-over-allowance can suppress extra-publish price copy',
+  !freeOverNoExtras.text.includes('$0.99') && freeOverNoExtras.text.includes('upgrade for unlimited Sell publishes'),
+  freeOverNoExtras.text);
 const proWithin = m.allowanceSummary({ plan: 'grower', publishes_allowed: 20, publishes_used: 0,
   publishes_remaining: 20, sale_candidates_selected: 17, exceeds_included_allowance: false });
 ck('pro-within-allowance gets no upsell', proWithin.suggestUpgrade === false
   && proWithin.text.includes('20 included Sell publishes left this billing period'), proWithin.text);
-const farm = m.allowanceSummary({ plan: 'sponsor', publishes_allowed: null, publishes_used: 0,
+const farm = m.allowanceSummary({ plan: 'farm', publishes_allowed: null, publishes_used: 0,
   publishes_remaining: null, sale_candidates_selected: 40, exceeds_included_allowance: false });
 ck('unlimited renders as unlimited, never a number',
   farm.text.includes('unlimited') && !farm.text.match(/\d/), farm.text);

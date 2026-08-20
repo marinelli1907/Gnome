@@ -149,20 +149,25 @@ export const PLAN_DISPLAY: Record<string, string> = {
   free: 'Free', grower: 'Pro', farm: 'Farm', sponsor: 'Legacy Farm',
 };
 export const planDisplay = (plan?: string | null) => (plan && PLAN_DISPLAY[plan]) || 'Free';
+export type PurchaseCopyOptions = { canBuyExtras?: boolean };
+const canMentionExtras = (opts?: PurchaseCopyOptions) => opts?.canBuyExtras !== false;
 
 /**
  * The sentence under "17 drafts created". Free sellers over their allowance learn the honest
  * arithmetic without a hard sell; sellers within allowance get no upsell at all.
  */
-export function allowanceSummary(a: ImportAllowance): { text: string; suggestUpgrade: boolean } {
+export function allowanceSummary(a: ImportAllowance, opts?: PurchaseCopyOptions): { text: string; suggestUpgrade: boolean } {
   if (a.publishes_allowed == null) {
     return { text: `Your ${planDisplay(a.plan)} plan includes unlimited Sell publishes.`, suggestUpgrade: false };
   }
   const period = a.plan === 'free' ? 'this month' : 'this billing period';
   if (a.exceeds_included_allowance) {
+    const nextStep = canMentionExtras(opts)
+      ? 'publish extras for $0.99 each'
+      : 'upgrade for unlimited Sell publishes or wait for your allowance to reset';
     return {
       text: `Your ${planDisplay(a.plan)} plan includes ${a.publishes_allowed} Sell publishes ${period} — `
-        + `choose which to publish first, or publish extras for $0.99 each.`,
+        + `choose which to publish first, or ${nextStep}.`,
       suggestUpgrade: a.plan === 'free',
     };
   }

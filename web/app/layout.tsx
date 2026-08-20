@@ -134,6 +134,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <li><Link href="/sell">Sell on Gnome</Link></li>
                   <li><Link href="/my">My Market</Link></li>
                   <li><Link href="/pricing">Pricing &amp; boosts</Link></li>
+                  <li><Link href="/support">Support</Link></li>
                   <li><Link href="/trust">Trust &amp; Safety</Link></li>
                   <li><a href={IOS}>Get the app</a></li>
                   <li><Link href="/category/supplies">Garden supplies</Link></li>
@@ -154,7 +155,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Gnome by Boone Systems LLC · Browse and sell on the web or in the free Gnome app.
               Payments between neighbors are arranged directly with sellers. Sellers are
               responsible for following local food laws. <Link href="/trust">Trust &amp; Safety</Link> ·{' '}
-              <Link href="/terms">Terms</Link> · <Link href="/privacy">Privacy</Link>
+              <Link href="/support">Support</Link> · <Link href="/terms">Terms</Link> ·{' '}
+              <Link href="/privacy">Privacy</Link>
             </div>
           </div>
         </footer>

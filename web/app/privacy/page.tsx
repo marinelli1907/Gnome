@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   description: 'What Gnome collects, who handles it, and what stays private.',
 };
 
-const UPDATED = 'August 13, 2026';
+const UPDATED = 'August 20, 2026';
 
 export default function PrivacyPage() {
   return (
@@ -123,13 +123,12 @@ export default function PrivacyPage() {
         <strong>Usage and diagnostics.</strong> Coarse product events —
         &ldquo;listing created,&rdquo; &ldquo;claim started,&rdquo; &ldquo;order
         completed,&rdquo; a ZIP typed into the website&rsquo;s search box — so we
-        can tell what people actually use. One event currently records more than
-        a label: when you ask the garden planner a question in the app, the text
-        of that question is saved alongside your account id. We are removing
-        that; until we do, assume a planner question is stored. There are no advertising SDKs, no
-        session recorders, and no third-party analytics in either the app or the
-        website. The website stores your sign-in session in your browser&rsquo;s
-        local storage; there are no tracking cookies.
+        can tell what people actually use. The Garden Planner usage event
+        records only non-content metadata, such as the question length and
+        whether a photo was attached, not the question text itself. There are no
+        advertising SDKs, no session recorders, and no third-party analytics in
+        either the app or the website. The website stores your sign-in session
+        in your browser&rsquo;s local storage; there are no tracking cookies.
       </p>
 
       <h2>Public, private, and administrative</h2>
@@ -167,14 +166,15 @@ export default function PrivacyPage() {
         <strong>What is sent:</strong> what you type into an AI conversation;
         photos you deliberately attach to the listing assistant or the
         &ldquo;check my plant&rdquo; flow; the town or region you give the garden
-        planner; and a small, deliberately minimal pack of context about your
-        own account — your Market&rsquo;s name and plan, how many active listings
-        you have, your town, county and state, and, if you have a seed order,
-        its status, tracking number, and the varieties in it. So the assistant
-        can tell you what neighbors are looking for, it is also given the
-        titles of recent public &ldquo;wanted&rdquo; posts in your state and a
-        count of listings by category — public listing text, never anyone&rsquo;s
-        name or contact details.
+        planner, after street addresses and exact coordinates are rejected,
+        coarsened, or redacted; and a small, deliberately minimal pack of
+        context about your own account — your Market&rsquo;s name and plan, how
+        many active listings you have, your town, county and state, and, if you
+        have a seed order, its status, tracking number, and the varieties in it.
+        So the assistant can tell you what neighbors are looking for, it is also
+        given the titles of recent public &ldquo;wanted&rdquo; posts in your state
+        and a count of listings by category — public listing text, never
+        anyone&rsquo;s name or contact details.
       </p>
       <p>
         <strong>What is not sent:</strong> your sign-in email, your password,
