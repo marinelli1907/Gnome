@@ -53,41 +53,42 @@ acting on it if other lanes have committed since.
 | # | Requirement | Verdict | Class |
 |---|---|---|---|
 | 1 | Apple account-deletion (5.1.1(v)) | **PASS** | — |
-| 2 | Google account-deletion (in-app + web URL) | **GAP** | FIX BEFORE SUBMISSION |
+| 2 | Google account-deletion (in-app + web URL) | **PASS** | `/delete-account` live, HTTP 200 re-verified 2026-08-20 |
 | 3 | Subscription disclosures | **GAP** | FIX BEFORE PUBLICATION (paid) |
 | 4 | Restore purchases | **PASS (N/A)** | — |
 | 5 | Auto-renewal wording | **GAP** | FIX BEFORE PUBLICATION (paid) |
-| 6 | Privacy disclosures | **BLOCKER** | B2, B3, B4 |
-| 7 | Data-collection accuracy | **BLOCKER** | B3 |
+| 6 | Privacy disclosures | **PASS** | B2, B3, B4 resolved; live privacy re-verified 2026-08-20 |
+| 7 | Data-collection accuracy | **FIXED IN WORKING TREE** | B3 resolved |
 | 8 | Camera / photo access | **PASS** | — |
 | 9 | Location access | **PASS** | — |
-| 10 | Notification access | **GAP** | FIX BEFORE PUBLICATION |
-| 11 | User-generated content policy | **GAP** | FIX BEFORE SUBMISSION |
+| 10 | Notification access | **PASS** | G10 resolved; physical delivery proof still build/device-gated |
+| 11 | User-generated content policy | **PASS IN WORKING TREE** | Terms §4/§15 |
 | 12 | Reporting | **PASS** | — |
 | 13 | Blocking | **PASS** | — |
 | 14 | Moderation | **PASS** | — |
-| 15 | Prohibited products | **GAP** | FIX BEFORE SUBMISSION |
-| 16 | Contact information | **GAP** | FIX BEFORE SUBMISSION |
-| 17 | AI disclosures | **BLOCKER** | B2, B4 (+ G6) |
+| 15 | Prohibited products | **PASS IN WORKING TREE** | Terms §4 |
+| 16 | Contact information | **PASS IN WORKING TREE** | deliverable support email |
+| 17 | AI disclosures | **PASS** | Live privacy + mobile planner caveat |
 | 18 | Terms acceptance | **PASS** | — |
 | 19 | Privacy policy availability | **PASS** | — |
-| 20 | Support contact | **GAP** | FIX BEFORE SUBMISSION |
+| 20 | Support contact | **PASS IN WORKING TREE** | Settings + web contact |
 | 21 | Marketplace seller responsibility | **PASS** | — |
 | 22 | Founding Member terms | **GAP** | FIX BEFORE PUBLICATION (paid) |
-| 23 | Seed Drop "Coming Soon" accuracy | **GAP** (was BLOCKER; core fixed mid-audit) | FIX BEFORE PUBLICATION |
+| 23 | Seed Drop "Coming Soon" accuracy | **PASS** | live `/seeds` has no price/date/purchase path |
 
 ---
 
-## BLOCKERS
+## Blocker Record
 
-B2, B3 and B4 are live blockers. B1 is kept here, and kept first, because it was
-a blocker when the audit opened and another lane fixed it while the audit was
-being written — the record of what was wrong is what keeps it from coming back.
+B1 through B4 are resolved in the working tree. They stay here as a regression
+record because each was a real blocker when the audit opened.
 
-### B1 — Seed Drop "Coming Soon": core RESOLVED mid-audit, marketing residue remains
+### B1 — Seed Drop "Coming Soon": **RESOLVED LIVE**
 
-**Class: was BLOCKER, now FIX BEFORE PUBLICATION.** Remaining files:
-`web/app/page.tsx`, `web/app/layout.tsx`.
+**Class: was BLOCKER.** The working tree and the live website now have no Seed
+Drop price, date, purchase, subscription, waitlist, or "shop" CTA on web or
+mobile. The site-wide metadata no longer promises shipped seeds; it describes
+the marketplace only.
 
 #### What was wrong (state at 00:56, now fixed — recorded so it stays fixed)
 
@@ -126,34 +127,23 @@ four price structures on the site did not agree with one another.
 
 **PASS** on `/seeds`, `/pricing`, and the whole mobile surface.
 
-#### What is still wrong
+#### Current verification
 
-| File | Line | Current copy | Problem |
-|---|---|---|---|
-| `web/app/page.tsx` | 298 | `Shop the Seed Drop` | A "Shop" CTA pointing at a page that sells nothing |
-| `web/app/page.tsx` | 243–245 | `Seeds picked for your season and growing zone, packed by hand, shipped with a growing tip for every packet.` | Present tense; describes fulfilment that does not happen |
-| `web/app/page.tsx` | 20, 92 | `the Seed Drop sends the right seeds` / `the Seed Drop sends the seeds` | Present tense |
-| `web/app/layout.tsx` | 22 | site-wide meta description: `plus the Seed Drop, seeds picked for your zone and shipped to your door` | Present tense, and it is the description search engines and link previews show for **every page on the site** |
+- `web/app/seeds/page.tsx` and `web/app/pricing/page.tsx` describe Seed Drop as
+  coming soon with no price, no date, and no checkout CTA.
+- Direct production probes on 2026-08-20 confirmed `/seeds` is Coming Soon only
+  and `/pricing` has no `$24.99` Seed Drop subscription copy.
+- `web/app/page.tsx` says "Seed Drop is coming soon" / "Coming soon" and links
+  with non-purchase language.
+- `web/app/layout.tsx` metadata no longer claims Seed Drop is shipping.
+- `expo/components/SeedDropComingSoon.tsx` remains the mobile model: no price,
+  no date, no purchase, no waitlist.
 
-No prices and no purchase path survive, so this is no longer a blocker. It is
-still four claims that a product ships when it does not, one of them site-wide.
+### B2 — The Privacy Policy named the wrong AI provider and omitted training use. **RESOLVED LIVE**
 
-**Required:** move all four to future tense and change the CTA verb. Suggested:
+**Class: was BLOCKER.** File: `web/app/privacy/page.tsx`.
 
-- Line 298 → `See what the Seed Drop will be`
-- Lines 243–245 → `Seeds picked for your season and growing zone, packed by
-  hand. Coming soon.`
-- Lines 20 and 92 → `the Seed Drop will send the right seeds` / `the Seed Drop
-  is coming`
-- Line 22 → `A farmers market in your pocket. Share, trade, buy, and sell
-  homegrown produce, plants, eggs and farm goods from Markets near you — plus
-  the Garden Planner, and the Seed Drop coming soon.`
-
-### B2 — The Privacy Policy names the wrong AI provider and omits training use
-
-**Class: BLOCKER.** File: `web/app/privacy/page.tsx` lines 30–33.
-
-Current copy:
+Original copy:
 
 > "Photos you attach to AI drafting and questions you ask the garden planner are
 > processed by our AI provider (Anthropic) to generate the response, and aren't
@@ -163,12 +153,12 @@ Two problems.
 
 **The named provider is wrong.** Every AI edge function resolves Gemini first:
 `supabase/functions/_shared/providers.ts` line 4 — *"Gemini Developer API free
-tier is PRIMARY for every feature"* — and OpenAI/Anthropic are appended to the
-call chain only when `ai_settings.allow_paid_fallback = true`, which
-`supabase/migrations/0080_gemini_provider_pivot.sql` line 15 defaults to
-`false`. In practice user photos and prompts go to **Google**, not Anthropic.
-This is true for `draft-listing`, `analyze-listing-photo`, `garden-planner`,
-`ask-gnome`, `gnome-assistant`, and `gnome-onboarding`.
+tier is PRIMARY for every feature"* — and OpenAI/Anthropic require both
+`ai_settings.allow_paid_fallback = true` and `AI_PAID_FALLBACK_DISCLOSED=true`.
+The migration default for `allow_paid_fallback` is `false`. In practice user
+photos and prompts go to **Google**, not Anthropic. This is true for
+`draft-listing`, `analyze-listing-photo`, `garden-planner`, `ask-gnome`,
+`gnome-assistant`, and `gnome-onboarding`.
 
 **The training-use disclosure is missing.** `providers.ts` lines 11–13 state the
 project's own understanding:
@@ -182,18 +172,19 @@ a narrower promise that reads as reassurance while leaving the actual practice
 undisclosed. Users are not told their photos and questions may be used by a
 third party to improve that party's products.
 
-**Required:** name Google as the current provider, disclose the possibility of
-provider-side product improvement on the free tier, and drop the
-advertising-profile phrasing as the sole assurance. Exact wording in
-[Suggested copy](#suggested-copy--privacy-policy) below. The owner should
-confirm the current Gemini API free-tier terms before this ships — **requires
-counsel** if the answer is not plainly documented by Google.
+**Resolved current state.** The live `https://gnomefarmersmarket.com/privacy`
+page and `web/app/privacy/page.tsx` now name Google's Gemini models, say Gnome
+is using Google's free service tier, and warn that content sent to AI may be
+reviewed or used by Google to improve its services. Direct production fetch on
+2026-08-20 confirmed "Anthropic" is gone. The Gemini data-safety owner decision
+is still tracked separately: move to a paid Gemini key, or declare the affected
+data shared with Google.
 
-### B3 — "What we collect" omits most of what is actually collected
+### B3 — "What we collect" omitted most collected data. **RESOLVED IN WORKING TREE**
 
-**Class: BLOCKER.** File: `web/app/privacy/page.tsx` lines 17–24.
+**Class: was BLOCKER.** File: `web/app/privacy/page.tsx`.
 
-Current list: email, profile details (name, town), listings and photos, pickup
+Original list: email, profile details (name, town), listings and photos, pickup
 messages, basic usage events, optional location.
 
 Collected but **undisclosed**:
@@ -213,21 +204,25 @@ The optional phone number the task asked about is **specifically absent** from
 the policy, despite being collected in three separate surfaces and stored under
 the user's identity.
 
-**Required:** rewrite "What we collect" as a complete inventory. Wording below.
+**Resolved current state.** "What we collect" now covers account/contact
+details, Market/profile fields, listings/photos/messages, location,
+orders/pickups/deliveries, payments/subscriptions, permits and seller
+credentials, push notification tokens, Gnome AI conversations/usage, usage
+events, reports, feedback, and administrative records.
 
-### B4 — Real name, email and phone are sent to the third-party AI provider during signup, undisclosed
+### B4 — Signup identifiers reached the AI provider undisclosed. **RESOLVED IN WORKING TREE**
 
-**Class: BLOCKER.** Files: `supabase/functions/gnome-onboarding/index.ts`,
+**Class: was BLOCKER.** Files: `supabase/functions/gnome-onboarding/index.ts`,
 `expo/app/onboarding.tsx`.
 
-The conversational onboarding is a chat. The user types their first name, last
-name, email address, and optionally their mobile number into it
+Original finding: conversational onboarding is a chat. The user types their
+first name, last name, email address, and optionally their mobile number into it
 (`gnome-onboarding/index.ts` SYSTEM prompt, lines listing fields 1–4). Those chat
-turns are forwarded verbatim to the AI provider — Gemini free tier by default —
-at `gnome-onboarding/index.ts` line ~112 (`callWithFallback(chain, { system,
-turns, … })`).
+turns used to be forwarded verbatim to the AI provider — Gemini free tier by
+default — at `gnome-onboarding/index.ts` line ~112 (`callWithFallback(chain, {
+system, turns, … })`).
 
-This means **direct identifiers**, not the "ids, zones, counts" that
+That meant **direct identifiers**, not the "ids, zones, counts" that
 `providers.ts` line 12 instructs callers to keep to, transit a third-party model
 whose free tier that same comment says may be used for product improvement.
 
@@ -240,22 +235,18 @@ never writes; `save_onboarding_contact()` re-validates every field; contact
 details land in owner-only `user_private_contact`, never in world-readable
 `profiles`. The defect is **disclosure**, not authorization.
 
-**Required — pick one, both are acceptable:**
-- **(a) Disclose it.** Add the identifiers-to-AI-provider sentence from the
-  suggested copy below. Cheapest, ships today.
-- **(b) Stop sending them.** Have the model drive the conversation while the
-  client posts the actual field values straight to `save_onboarding_contact()`,
-  so identifiers never enter a model turn. Better outcome, more work.
-
-I recommend (a) for launch and (b) on the backlog.
+**Resolved current state.** The function now deterministically parses email and
+phone locally, redacts both before sending turns to the provider, and never
+sends the stored contact record back to the model. Names can still appear in
+the welcome conversation; the Privacy Policy now says that plainly.
 
 ---
 
 ## GAPS — fix before store submission
 
-### G1 — No web account-deletion URL (Google Play)
+### G1 — No web account-deletion URL (Google Play). **RESOLVED LIVE**
 
-**Class: FIX BEFORE SUBMISSION.**
+**Class: was FIX BEFORE SUBMISSION.**
 
 **Apple 5.1.1(v) is satisfied — PASS.** `expo/app/settings.tsx` lines 155–169
 render "Delete my account" with a two-step destructive confirm, calling the
@@ -264,22 +255,16 @@ storage folders, cascades the user's rows, and finishes with
 `auth.admin.deleteUser`. Identity comes from the token, never the request body.
 This is a genuine in-app deletion path, correctly built.
 
-**Google Play is not satisfied.** Play requires, in addition to the in-app path,
-a **publicly reachable web URL** where a user can request account and data
-deletion without installing the app — it is a required field on the Data safety
-form. There is no such route: `find web/app -name page.tsx` returns 18 routes
-and none is `/account`, `/delete-account`, or equivalent. The Privacy Policy
-mentions deletion in prose (line 51) but a prose mention inside a policy page is
-a weak substitute for the dedicated URL Play asks for.
+**Google Play is now satisfied.** `https://gnomefarmersmarket.com/delete-account`
+is live and returned HTTP 200 on 2026-08-20. It is a public, signed-out reachable
+URL that explains the app path, email fallback, what is deleted, what is
+retained, and timing. Its client signs the user in with an email code and calls
+the same `delete-account` edge function as the app. Submit that URL in Play
+Console.
 
-**Required:** add `web/app/delete-account/page.tsx` — a short static page
-explaining the in-app path, the email path, what is deleted, what is retained,
-and how long it takes — then submit that URL in Play Console. Draft copy in
-[Suggested copy](#suggested-copy--new-page-delete-account).
+### G2 — Terms lacked the UGC / objectionable-content clause Apple 1.2 expects. **RESOLVED IN WORKING TREE**
 
-### G2 — Terms lack the UGC / objectionable-content clause Apple 1.2 expects
-
-**Class: FIX BEFORE SUBMISSION.** File: `web/app/terms/page.tsx`.
+**Class: was FIX BEFORE SUBMISSION.** File: `web/app/terms/page.tsx`.
 
 The *mechanisms* Apple 1.2 requires are all present and verified in code:
 
@@ -297,52 +282,29 @@ The *mechanisms* Apple 1.2 requires are all present and verified in code:
 - **Moderation** — an open-reports queue exists in both admin surfaces:
   `admin/App.tsx` 475–505 and `web/app/admin/AdminClient.tsx` 550–576. **PASS.**
 
-What is missing is the **contractual half**. Apple 1.2 expects the terms users
-agree to to state that objectionable content and abusive behaviour are not
-tolerated. `web/app/terms/page.tsx` §2 says only:
+The contractual half now exists. `web/app/terms/page.tsx` §4 states no tolerance
+for objectionable content or abusive behavior, bans harassment, threats, hate,
+sexual content, violence, deception, impersonation, scraping, spam, and illegal
+arrangements; §15 describes reporting, blocking, moderation and suspension.
 
-> "We may suspend or remove accounts or listings that break these terms or the
-> law."
+### G3 — Prohibited-products list lived only on a marketing page. **RESOLVED IN WORKING TREE**
 
-There is no acceptable-use section, no zero-tolerance statement, and no
-prohibited-content list in the Terms at all. This is one of the most commonly
-cited 1.2 rejection reasons for marketplace apps.
-
-**Required:** add an acceptable-use section. Wording below.
-
-### G3 — Prohibited-products list lives only on a marketing page
-
-**Class: FIX BEFORE SUBMISSION.** Files: `web/app/trust/page.tsx` line 81,
+**Class: was FIX BEFORE SUBMISSION.** Files: `web/app/trust/page.tsx` line 81,
 `web/app/terms/page.tsx`.
 
-The actual list — *"alcohol, cannabis, tobacco, prescription products, weapons,
-and unsafe chemicals. Pesticides and fertilizers only in original labeled
-packaging"* — appears on `/trust`, which is explicitly labelled non-binding at
-line 84: *"This is friendly guidance, not legal advice."* The Terms, which are
-what users actually agree to at `expo/app/sign-in.tsx` 369–379, never mention
-it. The rules users are held to are therefore in a document that disclaims being
-the rules.
+The Terms now restate the prohibited-products list directly in §4 and
+incorporate `/trust` by reference for extra category guidance.
 
-**Required:** incorporate `/trust` into the Terms by reference and restate the
-prohibited list inside the Terms. Wording below.
+### G4 — No support contact inside the app. **RESOLVED IN WORKING TREE**
 
-### G4 — No support contact inside the app
+**Class: was FIX BEFORE SUBMISSION.** File: `expo/app/settings.tsx`.
 
-**Class: FIX BEFORE SUBMISSION.** File: `expo/app/settings.tsx`.
-
-Apple 1.2 requires published contact information for UGC apps. `grep` for
-`mailto|hello@|support@` across `expo/` returns **zero hits**. Settings offers a
-feedback textarea (lines 106–124) and three legal links (171–196), but no way to
-reach a human directly. `hello@gnomefarmersmarket.com` exists only on the
-website.
-
-`docs/launch/CREDENTIAL_HANDOFFS.md` already flagged this as PARTIAL and argued
-the App Store Connect Support URL covers it. That is probably true for Apple,
-but it is a one-line fix and removes the argument.
-
-**Required:** add a "Contact us" row in Settings opening
-`mailto:hello@gnomefarmersmarket.com`. Also confirm the Support URL is set in
-App Store Connect and Play Console (metadata — owner).
+Apple 1.2 requires published contact information for UGC apps. Settings now has
+both the feedback textarea and a `Contact support` mailto row using
+`daniel@boonesystems.com`, the deliverable address recorded in
+`GOOGLE_PLAY_PACKAGE.md` after the `hello@gnomefarmersmarket.com` MX check
+failed. Still confirm the Support URL is set in App Store Connect and Play
+Console (metadata — owner).
 
 ### G5 — Age rating vs. the 13+ / 18+ split (metadata)
 
@@ -362,28 +324,14 @@ There is also **no age gate in the signup flow** — nothing in
 age. Enforcement is by terms only. Whether that suffices is a question for
 counsel, and depends on the final rating. **Requires counsel.**
 
-### G6 — The Garden Planner shows no on-screen AI caveat
+### G6 — The Garden Planner showed no on-screen AI caveat. **RESOLVED IN WORKING TREE**
 
-**Class: FIX BEFORE SUBMISSION.** File: `expo/app/garden.tsx`.
+**Class: was FIX BEFORE SUBMISSION.** File: `expo/app/garden.tsx`.
 
-The Terms cover it (§6: *"They can be wrong… treat planner advice as gardening
-guidance, not professional, legal, or safety advice"*) and the Trust page covers
-it well. But the screen itself carries nothing. Reading `expo/app/garden.tsx`
-155–250, there is no disclosure text anywhere in the render tree — the user sees
-chat bubbles and a text input.
-
-The AI Listing Assistant is better: `expo/app/ai-listing.tsx` 147–150 says
-*"Gnome identifies it, finds the right category, and drafts the listing — you
-review and publish."* That establishes review, though not fallibility.
-
-The planner also accepts a **photo** for plant diagnosis (`expo/app/garden.tsx`
-134–150), which means a second photo-to-third-party path the Privacy Policy
-partially covers but the screen does not surface.
-
-**Required:** one line under the planner header. Suggested:
-
-> Gnome's planner is AI. It's good at timing for your zone, but it can be
-> wrong — check seed packets and product labels before you act on it.
+The screen now shows a compact disclosure below the location row:
+`Gnome's planner is AI. It can be wrong — check seed packets and product labels
+before you act.` The picker path still strips photo metadata through
+`pickImages()` before any plant photo leaves the device.
 
 ---
 
@@ -394,15 +342,19 @@ partially covers but the screen does not surface.
 **Class: FIX BEFORE PUBLICATION (of paid plans).** Blocks flipping
 `payments_live_enabled` to true; does not block a free-tier launch.
 
-**Current state is safe today.** `billing_config.payments_live_enabled` defaults
-`false` (`0083_stripe_billing_hardening.sql` line 44) and is checked in
-`billing-checkout/index.ts` 47–48. The mobile app sells nothing:
-`expo/components/UpgradePromptCard.tsx` 49 alerts *"Coming soon"*, and
-`expo/app/upgrade.tsx` only displays tiers. There is **no in-app purchase and no
-external purchase link in the binary**, so App Store 3.1.1 is not triggered —
-**PASS, conditionally**. "Restore purchases" is **N/A** for the same reason:
-there is no IAP to restore. Both verdicts flip the moment a purchase path is
-added to the app.
+**Current launch state is narrower than paid-plan launch.** The live-payments
+gate is still off, `/upgrade` is informational, `UpgradePromptCard` opens that
+information screen, and `expo/app/promote/[listingId].tsx` no longer offers a
+paid extra-promotion checkout. Android also gates the $0.99 publish/renewal
+overage path through `canBuyDigitalInApp`.
+
+Important correction to this 2026-08-13 audit: iOS still can open Stripe-hosted
+checkout for a one-time $0.99 publish/renewal overage. That is now an explicit
+owner launch decision and an App Review 3.1.1 risk disclosed in
+`APP_STORE_PACKAGE.md` §6, not a hidden defect in this audit.
+
+"Restore purchases" remains **N/A** today because there are no StoreKit/IAP
+products to restore.
 
 **What is missing for the web paid plans:**
 
@@ -464,9 +416,9 @@ first-party seller of physical goods.
 **Required before paid launch:** add a Plans and billing section (wording below)
 and scope §1's venue-only sentence to the marketplace specifically.
 
-### G9 — Undisclosed third-party recipients: OpenStreetMap and Expo
+### G9 — Undisclosed third-party recipients: OpenStreetMap and Expo. **RESOLVED LIVE**
 
-**Class: FIX BEFORE PUBLICATION.** File: `web/app/privacy/page.tsx` lines 42–47.
+**Class: was FIX BEFORE PUBLICATION.** File: `web/app/privacy/page.tsx`.
 
 Current copy names exactly one processor:
 
@@ -493,21 +445,24 @@ The "no third-party tracking cookies" sentence is accurate as far as it goes —
 zero hits, so there genuinely is no analytics SDK. Good. But it is doing double
 duty as a general third-party-sharing statement, which it is not.
 
-**Required:** name Google (AI), Expo (push), Stripe (payments), and OpenStreetMap
-(geocoding) alongside Supabase.
+**Resolved in the current web policy.** `web/app/privacy/page.tsx` now names
+Supabase, Google, Stripe, Apple, Expo and OpenStreetMap, and the live privacy
+page was re-probed clean on 2026-08-20. The historical finding remains here as
+the regression record.
 
-### G10 — Notifications: no disclosure of what push carries
+### G10 — Notifications: no disclosure of what push carries. **RESOLVED LIVE**
 
-**Class: FIX BEFORE PUBLICATION.**
+**Class: was FIX BEFORE PUBLICATION.**
 
 The permission mechanics are correct — `expo/lib/notifications.ts` 24–35
 requests only after sign-in, iOS needs no usage string, and the Expo config
 plugin supplies Android `POST_NOTIFICATIONS`. **PASS on mechanics.**
 
-The Privacy Policy says only *"sending the notifications you'd expect (claims,
-messages)."* It does not disclose that a **device token is stored**
-(`device_tokens`) or that **message previews leave the platform** through Expo's
-servers. Folded into the G9 rewrite below.
+The current Privacy Policy now discloses the stored device token and platform,
+and the Expo processor section says push notifications travel through Expo in
+readable form and may include item titles, display names, order details, or the
+first part of a chat message. The remaining push issue is not disclosure; it is
+physical-device delivery proof for the final Android/iOS builds.
 
 ### G11 — Deleting your account does not cancel your Stripe subscription
 
@@ -564,42 +519,18 @@ Exact retention periods for seed/food records: **requires counsel.**
 
 ## FIX WITHIN 72 HOURS
 
-### G14 — `CREDENTIAL_HANDOFFS.md` states the camera is never used; it is
+### G14 — `CREDENTIAL_HANDOFFS.md` stated the camera was never used. **RESOLVED IN WORKING TREE**
 
-**Class: FIX WITHIN 72 HOURS.** File: `docs/launch/CREDENTIAL_HANDOFFS.md`
-line ~145.
+`expo/app/ai-listing.tsx` previously had an iOS-only "Take photo" branch while
+`expo-image-picker` was configured with `cameraPermission: false`, making the
+reviewer-facing docs internally inconsistent. The working tree removes that
+branch, and the import screen's matching shortcut was removed too. Both now use
+the shared `pickImages()` library path, camera is not requested, and
+`expo/app.json` no longer carries a dead `NSCameraUsageDescription`.
 
-That reviewer-facing readiness doc asserts:
-
-> "Camera is never invoked (`expo/lib/images.ts` uses `launchImageLibraryAsync`
-> only) — the camera string is unused but harmless."
-
-This is now stale. `expo/app/ai-listing.tsx` calls
-`ImagePicker.requestCameraPermissionsAsync()` (line 65) and
-`ImagePicker.launchCameraAsync()` (line 69), reached from the "📷 Take photo"
-button at line 153.
-
-The **iOS position is fine and unchanged — PASS.** `expo/app.json` declares
-`NSCameraUsageDescription` ("Gnome needs camera access so you can photograph
-your surplus produce") and `NSPhotoLibraryUsageDescription`, both accurate and
-both now genuinely used. `NSLocationWhenInUseUsageDescription` is likewise
-accurate, and location is correctly when-in-use only —
-`expo-location` is configured with `isIosBackgroundLocationEnabled: false` and
-`locationAlwaysPermission: false`, and `expo/lib/location.ts` uses
-`Accuracy.Balanced` with `requestForegroundPermissionsAsync` throughout.
-**PASS on location.** The Privacy Policy's claim that public surfaces show only
-an approximate area is consistent with `0053_pickup_locations_scheduling.sql`
-191–207, which withholds `address_line` until release.
-
-**The Android question I could not answer:** `expo/app.json` sets the
-`expo-image-picker` plugin's `cameraPermission: false` while
-`android.permissions` lists only the two location permissions. Whether the built
-manifest ends up with `android.permission.CAMERA` — and whether
-`launchCameraAsync` therefore works on Android — cannot be determined from
-source. **Verify against a real EAS build artifact before Play submission.** The
-compliance angle is that declared permissions must match the Data safety form.
-
-**Required:** correct the doc, and run the manifest check.
+The remaining verification is artifact-level: inspect the rebuilt iOS
+`Info.plist` and Android merged manifest to confirm photo/location are present
+and camera is absent.
 
 ### G15 — Stale comment in `web/app/seeds/page.tsx` — RESOLVED mid-audit
 
@@ -645,7 +576,7 @@ now accurate. No action.
 | Terms acceptance | `expo/app/sign-in.tsx` 369–379 — "By continuing you agree to our Terms and Privacy Policy," both tappable |
 | Policy availability | `/terms`, `/privacy`, `/trust` all exist and are linked from `expo/app/settings.tsx` 171–196 |
 | Seller responsibility | Terms §3 and §4; Trust page food-safety section |
-| Camera / photo strings | `expo/app.json` `ios.infoPlist` — accurate and used |
+| Camera / photo strings | Photo/location strings in `expo/app.json` `ios.infoPlist`; camera intentionally absent |
 | Location handling | when-in-use only, `Accuracy.Balanced`, approximate public display |
 | No tracking SDKs | zero hits for gtag / GA / Plausible / PostHog / Vercel Analytics |
 | Paid-placement disclosure | `expo/components/ListingCard.tsx` 84–86 and `web/app/components/ListingCard.tsx` 29 both render a visible "Promoted" tag |
@@ -815,7 +746,7 @@ answers.
 > my account." This permanently removes your account, your Market, your
 > listings, your messages, your photos, and any documents you uploaded. It
 > cannot be undone. If you can't use the app, email
-> hello@gnomefarmersmarket.com and we'll delete it for you within 30 days. You
+> daniel@boonesystems.com and we'll delete it for you within 30 days. You
 > can also request a copy of your data, or ask us to correct it, at that
 > address.
 
@@ -914,7 +845,7 @@ account-deletion URL. Static, no auth, must be reachable while signed out.
 > immediately.
 >
 > **By email.** If you can't get into the app, email
-> **hello@gnomefarmersmarket.com** from the address on your account and ask us
+> **daniel@boonesystems.com** from the address on your account and ask us
 > to delete it. We'll confirm it's you and delete the account within 30 days.
 >
 > **What gets deleted:** your account and sign-in, your profile and contact
@@ -927,7 +858,7 @@ account-deletion URL. Static, no auth, must be reachable while signed out.
 > only as long as required. It isn't linked to a usable account and isn't shown
 > to anyone.
 >
-> Questions: hello@gnomefarmersmarket.com
+> Questions: daniel@boonesystems.com
 
 Retention wording here must stay consistent with the Privacy Policy retention
 section, and the specifics are **pending counsel**.
@@ -936,19 +867,18 @@ section, and the specifics are **pending counsel**.
 
 ## Recommended order of work
 
-1. **B2 / B3 / B4** — one Privacy Policy rewrite covers all three. This is now
-   the largest remaining exposure, and the only true blocker left.
-2. **G2 / G3** — one Terms edit covers both.
-3. **G1 / G4 / G6** — three small additions (a web page, a Settings row, one
-   line of planner copy).
-4. **B1 residue** — four present-tense Seed Drop claims in `web/app/page.tsx`
-   and `web/app/layout.tsx`. Cheap, and the site-wide meta description is the
-   one that matters most.
-5. **G5** — owner sets store metadata; confirm the age rating reflects UGC.
-6. **G14** — correct the stale readiness doc; check the Android manifest against
-   a real build.
-7. Everything under "fix before publication" **before** `payments_live_enabled`
-   is ever flipped to `true`. G7, G11, G12 and the Founding Member terms gap are
+This order is updated for the 2026-08-20 launch tree. The original B1-B4 and
+G1-G4/G6/G14 fixes have either landed in the working tree or been verified live;
+the record above stays as regression evidence.
+
+1. **G5** — owner sets store metadata; confirm the age rating reflects UGC.
+2. **Android/iOS artifacts** — check the final Android manifest against a real
+   AAB/APK and inspect the generated iOS privacy manifest in the final IPA.
+3. **Console/device gates** — Supabase auth redirect/provider settings, physical
+   Android push, iOS push/OAuth/password-reset round trips, and Play/App Store
+   submission fields.
+4. Everything under "fix before publication" **before** live payments are ever
+   enabled. G7, G11, G12 and the Founding Member terms gap are
    a single coherent piece of work: a real `/account` page with a working cancel
    control, correct renewal disclosures, deletion that cancels billing, and
    written terms for any tier that conditions a benefit on a payment.

@@ -5,8 +5,8 @@ by inspecting the prebuild output and the live website. Where a claim could only
 be established statically — because building or running the app was out of scope
 for this pass — it says so in place rather than implying it was exercised.
 
-**Audited:** 2026-08-13 against `983a1d4` on `main`, plus the one uncommitted
-working-tree change (`supabase/functions/gnome-onboarding/index.ts`).
+**Audited:** 2026-08-13 against `983a1d4` on `main`, then updated through the
+2026-08-20 launch working tree.
 **Companion docs:** `docs/release/APP_STORE_PACKAGE.md` (submission mechanics),
 `docs/release/GOOGLE_PLAY_PACKAGE.md` (Play Data Safety),
 `docs/release/SUBSCRIPTION_POSTURE.md`, `docs/privacy/AI_DATA_FLOW.md`,
@@ -14,8 +14,9 @@ working-tree change (`supabase/functions/gnome-onboarding/index.ts`).
 while this was being written; where they disagree with §5 or §11.5, reconcile
 before submitting rather than assuming this one is newer.
 
-**This document supersedes §5 of `APP_STORE_PACKAGE.md`, which is wrong in two
-places.** See §13, findings F3 and F1.
+**This document is the source of truth for App Privacy answers.** §5 of
+`APP_STORE_PACKAGE.md` has been reconciled back to this packet; if the two drift
+again, treat this packet as authoritative.
 
 ---
 
@@ -45,7 +46,7 @@ Paste-ready. App Store Connect → App Privacy.
 | Data types linked to identity | **All 15.** Nothing is collected anonymously except one event row (§2.9) |
 | Account creation offered? | **Yes** |
 | Account deletion offered in-app? | **Yes** (§10) |
-| In-app purchases / subscriptions? | **No** (§11.5) |
+| In-app purchases / subscriptions? | **No StoreKit products configured** (§11.5); iOS Stripe overage ships as a disclosed seller-tool risk |
 | ATT prompt needed? | **No** — no `NSUserTrackingUsageDescription` anywhere (§3) |
 
 ---
@@ -207,21 +208,19 @@ Functionality*, linked, not used for tracking.
 
 Photos only; there is no video capture or upload anywhere in the app.
 
-**Sources.** Eight call sites reach the photo library. Seven go through the
+**Sources.** Eight call sites reach the photo library, and all go through the
 single hardened helper `pickImages()` (`expo/lib/images.ts:57`): the Post
 composer, the Gnome AI tab, Grow Log, profile avatar, Market avatar, the Garden
-Planner's "check my plant", and compliance document upload. The eighth,
-`expo/app/ai-listing.tsx:70`, calls `ImagePicker.launchImageLibraryAsync`
-directly. A ninth picker, `DocumentPicker.getDocumentAsync`
+Planner's "check my plant", compliance document upload, and
+`expo/app/ai-listing.tsx`. A ninth picker, `DocumentPicker.getDocumentAsync`
 (`expo/app/compliance/upload.tsx:119`), reaches the Files app rather than the
 photo library, for permit PDFs.
 
-**Camera.** `expo/app/ai-listing.tsx:65,69` calls
-`requestCameraPermissionsAsync()` and `launchCameraAsync()`. This contradicts
-`APP_STORE_PACKAGE.md` §1.4, which states the camera is never invoked, and it is
-a crash risk — see finding **F1**, classified BLOCKER. **The Photos answer does
-not change either way** (library use alone makes it Yes), but whether Gnome
-should describe itself as using the camera depends on how F1 is resolved.
+**Camera.** No code path requests camera permission or calls
+`ImagePicker.launchCameraAsync()`. `expo-image-picker` remains configured with
+`cameraPermission: false`, so the generated native projects should not carry a
+camera usage string or Android camera permission. The Photos answer stays Yes
+because the library picker is used.
 
 **EXIF.** Metadata stripping is real and is applied on every path that leaves
 the device:
@@ -234,8 +233,8 @@ the device:
   public bucket would defeat the entire `approx_lat/lng` design.
 - `uploadListingImages()` re-normalizes defensively if handed a raw asset
   (`images.ts:91-94`).
-- The one direct-picker path, `ai-listing.tsx:76-80`, re-encodes through
-  `ImageManipulator` before sending, so it strips EXIF too.
+- `ai-listing.tsx` now uses the same `pickImages()` helper before sending the
+  in-memory image to `analyze-listing-photo`.
 
 I read this code; I did not run it against a GPS-tagged HEIC. The claim is
 "correct by construction", not "observed".
@@ -278,11 +277,9 @@ service role.
 One event is anonymous — `payment_link_opened` (`expo/lib/marketops.ts:192`)
 passes no `userId`, so `user_id` is null.
 
-**One event carries free text.** `garden_planner_used`
-(`expo/app/garden.tsx:124`) puts the user's typed question into
-`metadata: { q }`. That is user content living in an analytics table. See
-finding **F4**. It does not change the Usage Data answer, but it is why User
-Content is *also* declared for this path.
+`garden_planner_used` no longer carries free text. In the working tree it logs
+only non-content metadata (`chars` and `has_photo`), so the `events` table stays
+analytics rather than a second store of planner questions. See finding **F4**.
 
 There is **no analytics SDK** — see §3.
 
@@ -308,15 +305,13 @@ payment method, optional buyer label, notes, sold-at) and `seller_expenses`
 written through the `record_sale` RPC (`expo/lib/db.ts:1440-1460`).
 
 **Payment Info is NOT collected.** No card number, bank account or payment
-credential is ever entered. Grepping `expo/{app,components,lib,providers}` for
-`stripe`, `checkout`, `payment_intent`, `card_number` yields exactly two hits,
-both inert: a TypeScript union member `'stripe'` in `expo/app/upgrade.tsx:23`,
-and the word "checkout" inside an Alert string in
-`expo/app/promote/[listingId].tsx:119`.
+credential is ever entered in Gnome. The iOS overage path can open
+Stripe-hosted checkout through `expo/lib/billing.ts`, but card/payment details
+are collected by Stripe on its hosted page, not by the app.
 
 ### 2.12 Purchases → Purchase History — **collected, linked, optional**
 
-**`APP_STORE_PACKAGE.md` §5.1 answers "No" to Purchases. That is wrong.**
+`APP_STORE_PACKAGE.md` §5.1 has been reconciled to this answer.
 
 Apple defines Purchases as "an account's or individual's purchases or purchase
 tendencies". Gnome records exactly that: `market_orders`
@@ -414,8 +409,8 @@ may prompt.
 
 That last row is the one that deserves attention: a US home address is sent
 from the user's device, over the public internet, to a volunteer-run service
-with no data-processing agreement, and it is disclosed nowhere. See finding
-**F5**.
+with no data-processing agreement. The privacy-policy disclosure is now closed;
+proxying remains the post-launch technical improvement. See finding **F5**.
 
 ---
 
@@ -423,10 +418,11 @@ with no data-processing agreement, and it is disclosed nowhere. See finding
 
 **Provider is Google Gemini, and only Google Gemini.** `ai_settings` has
 `allow_paid_fallback = false` and `reads_enabled = true` in production
-(established by the coordinator), so the OpenAI and Anthropic branches in
-`supabase/functions/_shared/providers.ts` are unreachable. **Anthropic and
-OpenAI receive nothing.** Every AI edge function builds its chain the same way,
-e.g. `draft-listing/index.ts:124-126`:
+(established by the coordinator). The shared provider adapter also hides
+OpenAI/Anthropic keys unless `AI_PAID_FALLBACK_DISCLOSED=true`, so a database
+flag alone cannot make paid fallback reachable. **Anthropic and OpenAI receive
+nothing.** Every AI edge function builds its chain the same way, e.g.
+`draft-listing/index.ts:124-126`:
 
 ```
 if (keys.gemini)                       chain.push({ provider: 'gemini', … })
@@ -440,7 +436,7 @@ The only outbound model endpoint that can fire is
 | Feature | Sent to Google | Not sent |
 |---|---|---|
 | AI listing draft (`draft-listing`, `analyze-listing-photo`) | One re-encoded, EXIF-stripped JPEG + the chosen listing type | user id, name, email, coordinates |
-| Garden Planner (`garden-planner`) | Location string (≤120 chars, e.g. "Cleveland Heights, OH"), last ≤12 chat turns (≤2000 chars each), optional plant photo | user id, name, email, exact coordinates |
+| Garden Planner (`garden-planner`) | Coarsened location string (e.g. "Cleveland Heights, OH"), last ≤12 chat turns (≤2000 chars each, street-address/coordinate shapes redacted), optional plant photo | user id, name, email, exact coordinates |
 | Gnome AI tab (`gnome-assistant`) | Conversation turns and attached photos | payment data |
 | Conversational onboarding (`gnome-onboarding`) | The neighbour's own words, **with email addresses and phone numbers redacted** | the stored contact record; only *field names* still needed are sent |
 
@@ -509,8 +505,8 @@ deployed**. "Deployed" is what Apple's reviewer will read. See F2.
 | **OpenStreetMap Nominatim** | **The buyer's full street address**, sent from the device | `expo/lib/delivery.ts:117` | **No** | Yes — F5's disclosure half is closed |
 | **Apple** | Sign in with Apple identity; MapKit tiles; APNs delivery | `AuthProvider.tsx:178-181`; `react-native-maps` on MapKit | Implicit | Yes |
 | **Google Identity** | OAuth identity at sign-in only | `AuthProvider.tsx:152` | **No** | Yes |
-| ~~Anthropic~~ | **Nothing.** Unreachable while `allow_paid_fallback = false` | `_shared/providers.ts`; coordinator-verified config | **Named as the AI provider — wrong** | Removed (0 occurrences) |
-| ~~Stripe~~ | **Nothing from the app.** No Stripe code path in the binary | §2.11 grep | n/a | n/a |
+| ~~Anthropic~~ | **Nothing.** Unreachable while `allow_paid_fallback = false`; also gated behind `AI_PAID_FALLBACK_DISCLOSED=true` | `_shared/providers.ts`; coordinator-verified config | **Named as the AI provider — wrong** | Removed (0 occurrences) |
+| **Stripe** | Hosted checkout for the iOS/web $0.99 seller overage path; Gnome does not collect card numbers | `expo/lib/billing.ts` → `billing-checkout` | n/a | Disclose in Review Notes |
 
 ---
 
@@ -519,7 +515,7 @@ deployed**. "Deployed" is what Apple's reviewer will read. See F2.
 | Type | How verified |
 |---|---|
 | Advertising Identifier | grep across source + `Podfile.lock`: zero hits (§3) |
-| Payment Info / Credit Info | No payment SDK, no card field, no Stripe call in the binary (§2.11) |
+| Payment Info / Credit Info | No payment SDK and no card field in the app. The iOS overage path opens Stripe-hosted checkout, so Stripe collects payment details directly; Gnome does not collect card data. |
 | Contacts (address book) | No `expo-contacts` dependency; no `NSContactsUsageDescription` in `Info.plist` |
 | Health & Fitness | No HealthKit entitlement; no such dependency |
 | Browsing History | The app has no browser. `WebBrowser.openBrowserAsync` is used twice — for the OAuth session (`AuthProvider.tsx:159`) and to open a signed URL for the user's *own* permit document (`expo/app/compliance/index.tsx:106`). Neither records history |
@@ -532,18 +528,18 @@ deployed**. "Deployed" is what Apple's reviewer will read. See F2.
 
 ## 9. Privacy manifest (`PrivacyInfo.xcprivacy`)
 
-The prebuild-generated manifest declares the four required-reason API categories
-(FileTimestamp `C617.1/0A2A.1/3B52.1`, UserDefaults `CA92.1`, SystemBootTime
-`35F9.1`, DiskSpace `E174.1/85F4.1`), `NSPrivacyTracking` `<false/>` — and
-**`NSPrivacyCollectedDataTypes` as an empty `<array/>`**.
+`expo/app.json` now populates `expo.ios.privacyManifests` with
+`NSPrivacyTracking: false`, no tracking domains, and the same fifteen collected
+data types declared in §2. `npx expo config --type public` resolves all fifteen
+entries.
 
-That empty array is factually wrong against §2 and should be populated via
-`expo.ios.privacyManifests` in `app.json` (coordinator owns that file). App
-Store Connect's questionnaire is the authoritative disclosure and Apple's
-automated check reads third-party SDK manifests, so this is not a rejection
-today — but shipping a manifest that says "we collect nothing" alongside a
-questionnaire declaring fifteen types is an inconsistency nobody should have to
-explain later. Finding **F6**.
+The older prebuild-generated manifest declared the four required-reason API
+categories (FileTimestamp `C617.1/0A2A.1/3B52.1`, UserDefaults `CA92.1`,
+SystemBootTime `35F9.1`, DiskSpace `E174.1/85F4.1`) but had
+`NSPrivacyCollectedDataTypes` as an empty array. That was the defect. Remaining
+proof: inspect the final `.ipa` and confirm the generated `PrivacyInfo.xcprivacy`
+contains the configured collected-data rows alongside the required-reason API
+categories.
 
 ---
 
@@ -592,25 +588,24 @@ review notes (§11.2) — reviewers check this by hand.
 
 ## 11. App Review metadata
 
-### 11.1 URLs — all verified HTTP 200 on 2026-08-13
+### 11.1 URLs — all verified HTTP 200 on 2026-08-13; live policy re-probed 2026-08-20
 
 | Field | Value |
 |---|---|
 | Privacy Policy URL | `https://gnomefarmersmarket.com/privacy` |
 | Terms of Use (attach as **Custom EULA**) | `https://gnomefarmersmarket.com/terms` |
-| Support URL | `https://gnomefarmersmarket.com` |
+| Support URL | `https://gnomefarmersmarket.com/support` |
 | Marketing URL | `https://gnomefarmersmarket.com` |
 | Trust & safety (referenced in-app) | `https://gnomefarmersmarket.com/trust` |
-| Contact | `hello@gnomefarmersmarket.com` |
+| Contact | `daniel@boonesystems.com` |
 
-There is no dedicated `/support` route. Using the homepage is acceptable —
-Apple requires a page a user can get help from, and the homepage carries the
-contact address. Consider a real `/support` page before public release
-(BACKLOG).
+The `/support` route is present in the working tree and should be deployed with
+the launch web packet before using this Support URL in App Store Connect.
 
-**The privacy policy at that URL is currently inaccurate** — see F2. It must be
-corrected before the App Privacy answers above are submitted, because the two
-have to agree.
+The earlier provider-name defect at the live Privacy Policy URL is resolved
+(F2). The 2026-08-20 working tree additionally tightens Garden Planner wording;
+deploy that web change with the launch packet if the reviewer copy below is used
+verbatim.
 
 ### 11.2 Account-deletion instructions for the reviewer
 
@@ -636,9 +631,9 @@ account we supplied has demo content set up for you.
 ```
 AI FEATURES
 
-Gnome uses one AI provider: Google (Gemini). Three surfaces use it, and all
-three are assistive only — the AI never publishes, sends, buys or changes
-anything on a user's behalf.
+Gnome uses one active AI provider: Google (Gemini). The AI features are
+assistive only — the AI never publishes, sends, buys or changes anything on a
+user's behalf.
 
 1. PHOTO TO LISTING. The user picks a photo of what they grew or made. We
    re-encode it on the device (which strips all camera metadata, including GPS)
@@ -649,11 +644,13 @@ anything on a user's behalf.
    commonly regulated categories (eggs, dairy, meat, canned goods) are
    deliberately excluded from "publish all" so a person always looks at them.
 
-2. GARDEN PLANNER. A gardening Q&A. We send the town/state the user typed and
-   the recent conversation turns, optionally with a photo of a plant. It answers
-   with planting advice for that location and season. It is instructed to give
-   no medical, food-safety or pesticide-safety advice beyond "follow the label
-   or consult your local extension office".
+2. GARDEN PLANNER. A gardening Q&A. We send a city/state-style location, after
+   rejecting or coarsening street addresses and exact coordinates, plus the
+   recent conversation turns, optionally with a photo of a plant. Street-address
+   and coordinate shapes inside those turns are redacted before provider calls.
+   It answers with planting advice for that location and season. It is
+   instructed to give no medical, food-safety or pesticide-safety advice beyond
+   "follow the label or consult your local extension office".
 
 3. WELCOME CHAT. A short conversational intake that asks a new neighbor for a
    first name, last name and contact email (phone is optional and can be
@@ -663,11 +660,13 @@ anything on a user's behalf.
    server-side before it is saved. The whole flow is skippable — a plain form
    does the same job.
 
-No user identifier, name, email address or exact location is sent to the AI
-provider. AI usage is metered (feature, token counts, cost) for our own
-budgeting; prompt and response text are not stored in that metering table.
+No stored user identifier, email address or exact location is sent to the AI
+provider by these flows. User-volunteered names and other free-text content can
+still appear in chat turns, except where specifically redacted above. AI usage
+is metered (feature, token counts, cost) for our own budgeting; prompt and
+response text are not stored in that metering table.
 
-All three degrade gracefully: if AI is unavailable the app tells the user and
+These flows degrade gracefully: if AI is unavailable the app tells the user and
 they fill the form by hand, exactly as they would otherwise.
 ```
 
@@ -718,34 +717,35 @@ category gate above. We are stating that plainly rather than implying coverage
 we do not have.
 ```
 
-### 11.5 Subscription disclosure — FREE launch, no in-app purchases
+### 11.5 Subscription disclosure — no StoreKit products; iOS overage disclosed
 
 **Verified absent.** `expo/package.json` contains no `expo-in-app-purchases`,
 no `react-native-iap`, no `react-native-purchases`/RevenueCat, and no StoreKit
 usage anywhere in `expo/{app,components,lib,providers}`. `expo/ios/Podfile.lock`
-contains no purchase pod. There is no Stripe call path in the binary (§2.11).
+contains no purchase pod. However, `expo/lib/billing.ts` can open
+Stripe-hosted checkout for the $0.99 publish/renewal overage path on iOS/web.
+Android gates that path off through `canBuyDigitalInApp`.
 
 App Store Connect answers:
 
-- In-App Purchases: **No**
+- In-App Purchases: **No StoreKit products are configured**. The iOS build ships
+  the Stripe-hosted $0.99 seller overage path as a deliberate, disclosed
+  `APP_STORE_PACKAGE.md` §6 posture; Android gates that path off.
 - Subscriptions: **none configured**. Do not create a subscription group.
-- "Restore Purchases" control: **not required** (nothing is purchasable). It
-  becomes mandatory the day IAP is added.
+- "Restore Purchases" control: **not required** unless StoreKit IAP is added.
 - Content Rights: **Yes**, the app contains third-party content — it hosts
   user-generated content and Gnome has the rights/permissions to display it.
 
 Disclosure text for the review notes:
 
 ```
-NOTHING IS PURCHASABLE IN THIS BUILD
+SELLER PURCHASES
 
-This version of Gnome sells nothing. There is no in-app purchase, no
-subscription, and no payment processing of any kind inside the app. Gnome is
-free to download and free to use, and it takes no commission on anything
-neighbors trade.
-
-Where the app describes seller plan tiers, those are descriptions only — there
-is no purchase path behind them.
+This build has no StoreKit in-app purchase products and no subscription purchase
+path. Seller plan surfaces are informational and do not sell plans. The iOS app does
+include a one-time Stripe-hosted checkout for a $0.99 extra Sell publish/renewal
+when a seller exhausts their included allowance; Android does not expose that
+purchase path. Gnome takes no commission on anything neighbors trade.
 
 When a buyer and a seller settle up, they do it directly with each other. If the
 seller has published a Venmo, PayPal or Cash App handle, the app can open that
@@ -761,11 +761,12 @@ join a waitlist.
 
 > **Cross-lane note, not this document's fix.** `APP_STORE_PACKAGE.md` risk R1
 > flags that the Upgrade and Boost surfaces still print real dollar amounts next
-> to buttons that resolve to a "coming soon" alert (`expo/app/upgrade.tsx`,
-> `expo/app/promote/[listingId].tsx:119`, `expo/components/UpgradePromptCard.tsx`).
-> That is a Guideline 2.1 completeness risk owned by the app lane. It does not
-> change any answer in this document — with no IAP and no external purchase
-> link, neither 3.1.1 nor its anti-steering clause is triggered.
+> to buttons that used to resolve to a "coming soon" alert (`expo/app/upgrade.tsx`,
+> `expo/app/promote/[listingId].tsx`, `expo/components/UpgradePromptCard.tsx`).
+> That was a Guideline 2.1 completeness risk owned by the app lane. It does not
+> change any App Privacy answer in this document. The separate 3.1.1 posture is
+> the iOS $0.99 Stripe-hosted seller overage path described above: no StoreKit
+> products, Android gated off, and explicit Review Notes disclosure.
 
 ---
 
@@ -784,7 +785,8 @@ Stated plainly, because "I read the code" is not the same as "I ran it":
 3. **Production `ai_settings` and `billing_config` values** were taken as
    given from the coordinator (`allow_paid_fallback=false`,
    `reads_enabled=true`, `payments_live_enabled=false`). I did not query the
-   database.
+   database. OpenAI/Anthropic fallback is additionally gated in code by
+   `AI_PAID_FALLBACK_DISCLOSED=true`.
 4. **`ai_usage_log`'s CREATE statement is not in `supabase/migrations/`** — only
    `ALTER`s in 0078 and 0080. I could confirm from the edge functions what is
    *written* to it (metering only, no prompt text) but not its full column list
@@ -810,106 +812,51 @@ Stated plainly, because "I read the code" is not the same as "I ran it":
 
 ## 13. Findings
 
-### F1 — `/ai-listing` invokes the camera with no `NSCameraUsageDescription`. **BLOCKER**
+### F1 — `/ai-listing` invoked the camera with no generated camera usage string. **RESOLVED IN WORKING TREE**
 
-The chain, each link verified:
+Resolved by taking option (b): `expo/app/ai-listing.tsx` no longer renders a
+camera button, requests camera permission, or calls `launchCameraAsync()`. It
+uses the shared `pickImages()` helper, matching the rest of the app's photo
+flows. `expo/app.json` keeps `cameraPermission: false` and no longer declares a
+dead `NSCameraUsageDescription` string in `ios.infoPlist`.
 
-1. `expo/app/(tabs)/post.tsx:414-427` renders a banner — "Take a photo — Gnome
-   drafts it" — for **every non-Wanted listing type, with no plan gate**, whose
-   `onPress` is `router.push('/ai-listing')`.
-2. `expo/app/ai-listing.tsx:153` renders a primary button "📷 Take photo" →
-   `capture(true)`.
-3. `capture(true)` calls `ImagePicker.requestCameraPermissionsAsync()` (line 65)
-   and `ImagePicker.launchCameraAsync()` (line 69).
-4. `expo/app.json:57-64` configures the `expo-image-picker` plugin with
-   `"cameraPermission": false`, which **strips `NSCameraUsageDescription`** from
-   the generated `Info.plist` — overriding the `NSCameraUsageDescription` string
-   that `app.json:24` also declares under `ios.infoPlist`.
-5. Confirmed empirically: `plutil -p expo/ios/Gnome/Info.plist` lists
-   `NSLocationWhenInUseUsageDescription` and `NSPhotoLibraryUsageDescription`
-   and **no camera key**.
+Verification is static: scans for `launchCameraAsync`,
+`requestCameraPermissionsAsync` and `NSCameraUsageDescription` now have no app
+runtime hits. A rebuilt archive should still be inspected before submission to
+confirm the generated `Info.plist` has location/photo strings and no camera
+string.
 
-iOS terminates a process that requests camera authorisation when the usage
-description is absent. The plan gate does not save this: the locked state
-renders only when `ent.data && !eligible`, and `ent.data` is `undefined` while
-the entitlements query is in flight — so the camera button is on screen for
-*every* user during that window, and permanently for any Grower / Farm /
-complimentary account.
+### F2 — The deployed Privacy Policy names the AI provider correctly. **RESOLVED 2026-08-20**
 
-**I did not run the app and did not observe the termination.** The evidence is
-static: a reachable code path calling a privacy-gated API whose required
-Info.plist key is verifiably absent from this config's prebuild output.
+This was a real App Review risk earlier in the audit: the live privacy policy
+named Anthropic even though the app routes AI traffic to Gemini first and the
+paid fallback path is disabled.
 
-Two fixes, both outside my owned files:
+Direct production fetch on 2026-08-20 now confirms the public policy no longer
+contains "Anthropic"; it names Google's Gemini models, explains the free-tier
+data-use posture, lists Expo push/update handling, and names OpenStreetMap
+(Nominatim). Apple's reviewer reads the live URL, so this finding is closed.
 
-- **(a)** Add a real `"cameraPermission": "Gnome needs camera access so you can
-  photograph what you grew or made."` to the `expo-image-picker` plugin block in
-  `expo/app.json` (coordinator owns that file). Keeps the feature; then this
-  document's §2.7 must say the camera is used.
-- **(b)** Remove the camera branch from `expo/app/ai-listing.tsx` (library
-  only), matching the eight other photo call sites. Simpler, and keeps the
-  store answer to "photo library only".
-
-Whichever is chosen, §2.7 and `APP_STORE_PACKAGE.md` §1.4 both need to match it.
-Also worth noting for the app lane: `ai-listing.tsx:70` is the one photo path
-that bypasses the hardened `pickImages()` helper. It happens to re-encode
-correctly at lines 76-80, so there is no EXIF leak today — but it is the only
-place where that guarantee rests on a second implementation rather than the
-shared one.
-
-### F2 — The **deployed** Privacy Policy names the wrong AI provider. Rewritten in the tree, not yet shipped. **FIX BEFORE APP REVIEW**
-
-**Status changed during this audit.** Both states are recorded because the gap
-between them is the actual risk.
-
-**What is live right now.** I fetched `https://gnomefarmersmarket.com/privacy`
-twice while writing this, most recently after the rewrite landed in the tree.
-Both times it returned "…processed by our AI provider (**Anthropic**)".
-Anthropic receives nothing (§5); Google does. The deployed page also never
-mentions the Expo push service, Expo's update endpoint, Google Identity, or
-OpenStreetMap.
-
-**What is in the working tree.** The web lane has since rewritten
-`web/app/privacy/page.tsx` end to end (`UPDATED` moved to August 13, 2026).
-Verified against the new file: **zero** occurrences of "Anthropic"; Google and
-Gemini named as the AI provider (lines 154-156, 213-214); Supabase, Apple, Expo
-and **OpenStreetMap (Nominatim)** all named in a processor list (lines 208-237).
-That resolves both F2 and the disclosure half of F5 — on paper.
-
-**What is left.** The rewrite is **not deployed**. Apple's reviewer opens the URL
-in the App Store listing, not the repo. Until the site is redeployed, the
-privacy policy Apple reads contradicts the App Privacy answers in §2, which is
-exactly the inconsistency that draws a Guideline 5.1.1 rejection.
-
-**Action: deploy the web change before submitting**, then re-fetch the URL and
-confirm the string "Anthropic" is gone. Nothing in this repo can prove that
-happened; it has to be checked against the live page.
-
-### F3 — `APP_STORE_PACKAGE.md` §5.1 answers "No" to Purchases. **FIX BEFORE APP REVIEW**
+### F3 — `APP_STORE_PACKAGE.md` §5.1 answered "No" to Purchases. **RESOLVED IN WORKING TREE**
 
 It should be **Yes → Purchase History** (§2.12). `market_orders` and
 `market_order_items` record what a buyer ordered, from which Market, when, and
-for how much. Answering "No" because no money moves through the app confuses
-Purchase History with Payment Info; Payment Info is correctly "No". Submitting
-the understated answer is a misdeclaration Apple can act on later. **Use §2 of
-this document, not §5 of that one.**
+for how much. Answering "No" because no money moves through the app confused
+Purchase History with Payment Info; Payment Info is correctly "No". §5 of
+`APP_STORE_PACKAGE.md` has been reconciled to this answer.
 
-### F4 — The Garden Planner writes the user's typed question into the analytics table. **FIX WITHIN 72 HOURS**
+### F4 — The Garden Planner wrote the user's typed question into analytics. **RESOLVED IN WORKING TREE**
 
 `expo/app/garden.tsx:124`:
-`logEvent('garden_planner_used', { userId, metadata: { q } })` — `q` is the
-user's free-text question, stored verbatim in `events.metadata`.
+`logEvent('garden_planner_used', { userId, metadata: { chars: q.length,
+has_photo: !!photo } })` now records only non-content metadata.
 
 Rows are private (`events_select_self`), so this is not an exposure. It is a
-classification problem: an analytics table now holds user content, which widens
-what "usage data" means for retention, for export, and for anyone who later
-reasons about the `events` table as if it were counters. The event's analytic
-value is that the planner was used, not what was asked.
+classification problem: an analytics table should not hold user content. The
+event's analytic value is that the planner was used, not what was asked, so the
+working-tree fix keeps the counter and drops the question text.
 
-Fix: drop `q`, or replace it with `{ chars: q.length }`. If it is kept
-deliberately, §2.9's dual declaration must stay.
-
-### F5 — Buyer street addresses are sent from the device to OpenStreetMap Nominatim. **FIX BEFORE PUBLIC RELEASE**
+### F5 — Buyer street addresses are sent from the device to OpenStreetMap Nominatim. **DISCLOSED / PROXY BACKLOG**
 
 `expo/lib/delivery.ts:114-127` sends the buyer's full assembled street address
 as a query parameter to `https://nominatim.openstreetmap.org/search?…` directly
@@ -921,19 +868,20 @@ so the disclosure becomes "our backend" and the user's IP is not exposed to a
 third party alongside their home address; or name OpenStreetMap explicitly in
 the privacy policy. The first is better.
 
-**Half-closed during this audit.** The rewritten `web/app/privacy/page.tsx:237`
-now names "OpenStreetMap (Nominatim)" and says what it is used for, which
-satisfies the disclosure obligation — **once deployed** (F2). The *technical*
-half stands: the call still originates on the user's device, so Nominatim sees
-the user's IP address next to their home address. Disclosure makes that lawful;
-it does not make it good. Proxying it server-side remains the right fix and is
-tracked here rather than closed.
+**Disclosure closed during this audit.** The deployed privacy policy now names
+"OpenStreetMap (Nominatim)" and says what it is used for. The App Store privacy
+answers in this packet also declare physical address sharing with
+OpenStreetMap. The *technical* half stands: the call still originates on the
+user's device, so Nominatim sees the user's IP address next to their home
+address. Disclosure makes that launchable; proxying it server-side remains the
+right post-launch fix and is tracked here rather than treated as a remaining
+public-release blocker.
 
-### F6 — `NSPrivacyCollectedDataTypes` is an empty array. **FIX BEFORE PUBLIC RELEASE**
+### F6 — `NSPrivacyCollectedDataTypes` is configured. **CONFIG FIXED / IPA VERIFY**
 
-§9. Populate via `expo.ios.privacyManifests` in `app.json` so the shipped
-manifest agrees with the fifteen declared types. Not a rejection today; an
-inconsistency that gets more expensive to explain the longer it ships.
+§9 is now populated via `expo.ios.privacyManifests` in `app.json` so the shipped
+manifest should agree with the fifteen declared types. Remaining proof: inspect
+the generated manifest in the final `.ipa`.
 
 ### F7 — `ai_usage` rows survive account deletion. **BACKLOG**
 
@@ -948,19 +896,18 @@ line in `delete-account/index.ts`, or an `on delete cascade` FK in a future
 migration. `ai_usage_log`'s behaviour here is **unverified** (§12.4) and should
 be checked at the same time.
 
-### F8 — No dedicated support page. **BACKLOG**
+### F8 — No dedicated support page. **RESOLVED IN WORKING TREE**
 
-The Support URL is the homepage. Acceptable for submission; a real `/support`
-route with the contact address, a short FAQ and the deletion instructions would
-serve users better and pre-empts a reviewer question.
+The Support URL no longer needs to be the homepage. `web/app/support/page.tsx`
+provides a public support page with the contact address, account-deletion path,
+marketplace help, safety-report guidance, AI caveat, and policy links. Deploy it
+before filling App Store Connect with `https://gnomefarmersmarket.com/support`.
 
-### F9 — Web has no account-deletion path. **BACKLOG**
+### F9 — Web has no account-deletion path. **RESOLVED LIVE**
 
-Deletion exists on mobile only (`expo/app/settings.tsx` → `delete-account`).
-Guideline 5.1.1(v) governs the app and is satisfied. The privacy policy's
-wording — "delete your account from the app's Settings (or by emailing us)" —
-is accurate as written. Worth closing for parity, and it becomes load-bearing
-if a US state privacy law applies later.
+This was a backlog item in the earlier audit. It is now closed: `/delete-account`
+is live, returns HTTP 200, and explains both the in-app route and email fallback.
+The page was re-probed on 2026-08-20 during the launch reconciliation pass.
 
 ---
 
@@ -968,18 +915,19 @@ if a US state privacy law applies later.
 
 1. Resolve **F1** (app lane / coordinator — `app.json` or `ai-listing.tsx`), then
    reconcile §2.7 and `APP_STORE_PACKAGE.md` §1.4 with whichever way it went.
-2. **Deploy the rewritten privacy policy** and re-fetch
-   `https://gnomefarmersmarket.com/privacy` to confirm "Anthropic" is gone
-   (**F2**). The rewrite is already in the tree; only the deploy is outstanding.
+2. ~~Deploy the rewritten privacy policy~~ **Done; re-fetched 2026-08-20.**
+   `https://gnomefarmersmarket.com/privacy` no longer contains "Anthropic" and
+   names Gemini/OpenStreetMap.
 3. **Apply `0093_market_privacy.sql`** and ledger it, or accept that §11.4's
    statement to the reviewer is not yet true (§12.5).
 4. Enter App Privacy from **§2**. Tracking: **No**. Do not skip Precise
    Location (§2.6), Financial Info (§2.11) or Purchase History (§2.12) — all
    three are real and all three are easy to under-declare.
-5. Answer **No** to in-app purchases; configure no subscription products (§11.5).
+5. Use the §11.5 iOS overage posture; configure no StoreKit subscription
+   products and disclose the Stripe-hosted seller overage in Review Notes.
 6. Answer **Yes** to account deletion; paste **§11.2** into the review notes.
 7. Paste **§11.3**, **§11.4** and the **§11.5** disclosure block into App Review
    Information.
 8. Attach `https://gnomefarmersmarket.com/terms` as the **Custom EULA**.
-9. Populate `expo.ios.privacyManifests` (**F6**) — before public release, not
-   necessarily before this submission.
+9. Inspect the final `.ipa` privacy manifest for the configured collected-data
+   rows (**F6**).

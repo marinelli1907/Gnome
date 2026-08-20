@@ -29,11 +29,11 @@ have shipped wrong.
 
 | # | What this doc used to say | The remodelled build | Status |
 |---|---|---|---|
-| 1 | §3: the 512 × 512 icon is a "pure transform of an existing asset", confidence *Certain* | `assets/images/icon.png` is still the **pre-remodel dark-green-on-cream artwork** (sampled: `#17210B`/`#18220B` figure on `#FFF0D1` ground). The remodel brief exists specifically to move *away from* dark-green/cream. `app.json` still sets `adaptiveIcon.backgroundColor` and `splash.backgroundColor` to Parchment `#F6F2E9` — the only two dead-palette hexes left anywhere in the repo | **INVALID — now a blocker.** See §3.2 |
-| 2 | §3.1 specs the feature graphic in Parchment `#F6F2E9` / Moss `#618049` / Ink `#152820` / Terracotta `#AE5832` / Teal `#38728A`, built on `badge.png` | None of those colors exist in `constants/colors.ts` any more, and `badge.png` is the same dead-identity art as the icon | **INVALID — respec'd in §3.3** |
+| 1 | §3: the 512 × 512 icon is a "pure transform of an existing asset", confidence *Certain* | Fixed in working tree: `assets/images/icon.png`, `adaptive-icon.png`, `splash-icon.png`, `badge.png`, and `favicon.png` now use the identity-v4 mark; `app.json` splash/adaptive backgrounds are white | **FIXED — verify on rebuilt device** |
+| 2 | §3.1 specs the feature graphic in Parchment `#F6F2E9` / Moss `#618049` / Ink `#152820` / Terracotta `#AE5832` / Teal `#38728A`, built on `badge.png` | Fixed in working tree: `docs/release/play-feature-graphic.png` is identity-v4, 1024 × 500, RGB/no alpha | **FIXED — upload this asset** |
 | 3 | §4.1 and §4.4: pad captures onto a **Parchment** canvas | The app canvas is now `background: '#FFFFFF'` | **INVALID** — pad on `#FFFFFF`. Happy side effect: white pad reads as bleed, not as a frame |
 | 4 | §4.3 shot list assumes the old tab bar | D3: six tabs, labels **Browse · Map · Post · Ask AI · Market · Profile**. Routes unchanged (`index`, `map`, `post`, `ai`, `activity`, `profile`) | **STALE — updated in §4.4.** The tab bar is legible in every screenshot, so the labels have to be right |
-| 5 | §2 and §5.2: "In-app purchases — **Blocked on the B4 decision**" | **D1 decides it.** `expo/lib/digitalPurchase.ts` exports `canBuyDigitalInApp = Platform.OS !== 'android'`, wired at all three purchase call sites (`app/(tabs)/post.tsx`, `app/(tabs)/ai.tsx`, `app/listing/[id].tsx`). Android v1.1 presents no in-app digital purchase | **RESOLVED** — In-app purchases = **No**; IARC digital-goods = **No**. Two leaks to close first: §2.1 |
+| 5 | §2 and §5.2: "In-app purchases — **Blocked on the B4 decision**" | **D1 decides it.** `expo/lib/digitalPurchase.ts` exports `canBuyDigitalInApp = Platform.OS !== 'android'`, wired at checkout call sites, and Android-facing copy now suppresses extra-purchase prices | **RESOLVED** — In-app purchases = **No**; IARC digital-goods = **No** |
 | 6 | §1.3 footnote: "customer-facing names are **Pro / Max / Farm**" | Migration 0126 retired Max. Production `plan_limits.display_name` = Free / Pro / Farm / *Legacy Farm* (comp-only, retired) | **INVALID** — never write "Max" |
 | 7 | §1.3 bolt-on **PLANS** paragraph ("…one more listing for $0.99"), inserted if B4 → (b)/(c) | D1 chose the equivalent of (a); D4 defers annual; D5 bars "priority support"/"advanced analytics" | **DELETED.** The Android listing carries **no pricing copy at all** — see §1.3 |
 | 8 | §4.1: pad 1080 × 2400 captures to 1080 × 2160 (exactly 2:1), "recommended" | 2:1 is publishable but is **not** 9:16, and Play's promotion-eligibility spec asks for *"9:16 for portrait screenshots (minimum 1080x1920px)"* | **SUPERSEDED** — better remedy, with zero resampling, in §4.2 |
@@ -172,14 +172,12 @@ re-skin and a pricing simplification, so the *functional* claims survived intact
 | Delete your account from Settings | `app/settings.tsx` — "Delete my account" (Profile → Settings; unmoved by D3) |
 | United States only | `countrycodes=us` on the geocoder, US state table in `lib/location.ts`, USD throughout |
 
-**One caveat on the delivery sentence.** Production `plan_limits` has
-`delivery_eligible = false` for Free **and for Pro**, and `true` only for Farm
-($29.99). The description's wording is conditional — *"or, **if you offer it**, a
-local delivery…"* — so it stays true, and it is the only honest way to phrase a
-tier-gated capability without putting pricing in the listing. But a reviewer
-signed in on a Free test account **will not find a delivery setting**, so the
-reviewer notes must say where it lives and which tier exposes it. Flagged to
-whoever owns `GOOGLE_PLAY_PACKAGE.md` §7.2.
+**Delivery caveat.** The legacy `delivery_eligible` column is not the active
+gate. Current code and `enforce_delivery_plan` let Free Markets offer delivery
+up to 15 miles with one flat fee; paid plans add distance surcharges, same-day
+and next-day cutoffs, and weekly delivery schedules. A Free reviewer can find
+the delivery setting from Market → edit Market → Delivery settings, but will see
+an upsell for the advanced controls.
 
 #### What is deliberately *not* claimed
 
@@ -200,10 +198,11 @@ whoever owns `GOOGLE_PLAY_PACKAGE.md` §7.2.
   description says "Neighbors can follow it", never "and get notified". Do not
   add a notification claim until a physical Android device has received one.
 - **Listing promotion / Boost.** `app/promote/[listingId].tsx` can spend an
-  included plan credit, but `buySingle()` is still an alert reading *"Promotion
-  checkout is almost ready"*. F6 stands. Not mentioned, not screenshotted.
+  included plan credit or a previously purchased promotion credit. When no
+  credit is available, it now says extra promotions are not sold in the app.
+  Not mentioned, not screenshotted.
 - **Plan upgrades in-app.** `app/upgrade.tsx` is informational;
-  `UpgradePromptCard`'s CTA is an alert reading *"Coming soon"*.
+  `UpgradePromptCard` opens that information screen with "See plans".
 - **Any metric, testimonial, award, rating, or user count.** There are none, and
   Play's own metadata rules bar them regardless.
 
@@ -313,8 +312,8 @@ Play's current specs, re-fetched live 2026-08-18:
 
 | Asset | Spec | Where it stands |
 |---|---|---|
-| **App icon** | 512 × 512, **32-bit PNG with alpha**, max **1024 KB** | **BLOCKED on art, not on tooling** — the source is off-identity. See §3.2 |
-| **Feature graphic** | 1024 × 500, **JPEG or 24-bit PNG, no alpha** | **Does not exist. Play will not let you publish without it.** Respec'd for identity v4 in §3.3 |
+| **App icon** | 512 × 512, **32-bit PNG with alpha**, max **1024 KB** | `docs/release/play-icon-512.png` generated and verified: 512 × 512 RGBA, 57 KB |
+| **Feature graphic** | 1024 × 500, **JPEG or 24-bit PNG, no alpha** | `docs/release/play-feature-graphic.png` generated and verified: 1024 × 500 RGB, 49 KB |
 | **Phone screenshots** | 2 minimum across device types to publish; up to **8 per device type**. JPEG or 24-bit PNG, no alpha, 320–3840 px per side, and *"The maximum dimension of your screenshot can't be more than twice as long as the minimum dimension."* For **promotion eligibility**: *"you must provide at least four screenshots with minimum 1080px resolution… 9:16 for portrait screenshots (minimum 1080x1920px)"* | See §4. Target 8 |
 | 7"/10" tablet screenshots | Optional, 4 each if supplied | **Skip.** No tablet layouts; `supportsTablet: false` on iOS. Play will show a "not optimized for tablets" note. Acceptable for 1.1.0 |
 | Promo video | Optional, a YouTube URL | **Skip** |
@@ -341,48 +340,22 @@ them constrains §4.5:
   screenshots — which is why the tagline allowance above exists at all. Worth
   knowing precisely, because it is the rule most often misquoted as a blanket ban.
 
-### 3.2 App icon — the blocker the remodel created
+### 3.2 App icon — fixed in working tree
 
-`expo/assets/images/icon.png` is 1024 × 1024 RGBA, 1.76 MB. Sampled dominant
-colors: figure `#17210B`–`#18220B` (near-black green) on ground `#FFF0D1`
-(cream). `adaptive-icon.png` is byte-identical; `splash-icon.png` and
-`badge.png` are the same artwork.
+The old dark-green/cream raster set has been replaced with an identity-v4
+interim mark: red-hat Gnome mascot, white canvas, charcoal outline, and the five
+semantic hues in the basket. Source: `expo/assets/images/gnome-mark.svg`.
 
-Identity v4 contains no cream and no dark green. `constants/colors.ts` sets
-`background: '#FFFFFF'`, `primary: '#E32C27'`, and the brief that produced it
-says the point is to move *away from dark-green/cream, too close to a
-competitor*. So the launcher icon, the Play Store icon, the splash screen and
-the badge all still carry the identity the remodel exists to replace — while
-every one of the ~70 in-app surfaces re-skinned.
+Generated assets:
+- `expo/assets/images/icon.png` — 1024 × 1024 RGBA
+- `expo/assets/images/adaptive-icon.png` — 1024 × 1024 RGBA, padded foreground
+- `expo/assets/images/splash-icon.png` — 512 × 512 RGBA
+- `expo/assets/images/badge.png` — 192 × 192 RGBA
+- `expo/assets/images/favicon.png` — 16 × 16 RGBA
+- `docs/release/play-icon-512.png` — 512 × 512 RGBA, 57 KB
 
-Two consequences, and they are different in kind:
-
-1. **Store-facing.** The 512 × 512 icon is the most-seen asset in the whole
-   package — search results, the listing header, the install card, the home
-   screen. Downscaling the existing PNG is still *technically* trivial and I can
-   do it in a minute, but it ships the rejected identity. §5.1's "Certain"
-   confidence was about the transform; the transform is not the problem.
-2. **In-app.** `app.json` still sets `android.adaptiveIcon.backgroundColor` and
-   `splash.backgroundColor` to Parchment `#F6F2E9`. These are the **only two
-   dead-palette hexes remaining in the repository** — I grepped
-   `F6F2E9|152820|618049|AE5832|38728A|556D63` across `app/`, `components/`,
-   `constants/`, `lib/` and `app.json` and they were the sole hits. A user
-   launching the app sees a cream splash resolve into a white app.
-
-**This is an owner decision, not something to automate.** Redrawing the gnome
-mark in identity v4 is illustration work. The honest options:
-
-- **(a) Ship the existing mark, change only the backgrounds** to `#FFFFFF` in
-  `app.json` — a two-line edit, removes the cream/white flash, but leaves a
-  dark-green figure as the brand mark. Cheapest; visually inconsistent with a
-  red-brand app.
-- **(b) Recolor the existing mark** to identity v4 (Gnome Red `#E53935` hat on
-  white). Mechanical if the mark is flat-shaded — I would need to see whether it
-  is, before promising it.
-- **(c) Commission the icon with the five gnomes** (`GNOME_IDENTITY.md` §2, the
-  Red gnome owns "Logo, onboarding, Sell, brand moments"). Correct answer,
-  half-day to a day of illustration, and it is the same artist pass the feature
-  graphic wants.
+`app.json` now sets both `splash.backgroundColor` and
+`android.adaptiveIcon.backgroundColor` to white `#FFFFFF`.
 
 **`app.json` caution:** the two `backgroundColor` keys are unrelated to
 `android.config.googleMaps`, and nothing in this section proposes touching it —
@@ -390,26 +363,12 @@ B1 stays untouched. Whoever edits `app.json` should still rebuild and confirm th
 Map tab renders before the AAB is cut, because that file is the one place where a
 mistake whites out the entire app.
 
-### 3.3 Feature graphic — respec'd for identity v4
+### 3.3 Feature graphic — generated in working tree
 
-**1024 × 500, no alpha.** Banner at the top of the store page and the tile in
-Play's editorial surfaces. Some placements crop the edges, so keep everything
-load-bearing inside a centered ~924 × 400 safe area and never put text in the
-outer 50 px.
-
-The pre-remodel spec here is void — it was written in Parchment/Moss/Ink. The
-identity-v4 replacement:
-
-- **Ground:** white `#FFFFFF`, the app canvas. Optionally a soft Light Gray
-  `#F1F5F9` wash to one edge for depth. No cream, anywhere.
-- **Center-left:** the Gnome mark. **Pending §3.2** — if the icon is redrawn,
-  this uses the new mark; if not, this graphic should not use `badge.png`, which
-  would reintroduce dark-green-on-cream into the one asset most likely to be
-  seen beside the icon.
-- **Wordmark:** "Gnome" in Fraunces 900 Black
-  (`node_modules/@expo-google-fonts/fraunces/900Black/Fraunces_900Black.ttf`,
-  confirmed loaded at `app/_layout.tsx:51` and mapped as `displayBlack` in
-  `constants/theme.ts`) in Charcoal `#222222` — 15.9:1 on white.
+`docs/release/play-feature-graphic.png` is generated and verified: 1024 × 500,
+PNG RGB/no alpha, 49 KB. It uses the same Gnome mark as the app icon, identity-v4
+colors, listing-card shapes, and no typography, so there is no malformed text or
+tagline-overrun risk.
 - **Tagline:** the app's own line, verbatim from the Browse header —
   **"Fresh from the garden next door."** — confirmed still present at
   `app/(tabs)/index.tsx:125`. Set in Inter, Slate `#6B7280` (4.83:1 on white).
@@ -604,7 +563,7 @@ so the gap is explicit; production today satisfies **none** of these.
 | 4 | Ask AI | No pre-existing rows; needs one **live Gemini call** against a real photo, and the account must have publish allowance left (`free` = 3/month) | — | Shoot before exhausting the allowance, or the wall copy appears instead of drafts |
 | 5 | Ask AI confirm | The account owns a Market with **≥3 active listings** whose titles make the proposal legible (e.g. cucumbers, for "mark my cucumbers sold out"), at least one nearing `expires_at` for the "expiring soon" starter | 0 | Seed listings under the screenshot account's `market_id`, with deliberate titles |
 | 6 | Market page | One `markets` row owned by the account with `story` + avatar set; **≥2 `market_pickup_locations`** with `market_pickup_hours`; **1 `market_drops` row live now** (`now() between starts_at and ends_at`) with ≥2 `market_drop_items`; ≥3 active listings; ≥1 `market_follows` row so "followed by neighbors" is not zero. Reputation counts are **derived** — they need real completed claims, not edited numbers | drops 0 · pickup_locations 0 · follows 0 · bundles 0 | Drive the real in-app flows (pickup-settings, drops, bundles) on the emulator against staging — produced the way a user produces them |
-| 7 | Pickup order | A **second** account as buyer; the seller Market has ≥2 active `sale` listings with `inventory_count > 0`, pickup locations with hours generating **future** slots via `usePickupSlots`, and a cart with ≥2 lines. If shooting the delivery variant instead: the seller must be on **Farm** — `plan_limits.delivery_eligible` is `false` for Free *and* Pro | 0 sale listings, 0 pickup locations | Two accounts, seller configured first. Slots are computed from hours + exceptions, so the hours must cover a day still ahead |
+| 7 | Pickup order | A **second** account as buyer; the seller Market has ≥2 active `sale` listings with `inventory_count > 0`, pickup locations with hours generating **future** slots via `usePickupSlots`, and a cart with ≥2 lines. If shooting the delivery variant instead: the seller can be Free for flat-fee delivery up to 15 miles; paid plans add advanced scheduling/surcharges | 0 sale listings, 0 pickup locations | Two accounts, seller configured first. Slots are computed from hours + exceptions, so the hours must cover a day still ahead |
 | 8 | Sales Notebook | **8–10 `seller_transactions` rows** via `record_sale` (mix `p_source` on-app and off-app, varied `p_payment_method`, realistic `p_gross_cents`) **dated in the current month**, plus **2–3 `seller_expenses`** rows also this month, or the monthly summary renders $0 | transactions 0 · expenses 0 | `record_sale(p_market, p_listing, p_claim, p_quantity, p_gross_cents, p_discount_cents, p_fee_cents, p_payment_method, p_buyer_label, p_notes, p_source)` — drive it in-app, or call the RPC as the owning user against staging |
 
 **Ordering that saves a re-shoot:** capture **4 before 1**. Shot 4 needs unspent
@@ -638,8 +597,8 @@ place a half-finished type treatment shows, **plain captures are the recommendat
 | **Capture every frame** | `adb exec-out screencap -p` per screen | Certain |
 | **Make captures Play-legal** | §4.2 exactly: crop 64 rows, pad to 1314 × 2336 on `#FFFFFF`, strip alpha, emit 24-bit PNG | Certain — pure integer geometry, no resampling |
 | **Verify every asset against the live spec** | Programmatic check of dimensions, exact 9:16, the ≤2× rule, 320–3840 bounds, bit depth, alpha and file size before anything is handed over | Certain |
-| **512 × 512 icon, mechanically** | Downscale `icon.png`, preserve alpha, verify 32-bit PNG < 1024 KB | Certain **as a transform** — but see §3.2: it would ship the pre-remodel identity |
-| **1024 × 500 feature graphic, typographic interim** | PIL composite in identity-v4 hexes, real Fraunces/Inter TTFs, flattened, no alpha, PNG + JPEG | High for *correct and on-brand*; reads as clean typography, not illustration; **cannot include the gnome mark until §3.2 resolves** |
+| **512 × 512 icon, mechanically** | `docs/release/play-icon-512.png` generated from the new identity-v4 icon; RGBA, 57 KB | Done |
+| **1024 × 500 feature graphic** | `docs/release/play-feature-graphic.png`; identity-v4 colors, flattened RGB/no alpha, 49 KB | Done |
 | **Extend the seeding script** | Add photo attachment and `is_demo=false` to `supabase/seed/seed_listings.mjs`, pointed at **staging** — never production, where I am SELECT-only by rule | High, once the photos exist |
 | **Fill the Market / Drop / Basket / order / notebook fixtures** | Drive the real in-app flows on the emulator against staging, so the data is produced the way a user would produce it | High |
 | **Character-count verification** | Already done — 27 / 67 / 3822 / 492, computed not estimated | Certain |
@@ -648,14 +607,14 @@ place a half-finished type treatment shows, **plain captures are the recommendat
 
 | Item | Why it cannot be automated | Blocking? |
 |---|---|---|
-| **The app icon in identity v4** | §3.2. Every store surface leads with it and the current mark is the rejected identity. Options (a)/(b)/(c) are an owner call; (c) needs an illustrator | **Yes — blocks the icon, and constrains the feature graphic** |
+| **The app icon in identity v4** | Fixed in working tree with an interim identity-v4 mark; final commissioned illustration can fast-follow | No |
 | **Produce photographs** | Every photo-led screenshot needs real images; production has zero. I will not download stock on an assumed licence | **Yes — blocks shots 1, 2, 3, 4, 6, 8** |
-| **Fixing the two D1 copy leaks** | `market/bundles.tsx:62` and `upgrade.tsx:27,39,40` — §2.1. Not my files. They decide whether "In-app purchases: No" is truthful | **Yes — blocks §2 and the IARC answer** |
-| **Fixing `GOOGLE_PLAY_PACKAGE.md` §7.2** | The reviewer note still says "NO PURCHASES / This version sells nothing". D1 makes that *nearly* true on Android but the wording is still wrong — see §7 | **Yes — do not submit as written** |
-| **The "My Gnome" heading under the "Market" tab** | §1.5. One word, in a file I do not own, visible in shot 6 | **Yes — blocks shot 6** |
-| **`app.json` splash / adaptive-icon backgrounds** | §3.2. Two `#F6F2E9` values. Needs an owner edit and a Map regression check on the rebuilt app | Not for the listing; yes for the build |
+| **Fixing the two D1 copy leaks** | Fixed in working tree; Android copy now follows `canBuyDigitalInApp` | No |
+| **Fixing `GOOGLE_PLAY_PACKAGE.md` §7.2** | Fixed in working tree; reviewer note now says "No purchases on Android" | No |
+| **The "My Gnome" heading under the "Market" tab** | Fixed in working tree; user-facing copy says Market while the route remains `activity` | No |
+| **`app.json` splash / adaptive-icon backgrounds** | Fixed in working tree: both are `#FFFFFF`; verify on rebuilt app | Not for listing; rebuild verification remains |
 | **Play Console data entry** | Every field above, the IARC questionnaire, category and tags, App access reviewer credentials. No console access from here | Yes |
-| **Reviewer test account** | Created by hand and entered in App content → App access. Credentials must not be committed. Note the Free-tier gaps a reviewer will hit: no delivery settings, 3 publishes | Yes |
+| **Reviewer test account** | Created by hand and entered in App content → App access. Credentials must not be committed. Note the Free-tier limits a reviewer will hit: 3 Sell publishes, flat-fee delivery only | Yes |
 | **Personal vs organization developer account** | Determines whether the 12-testers-for-14-days closed-testing requirement applies. Invisible from the repo, and the biggest schedule risk on Android | Yes, for scheduling |
 | **Illustration for the feature graphic** | I can make it correct; making it *charming* is an illustrator's half-day — the same pass as the icon | No — fast-follow |
 | **Whether captions go on the screenshots** | A taste call. §4.6 recommends plain captures | No |
@@ -681,16 +640,17 @@ unreadable; confirm none of them survived.
 ## 6. Pre-submission checklist for the listing page
 
 **Art and identity**
-- [ ] §3.2 decided: app icon redrawn, recolored, or shipped as-is
-- [ ] `app.json` `splash.backgroundColor` and `adaptiveIcon.backgroundColor` off Parchment; Map regression re-run on the rebuilt app
-- [ ] 512 × 512 icon generated and verified (32-bit PNG with alpha, < 1024 KB)
-- [ ] 1024 × 500 feature graphic generated and verified (24-bit PNG or JPEG, no alpha)
+- [x] §3.2 decided for launch: interim identity-v4 mark generated
+- [x] `app.json` `splash.backgroundColor` and `adaptiveIcon.backgroundColor` off Parchment
+- [x] 512 × 512 icon generated and verified (32-bit PNG with alpha, < 1024 KB)
+- [x] 1024 × 500 feature graphic generated and verified (24-bit PNG or JPEG, no alpha)
+- [ ] Map regression re-run on the rebuilt app
 
 **Code corrections that gate the declarations**
-- [ ] `market/bundles.tsx:62` no longer directs Android sellers to buy on the web
-- [ ] `upgrade.tsx` suppresses "$0.99" when `!canBuyDigitalInApp`
-- [ ] `activity.tsx:82` heading reconciled with the "Market" tab label
-- [ ] `GOOGLE_PLAY_PACKAGE.md` §7.2 "NO PURCHASES" paragraph rewritten (§7)
+- [x] `market/bundles.tsx:62` no longer directs Android sellers to buy on the web
+- [x] `upgrade.tsx` suppresses "$0.99" when `!canBuyDigitalInApp`
+- [x] `activity.tsx:82` heading reconciled with the "Market" tab label
+- [x] `GOOGLE_PLAY_PACKAGE.md` §7.2 "NO PURCHASES" paragraph rewritten (§7)
 
 **Data, before any capture**
 - [ ] Photos sourced and licence settled
@@ -715,19 +675,10 @@ unreadable; confirm none of them survived.
 
 ---
 
-## 7. The correction that must land before submission
+## 7. Reviewer-note correction — landed in working tree
 
-`GOOGLE_PLAY_PACKAGE.md` §7.2's reviewer note contains:
-
-> **NO PURCHASES**
-> This version sells nothing. There is no Google Play Billing integration and no
-> payment processing inside the app.
-
-D1 makes the *substance* of this nearly right on Android and the *wording* still
-wrong: "this version sells nothing" is a statement about the product, and the
-product does sell a $0.99 overage — on web and on iOS, from the same backend,
-with the machinery intact and proven. What is true is narrower and should be said
-narrowly. **D1 selects the (a) variant:**
+`GOOGLE_PLAY_PACKAGE.md` §7.2 now uses the narrow Android wording required by
+D1:
 
 ```
 NO PURCHASES ON ANDROID
@@ -740,17 +691,16 @@ entirely in that app and Gnome never sees or records it. A disclaimer saying so
 is shown every time.
 ```
 
-Two additions the reviewer notes should also carry, both surfaced by this audit:
+Two additions the reviewer notes now carry, both surfaced by this audit:
 
-1. **Where delivery lives and why a Free reviewer cannot see it** —
-   `plan_limits.delivery_eligible` is true only for Farm. Without this, a
-   reviewer testing the description's delivery sentence concludes the feature
-   does not exist.
+1. **Where delivery lives and what Free can see** — Market → edit Market →
+   Delivery settings. Free Markets can offer up to 15 miles with one flat fee;
+   paid plans add distance surcharges and scheduling controls.
 2. **That the account-deletion control did not move.** D3 renamed two tab labels;
    Profile → Settings → Delete my account is unchanged, and both stores'
    submission text names that path verbatim.
 
-I do not own that file; this is the text for whoever does.
+This section remains as evidence for the wording, not as an open action.
 
 ---
 

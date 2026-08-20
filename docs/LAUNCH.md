@@ -1,5 +1,12 @@
 # Gnome — launch checklist
 
+> **SUPERSEDED FOR THE 1.1.0 STORE LAUNCH.** This checklist is a 2026-08-03
+> web-launch runbook and still contains useful historical notes, but it is not
+> the source of truth for the current Android/iOS submission. Use
+> `docs/release/RELEASE_BOARD.md`, `docs/release/GOOGLE_PLAY_PACKAGE.md`,
+> `docs/release/APP_STORE_PACKAGE.md`, and
+> `docs/launch/CREDENTIAL_HANDOFFS.md` for launch gating.
+
 ## SMTP (auth email) — ONE PASTE FROM DONE (2026-08-07)
 
 Supabase → Auth → Emails → SMTP Settings is staged with these values
@@ -30,7 +37,7 @@ https://gnomefarmersmarket.com (sell + AI garden planner shipped; see git log).
 What remains is Supabase **dashboard** configuration that has no API — each item
 is a few minutes in https://supabase.com/dashboard/project/fgybyghwcjlstqxkclch.
 
-## Blockers (web sign-in doesn't complete until these are set)
+## Legacy web-auth items to re-check before relying on this runbook
 
 1. **Auth → Emails → Magic Link template: add the 6-digit code.**
    The default template only sends a link. Add a line like
@@ -38,39 +45,36 @@ is a few minutes in https://supabase.com/dashboard/project/fgybyghwcjlstqxkclch.
    the code path is what the Sell/Planner UI shows first).
 
 2. **Auth → URL Configuration.**
-   - Site URL: `https://gnomefarmersmarket.com` (currently `http://localhost:3000` —
-     verified live: magic links redirect to localhost today).
-   - Additional redirect URLs: `https://gnomefarmersmarket.com/**`
+   - Site URL should be `https://gnomefarmersmarket.com`.
+   - Additional redirect URLs should include `https://gnomefarmersmarket.com/**`
+     and, for the current mobile OAuth/password-reset flow,
+     `gnome://auth-callback`.
+   - This file's old "localhost" finding is historical; confirm the dashboard
+     directly before treating URL configuration as launch-ready.
 
 3. **Auth → SMTP: set up custom SMTP before real users.**
    Built-in Supabase mail is ~2 emails/hour and team-members-only — fine for
    your own testing, dead on arrival for launch. Hostinger SMTP or Resend
    free tier both work.
 
-## Blockers (app store build)
+## App-store auth status (updated 2026-08-20)
 
-4. **Auth → Providers: enable Google and Apple.**
-   Verified via `/auth/v1/settings`: both are currently **disabled**, so the
-   sign-in buttons built in beta-prep #1/#2 fail server-side. Client IDs/secrets
-   per BETA_PREP.md.
+4. **Auth → Providers: Google and Apple are enabled.**
+   Verified with the same `/auth/v1/settings` request shape the app uses
+   (including the public Supabase anon `apikey` header): Google `true`, Apple
+   `true`, `mailer_autoconfirm=true`, `disable_signup=false`. Real OAuth and
+   password-reset round trips still need device proof after confirming
+   `gnome://auth-callback` is in Supabase Auth redirect URLs.
 
-## Revenue switch-on (Stripe) — ARMED, awaiting first live checkout (2026-08-06)
+## Historical Stripe note — do not use as current launch instructions
 
-Everything is configured: Payment Links live on /pricing (Grower + Farm +
-Boost), secrets set (restricted rk_ key + whsec, correct format), the single
-live endpoint `gnome-plan-sync` active. Verified in the Stripe dashboard:
-**zero deliveries and zero payments ever** — the 400s in the function logs
-were arming probes with fake signatures (expected), not failed Stripe
-deliveries. So the whsec has never been exercised against a real signed
-event; it cannot be verified without one.
-
-First-transaction smoke test (optional, ~$0.30 net cost): buy the $4.99
-Boost yourself from My Market, confirm the webhook logs 200 and
-`listing_promotions` gets a row, then refund the payment in Stripe
-(fees aren't returned on refund). If it 400s, the function logs the
-secret's shape + Stripe's error (Edge Function logs) — then re-copy the
-signing secret from the endpoint page into the Supabase
-`STRIPE_WEBHOOK_SECRET` secret and resend the event from Stripe.
+The old 2026-08-06 Payment Link switch-on note is superseded. Current pricing
+truth is the 0126 three-tier model in `docs/MONETIZATION.md`: Free, Pro
+(`grower`), and Farm (`farm`), with live charging intentionally disabled and
+Stripe still in TEST mode. Android exposes no in-app digital purchase UI for
+v1.1 (D1); iOS/web $0.99 overage remains a deliberate, separately documented
+review risk. Do not re-enable legacy Payment Links or resurrect Boost/Max/Farm
+$99 launch copy from this checklist.
 
 ## Done (verified live 2026-08-03)
 
@@ -92,5 +96,4 @@ signing secret from the endpoint page into the Supabase
 
 ## Deliberately NOT in scope (CTO "Vanth" gate — M10 full)
 
-Admin dashboards, analytics UIs, in-app payment flows beyond Payment Links.
-(M10-lite — Stripe Payment Links + webhook — shipped 2026-08-05.)
+Admin dashboards, analytics UIs, or new in-app payment flows.

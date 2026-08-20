@@ -1,8 +1,9 @@
 # App Store submission package — Gnome 1.1.0
 
-Audited 2026-08-13 against `54e141e`. Every factual claim below cites the file or
-command it came from. Where a thing genuinely cannot be checked from this
-machine, it says so instead of guessing.
+Audited 2026-08-13 against `54e141e`, then updated through the 2026-08-20 launch
+working tree. Every factual claim below cites the file or command it came from.
+Where a thing genuinely cannot be checked from this machine, it says so instead
+of guessing.
 
 **Companion doc:** `docs/release/GOOGLE_PLAY_PACKAGE.md` (Play side).
 **Prior audit:** `docs/launch/CREDENTIAL_HANDOFFS.md` (2026-08-10). Several of its
@@ -58,9 +59,11 @@ needs no action — but be aware **two iOS builds already exist** (below), so
 | iOS | `production` | 1.0.0 | 2 | STORE | 2026-08-08 21:58 UTC |
 | iOS | `preview` | 1.0.0 | 2 | INTERNAL | 2026-08-08 23:00 UTC |
 
-A store-distribution `.ipa` therefore already exists. **No Android build has ever
-run.** Nothing in the EAS record indicates a submission; `eas.json` →
-`submit.production` is `{}`, so `eas submit` has never been configured.
+A store-distribution `.ipa` therefore already exists. Older Android artifacts
+also exist (remote Android `versionCode` 4), but no final reviewed Android
+launch AAB has been cut from this working tree. Nothing in the EAS record
+indicates a submission; `eas.json` → `submit.production` is `{}`, so
+`eas submit` has never been configured.
 
 ### 1.3 Signing, capabilities, entitlements
 
@@ -80,7 +83,7 @@ run.** Nothing in the EAS record indicates a submission; `eas.json` →
 |---|---|---|
 | `NSLocationWhenInUseUsageDescription` | "Gnome uses your location to show surplus produce listings near you." | **Yes** — `expo/lib/location.ts` `getCurrentCoords` / `currentLocationFields` / `getCoordsIfGranted`, all `requestForegroundPermissionsAsync` + `Accuracy.Balanced` |
 | `NSPhotoLibraryUsageDescription` | "Gnome needs access to your photos so you can add pictures to your listings." | **Yes** — `expo/lib/images.ts` `pickImages` → `ImagePicker.launchImageLibraryAsync` |
-| `NSCameraUsageDescription` | present in `app.json` | **No.** The camera is never invoked — `expo/lib/images.ts` uses `launchImageLibraryAsync` only, and the `expo-image-picker` plugin config sets `cameraPermission: false`, which **strips the key from the generated Info.plist** (confirmed: the prebuilt `Info.plist` has no `NSCameraUsageDescription`). The `app.json` line is dead config. Harmless, but misleading. |
+| `NSCameraUsageDescription` | absent by design (`cameraPermission: false`) | **No.** The camera is never invoked; `expo/app/ai-listing.tsx` uses the shared `pickImages()` library path. |
 | Background location | **Explicitly disabled** — `isIosBackgroundLocationEnabled: false`, `locationAlwaysPermission: false` | Correct; no Always-location review burden |
 | Notifications | no usage string needed on iOS | `expo/lib/notifications.ts` |
 
@@ -98,17 +101,15 @@ Nothing required is missing.
 
 ### 1.6 Privacy manifest
 
-`ios/Gnome/PrivacyInfo.xcprivacy` (prebuild-generated) declares the four
-required-reason API categories (FileTimestamp, UserDefaults, SystemBootTime,
-DiskSpace) with reason codes, `NSPrivacyTracking: false`, and
-**`NSPrivacyCollectedDataTypes: <array/>` — empty.**
+`expo/app.json` now populates `expo.ios.privacyManifests` with
+`NSPrivacyTracking: false`, no tracking domains, and the same 15 collected data
+types declared in §5. `npx expo config --type public` resolves those 15 entries.
 
-That empty array is factually wrong for this app (§5 enumerates roughly a dozen
-collected types). It is not a hard rejection today — App Store Connect's App
-Privacy questionnaire is the authoritative disclosure and third-party SDK
-manifests are what Apple's automated check reads — but it is an inconsistency a
-reviewer or a future audit can point at. **Recommend** populating it via
-`expo.ios.privacyManifests` in `app.json` (coordinator owns that file).
+The older prebuild-generated `ios/Gnome/PrivacyInfo.xcprivacy` had an empty
+`NSPrivacyCollectedDataTypes` array; that was the defect. Remaining proof:
+inspect the final `.ipa` after EAS build and confirm the generated
+`PrivacyInfo.xcprivacy` carries those collected-data rows alongside the existing
+required-reason API categories.
 
 ### 1.7 Icon
 
@@ -122,33 +123,33 @@ build shows no black/transparent corners before releasing.
 
 ## 2. BLOCKERS and RISKS, ranked
 
-### R1 — "Coming soon" purchase surfaces are a Guideline 2.1 rejection risk. **HIGH**
+### R1 — "Coming soon" purchase surfaces were a Guideline 2.1 rejection risk. **FIXED IN WORKING TREE**
 
-The binary shows real prices next to buttons that cannot do anything:
+The previous binary showed real prices next to buttons that could not complete
+a purchase:
 
-- `expo/app/promote/[listingId].tsx:155` renders `Feature for {days} days ·
-  {formatPrice(priceCents)}` (default `399` = $3.99). Tapping it opens
-  `Alert.alert('Buy a promotion · $3.99', 'Promotion checkout is almost ready.
-  Until then, Grower ($9.99/mo) includes 3 promotions a month…')`.
+- `expo/app/promote/[listingId].tsx` rendered a paid single-promotion button
+  with the default $3.99 price, and tapping it opened a "checkout is almost
+  ready" alert.
 - `expo/components/UpgradePromptCard.tsx:47` — tapping "Upgrade" opens
   `Alert.alert('Coming soon', '<Plan> plans arrive soon…')`.
-- `expo/app/upgrade.tsx:95` — "Additional locations $X/mo each — billing setup
-  coming soon."
-- `expo/app/upgrade.tsx:104-119` — the full tier list with `$X/mo` per plan.
+- `expo/app/upgrade.tsx` showed monthly add-on pricing with a billing-setup
+  placeholder.
+- `expo/app/upgrade.tsx` showed monthly prices in the full tier list.
 
 App Review Guideline **2.1 (App Completeness)** rejects placeholder and
 "coming soon" functionality; **2.3.1** covers hidden/non-functional features.
 Priced buttons that resolve to an apology alert are exactly the pattern that
 draws it. This is the single most likely reason a first submission bounces.
 
-**Recommended fix (coordinator/app owner, not this doc's owner):** either wire
-billing, or remove the dollar amounts and the purchase framing from the button
-labels and alerts — describe the plan tiers as capability tiers without prices
-and without a call to action. Do **not** replace them with a link to
-gnomefarmersmarket.com/pricing; that converts a completeness risk into an
-anti-steering risk (§6).
+**Working-tree fix.** The app now treats `/upgrade` as a "Your plan"
+information screen, removes plan/add-on price snippets from that screen, routes
+the nudge card to `See plans` instead of a "Coming soon" alert, and removes the
+single-promotion purchase button. Feature gates say what Pro/Farm include and
+state that plans or extra promotions are not sold in the app. No Stripe or
+external pricing link was added.
 
-### R2 — Seed Drop: **fixed in the working tree during this audit; the live website has not caught up.** **LOW (was HIGH)**
+### R2 — Seed Drop: **fixed in the working tree and live website.** **RESOLVED**
 
 **What I found first.** `expo/app/(tabs)/index.tsx` rendered a Browse-feed card
 reading "Seeds picked for your zone & season, **shipped to your door**" whose
@@ -175,36 +176,31 @@ price, no date, and no CTA. `web/app/seeds/page.tsx` was likewise stripped of it
 Stripe Payment Links. See `docs/release/SEED_DROP_OFF.md` for that lane's own
 evidence inventory.
 
-**What still stands:**
-
-1. **The deployed website is still the old one.** My fetch of
-   `gnomefarmersmarket.com/seeds` today showed the purchase flow, because the web
-   fix is in the tree and not deployed. That no longer affects App Review (the
-   app doesn't link there), but it does mean the store listing must not describe
-   Seed Drop as available, and §3 does not.
-2. **A "coming soon" teaser is still a mild Guideline 2.1 surface.** An
-   announcement with no purchase path is materially different from R1's priced
-   button that fails, and reviewers generally accept product teasers. Low risk,
-   worth knowing if the review comes back citing 2.1.
+**Current live check.** Direct production probes on 2026-08-20 confirm
+`/seeds` is now Coming Soon only: no purchase CTA, no visible price, and no
+Stripe subscription promise. A "coming soon" teaser is still a mild Guideline
+2.1 surface, but an announcement with no purchase path is materially different
+from R1's priced button that failed.
 
 *(Policy note for the record: the old link was **not** an IAP violation either —
 seed packets are physical goods, explicitly outside IAP under Guideline 3.1.5(a).
 The risk was completeness and honesty, not 3.1.1.)*
 
-### R3 — Privacy Policy names the wrong AI provider. **MEDIUM**
+### R3 — Privacy Policy names the wrong AI provider. **RESOLVED**
 
-`web/app/privacy/page.tsx` says photos and planner questions "are processed by
-our AI provider (**Anthropic**)". The actual provider chain in
-`supabase/functions/draft-listing/index.ts:123-126` is:
+Original finding: `web/app/privacy/page.tsx` said photos and planner questions
+"are processed by our AI provider (**Anthropic**)". The actual provider chain in
+`supabase/functions/draft-listing/index.ts` is Gemini first, with paid fallback
+providers only when both the database flag and the disclosure env gate allow it:
 
 ```
-gemini (MODELS.vision)  →  openai gpt-4o (only if allow_paid_fallback)  →  anthropic claude-sonnet-5 (only if allow_paid_fallback)
+gemini (MODELS.vision)  →  openai / anthropic only if allow_paid_fallback AND AI_PAID_FALLBACK_DISCLOSED=true
 ```
 
-Google is the **primary** processor of user photos, and is not named. Apple
-requires the privacy policy to be accurate about third parties that receive
-user data. Low rejection probability, real accuracy problem. Fix the policy text
-(web lane owns it).
+Current state: the privacy policy names Google's Gemini models and the provider
+adapter hides OpenAI/Anthropic keys unless `AI_PAID_FALLBACK_DISCLOSED=true`.
+Apple still needs the normal AI disclosure review, but this provider-name defect
+is closed.
 
 ### R4 — No universal links; password-reset arrives as a `gnome://` scheme link. **MEDIUM**
 
@@ -218,7 +214,7 @@ client, and there is no associated-domains fallback. If a reviewer tests
 use the **email code** sign-in path (below) rather than password reset. That path
 is fully server-side and needs no deep link.
 
-### R5 — Privacy manifest declares zero collected data types. **LOW** (see §1.6)
+### R5 — Privacy manifest declares collected data types. **CONFIG FIXED** (see §1.6)
 
 ### R6 — `aps-environment` unverified on a real archive. **LOW-MEDIUM** (see §1.3)
 
@@ -275,10 +271,10 @@ anywhere in the country.
 
 FIVE WAYS TO POST
 • Sell — set your price and your unit
-• Give away — surplus zucchini finds a home
+• Share Free — surplus zucchini finds a home
 • Trade — your basil for their tomatoes
 • Wanted — ask for what you're after, and let neighbors offer it
-• Offer a plot — share space in your garden with someone who has none
+• Offer a Plot — share space in your garden with someone who has none
 
 GNOME AI TURNS A PHOTO INTO A LISTING
 Photograph what you have. Gnome AI drafts a title, description, category, unit,
@@ -348,7 +344,7 @@ the people building this.
 
 | Field | Value | Verified |
 |---|---|---|
-| Support URL | `https://gnomefarmersmarket.com` | HTTP 200 today |
+| Support URL | `https://gnomefarmersmarket.com/support` | Public support page in working tree; verify HTTP 200 after web deploy |
 | Marketing URL | `https://gnomefarmersmarket.com` | HTTP 200 |
 | Privacy Policy URL | `https://gnomefarmersmarket.com/privacy` | HTTP 200 |
 | Terms (EULA) | `https://gnomefarmersmarket.com/terms` | HTTP 200 — use as a Custom EULA; **required**, see §4.5 |
@@ -392,7 +388,7 @@ agrees to. Gnome satisfies the pieces as follows:
 | A method for filtering objectionable material | **Partial — reactive only.** Prohibited categories are blocked at post time by the compliance gate; there is no proactive text/image filter. | `0043_compliance_storage_and_gate.sql`; no profanity/image classifier found anywhere in the repo |
 | A mechanism to report offensive content | Present | `useReport` on listing, Market, and chat screens |
 | The ability to block abusive users | Present | `useBlockUser`; blocks also suppress match pushes (`supabase/functions/notify/index.ts`) |
-| Published contact information | Present | `hello@gnomefarmersmarket.com` on `/privacy` and `/terms`; in-app feedback form in Settings |
+| Published contact information | Present | `daniel@boonesystems.com` on `/support`, `/privacy` and `/terms`; in-app feedback form and mailto support link in Settings |
 | EULA the user accepts | Present | `expo/app/sign-in.tsx:370` — "By continuing you agree to our Terms" |
 
 **Attach `https://gnomefarmersmarket.com/terms` as a Custom EULA in App Store
@@ -426,7 +422,7 @@ needed.
 | Usage Data → **Product Interaction** | Yes | Yes | Analytics, App Functionality | `logEvent` → `events` table with `user_id` (`expo/lib/db.ts:12-27`). 22 distinct event names are emitted from the app today, e.g. `listing_viewed`, `listing_card_opened`, `listing_claim_started`, `claim_message_sent`, `market_viewed`, `market_order_requested`, `payment_link_opened`, `ai_draft_used`, `garden_planner_used`, `sale_recorded_mobile`, `promotion_created`, `plan_limit_hit`, `seed_drop_coming_soon_viewed` |
 | Financial Info → **Other Financial Info** | Yes | Yes | App Functionality | Sales Notebook: sale amounts, quantities, optional buyer label, expenses with vendor and category (`expo/components/RecordSaleSheet.tsx`, `expo/app/notebook.tsx`) |
 | Other Data | Yes | Yes | App Functionality | Seller credentials: credential type, issuing agency, permit/license number, issue and expiration dates, and the uploaded document (`expo/app/compliance/upload.tsx:69-75`, `seller_credentials`, `compliance-docs` bucket) |
-| **Purchases** | **No** | — | — | No IAP; no payment instrument is ever collected. Payment happens off-platform (§6) |
+| **Purchases → Purchase History** | **Yes** | Yes | App Functionality | Marketplace orders record what a buyer requested, from which Market, when, and for how much (`market_orders`, `market_order_items`). Gnome still does **not** collect Payment Info; payment happens off-platform (§6). |
 | **Health / Fitness / Financial → Payment Info / Sensitive Info / Browsing History / Search History / Contacts / Diagnostics** | **No** | — | — | No such collection. No crash-reporting SDK is installed. Permits are business licenses, not personal identity documents, so they do not meet Apple's "Sensitive Info" definition |
 
 ### 5.2 Third parties that receive user data
@@ -435,14 +431,16 @@ needed.
 |---|---|---|
 | **Supabase** (US) | Everything — database, auth, storage, edge functions | `expo/lib/supabase.ts`; project `fgybyghwcjlstqxkclch` |
 | **Expo push service** (`exp.host`) | Push token + notification body, including chat message previews | `supabase/functions/notify/index.ts` |
-| **Google Gemini** (primary), optionally **OpenAI** and **Anthropic** | Listing photos and Garden Planner text | `supabase/functions/draft-listing/index.ts:123-126` — see R3 |
+| **Google Gemini** (primary) | Listing photos, plant photos, Garden Planner and AI-tab text, redacted onboarding turns | AI edge functions through `_shared/providers.ts`; paid fallback providers require `AI_PAID_FALLBACK_DISCLOSED=true` |
 | **OpenStreetMap Nominatim** | **The buyer's full street address**, sent from the device | `expo/lib/delivery.ts:117` — `fetch('https://nominatim.openstreetmap.org/search?…&q=<address>')` |
 | **Apple / Google** | OAuth identity during sign-in only | `expo/providers/AuthProvider.tsx` |
 
 The Nominatim call is worth a second look: a US home address leaves the device
 for a third-party volunteer-run service with no data-processing agreement. It is
-disclosed nowhere in the Privacy Policy. Consider moving the geocode server-side
-(so the disclosure becomes "our backend") or naming OSM explicitly in the policy.
+now disclosed in the Privacy Policy and in the App Privacy answer packet.
+Consider moving the geocode server-side after launch so the disclosure becomes
+"our backend" and the user's IP address is not paired with their home address at
+Nominatim.
 
 ---
 
@@ -454,15 +452,15 @@ disclosed nowhere in the Privacy Policy. Consider moving the geocode server-side
 
 - **No StoreKit, no IAP library.** `expo/package.json` contains no
   `expo-in-app-purchases`, `react-native-iap`, or `react-native-purchases`.
-- **No Stripe in the app.** Grepping `expo/{app,components,lib,providers}` for
-  `stripe`, `checkout`, `billing-checkout` yields exactly one hit: the string
-  literal `'stripe'` as a possible value of `entitlement_source` in
-  `expo/app/upgrade.tsx:23`. The `billing-checkout` edge function exists but the
-  app never calls it.
+- **No StoreKit, but Stripe is reachable on iOS.** `expo/lib/billing.ts`
+  invokes the `billing-checkout` edge function for the $0.99 publish/renewal
+  overage flow. Android hides that purchase path through
+  `canBuyDigitalInApp = Platform.OS !== 'android'`, but iOS still has it.
 - **No in-app link to a purchase page for a digital product.** There is no link
   to `/pricing` anywhere in the app.
-- **Every upgrade/boost CTA resolves to a native alert saying "coming soon."**
-  (Listed in R1.)
+- **Upgrade/boost surfaces no longer sell plans or extra promotions.** `/upgrade`
+  is informational, and promotion overflow explains that extra promotions are
+  not sold in the app.
 - **The only outbound purchase-adjacent links are for physical goods:**
   1. Seed Drop card → `gnomefarmersmarket.com/seeds` (seed packets — physical).
   2. "Pay seller" rows → `venmo://`, `paypal.me`, `cashapp`, Zelle identifier,
@@ -475,15 +473,15 @@ disclosed nowhere in the Privacy Policy. Consider moving the geocode server-side
 
 | Guideline | Applies? | Why |
 |---|---|---|
-| **3.1.1 — In-App Purchase required** for unlocking features/functionality | **Not triggered today** | Nothing in the app unlocks anything for money. The plan tiers are read-only descriptions of entitlements granted server-side. |
+| **3.1.1 — In-App Purchase required** for unlocking features/functionality | **Triggered risk on iOS** | The $0.99 publish/renewal overage unlocks additional seller functionality inside the iOS app through Stripe, not StoreKit. |
 | **3.1.5(a) — Goods and Services Outside of the App** | **Applies, and Gnome is on the right side of it** | Produce, homemade goods, and seed packets are physical goods consumed outside the app. Apple explicitly requires these **not** to use IAP and permits other payment methods. Both the peer-to-peer payment links and the Seed Drop link are covered here. |
-| **3.1.3(b) — Multiplatform Services** | **The safe path for plans** | A subscription purchased on the web may be *used* inside the app. An existing Grower/Farm subscriber can log in and get their entitlements with no IAP involvement. This is explicitly allowed. |
-| **3.1.1 anti-steering** — no buttons, external links, or other calls to action pointing at non-IAP purchasing for **digital** content | **Not triggered today; one line of code away from being triggered** | See 6.3. |
+| **3.1.3(b) — Multiplatform Services** | **The safe path for plans** | A subscription purchased on the web may be *used* inside the app. An existing Pro/Farm subscriber can log in and get their entitlements with no IAP involvement. This is explicitly allowed. |
+| **3.1.1 anti-steering** — no buttons, external links, or other calls to action pointing at non-IAP purchasing for **digital** content | **Owner decision: ship iOS overage with disclosure** | The hosted Stripe checkout is an external purchase mechanism for a digital seller entitlement. The app is US-only, and Apple's current 3.1.1(a) says US storefront apps do not need an entitlement for buttons, links, or other calls to action to other purchase methods; 3.1.1 still says unlocking in-app functionality must use IAP, so this remains a deliberate review risk, not a hidden defect. |
 | **3.1.1 restore requirement** | **N/A today** | If IAP is ever added, a "Restore Purchases" control becomes mandatory. Gnome has none and needs none right now. |
 
 ### 6.3 The actual risk — stated plainly
 
-**Gnome's seller plans (Grower, Farm) are a digital service.** They unlock
+**Gnome's seller plans (Pro, Farm) are a digital service.** They unlock
 higher active-listing limits, more pickup locations, promotion credits, and the
 AI Listing Assistant — all consumed inside the app. That is squarely the kind of
 thing Apple expects to be sold through IAP if it is sold in the app at all.
@@ -493,14 +491,19 @@ sale of physical goods** — the same shape as commerce-platform seller apps. Th
 argument has been accepted for some marketplace apps and rejected for others;
 Apple has not been consistent about it. **Do not assume the exemption.**
 
-Today the question is moot because nothing is purchasable in the app. The moment
-somebody wires the "Upgrade" button to a Stripe URL, three things become true at
-once:
+This is no longer hypothetical for the one-time overage flow. The app does not
+sell plan subscriptions through Stripe, and the upgrade/boost surfaces are now
+informational, but `purchaseOverage()` can open Stripe-hosted checkout on iOS.
+That means three things are true now for iOS:
 
 1. It is a **call to action pointing at external purchasing for digital
-   content** — the classic 3.1.1 anti-steering violation.
-2. Apple may argue that IAP is required for the plan itself.
-3. The app becomes rejectable on both grounds in a single review.
+   content**. Apple's current US-storefront text makes that less clear-cut than
+   it used to be, but non-US storefronts and reviewer interpretation remain a
+   risk.
+2. Apple may argue that IAP is required for the extra publish/renewal entitlement
+   itself.
+3. The app can still be rejected if App Review treats the seller-tool argument
+   as insufficient.
 
 **There is a genuine and unsettled complication here.** Following the April 2025
 US injunction in *Epic v. Apple*, Apple's US storefront rules on external
@@ -511,18 +514,25 @@ Gnome wants an in-app path to purchase a plan, someone must read the then-curren
 Guideline 3.1.1 and the then-current US storefront terms before writing the code
 — not after.
 
-### 6.4 Recommendation
+### 6.4 Launch posture
 
-**For this submission:** ship with nothing purchasable in the app, and remove
-the price strings and purchase framing described in R1 so the "coming soon"
-surfaces do not read as broken commerce. Answer **"No"** to in-app purchases in
-App Store Connect. Declare no subscriptions. No StoreKit configuration, no
-subscription group, no restore control is required.
+**Owner decision in force:** ship the iOS $0.99 publish/renewal overage path
+through Stripe, and gate only Android. This matches
+`expo/lib/digitalPurchase.ts` and the D1 decision in `docs/design/GNOME_IDENTITY.md`.
+
+Do **not** tell App Review "nothing is purchasable." The correct posture is:
+there are no StoreKit products and no subscription products, seller plan screens
+are informational, Android exposes no digital purchase UI, and iOS can open a
+one-time Stripe-hosted checkout for an extra Sell publish/renewal. This is a
+deliberate 3.1.1 review risk under the current Apple guideline text, not an
+accidental dead-end purchase surface.
+
+No subscription group is required unless StoreKit subscriptions are added.
 
 **Before payments go live:** pick one deliberately.
 - **(a) Web-only, no in-app mention.** Safest. Subscribers buy on
   gnomefarmersmarket.com and their entitlements simply work in the app under
-  3.1.3(b). This is what the code does today.
+  3.1.3(b). This is not what the iOS overage path does today.
 - **(b) IAP for plans.** Highest friction, zero policy risk, 15–30% commission,
   and it splits the billing system in two — the app's entitlements would need to
   reconcile StoreKit against the existing Stripe/`billing_config` model.
@@ -586,14 +596,15 @@ Gnome is a local marketplace for surplus produce and homemade goods. Neighbors
 post what they grow or make and sell, give away, trade, or request it. All
 handoffs are arranged directly between the two people, in person.
 
-NO PURCHASES IN THE APP
-This version sells nothing. There is no in-app purchase, no subscription
-purchase path, and no payment processing of any kind inside the app. Where the
-app shows seller plan tiers, tapping through opens a notice that plans are not
-yet available. When a buyer and seller settle up, the app can open the seller's
-own Venmo / PayPal / Cash App / Zelle handle; the payment happens entirely in
-that app, and Gnome never sees or records it. A disclaimer to that effect is
-shown every time.
+SELLER PURCHASES
+This build has no StoreKit in-app purchase products and no subscription purchase
+path. Seller plan surfaces are informational and do not sell plans. The iOS app does
+include a one-time Stripe-hosted checkout for a $0.99 extra Sell publish/renewal
+when a seller exhausts their included allowance; Android does not expose that
+purchase path. When a buyer and seller settle up for goods, the app can open the
+seller's own Venmo / PayPal / Cash App / Zelle handle; the payment happens
+entirely in that app, and Gnome never sees or records it. A disclaimer to that
+effect is shown every time.
 
 SIGNING IN
 Use the email and password in App Review Information. The app also supports
@@ -623,7 +634,7 @@ Sellers in regulated categories can upload a permit or license. Those are
 business licenses, not personal identity documents.
 
 CONTACT
-hello@gnomefarmersmarket.com
+daniel@boonesystems.com
 ```
 
 ---
@@ -651,9 +662,8 @@ Up to 10 slots; use 6–8. Portrait only (the app is portrait-locked).
 **Rules for the capture pass:**
 - Sign in as a purpose-made screenshot account. **No real neighbor names, real
   addresses, real phone numbers, or real avatars** may appear in any frame.
-- Do **not** photograph the Upgrade or Boost screens — they show prices for
-  things that cannot be bought (R1), and Guideline 2.3.3 requires screenshots to
-  show the app in actual use.
+- Do **not** photograph the Upgrade or Boost screens; they are not part of the
+  App Store screenshot story.
 - The Seed Drop card may now appear in frame 1 — it carries a visible "Coming
   soon" pill and leads to a non-transactional modal (R2). Do **not** screenshot
   the Seed Drop modal itself as a feature; App Store screenshots must show the
@@ -672,17 +682,15 @@ Claude cannot and should not touch.
 
 ### Before the build
 
-1. **(code — coordinator)** Resolve R1: remove prices/purchase framing from the
-   Upgrade and Boost surfaces, or ship billing. This is the most likely
-   rejection cause.
-2. ~~Resolve R2~~ — **done in the working tree by the Seed Drop lane during this
-   audit.** Nothing left to do for the binary. The web `/seeds` fix is in the
-   tree but **not deployed**; deploy it before anyone links to that page again.
-3. **(web lane)** Fix R3: name Google/Gemini in the Privacy Policy's AI
-   paragraph, and decide whether to disclose or eliminate the Nominatim address
-   lookup (§5.2).
-4. *(optional)* Populate `expo.ios.privacyManifests` in `app.json` so
-   `NSPrivacyCollectedDataTypes` is not empty (R5).
+1. ~~Resolve R1~~ — **done in the working tree.** Upgrade and Boost surfaces no
+   longer show priced dead-end purchase framing.
+2. ~~Resolve R2~~ — **done in the working tree and live website.** Nothing left
+   to do for the binary; `/seeds` re-probed clean on 2026-08-20.
+3. ~~Fix R3~~ — **done on the live website.** Privacy names Gemini and
+   OpenStreetMap; the remaining Gemini free-tier Data Safety declaration is a
+   Play/App Privacy owner choice, not a web-copy defect.
+4. Verify the final `.ipa` privacy manifest carries the 15 configured
+   collected-data rows (R5).
 
 ### Apple Developer portal (owner)
 
@@ -705,7 +713,9 @@ Claude cannot and should not touch.
     Precise Location or Financial Info rows — both are real.
 11. Complete the **age rating** questionnaire from §4. Expected result: **13+**.
 12. Attach `https://gnomefarmersmarket.com/terms` as the **Custom EULA**.
-13. Answer **"No"** to in-app purchases and add no subscription products (§6.4).
+13. Use the iOS overage posture in §6.4: no StoreKit products, no subscription
+    products, and disclose the iOS Stripe-hosted $0.99 seller overage path in
+    Review Notes. Do not use the old "nothing is purchasable" notes.
 14. Answer **"Yes"** to account deletion (§7).
 15. Create the reviewer account by hand, enter its credentials in **App Review
     Information**, and paste the §8.2 notes. Do not put credentials in this repo.

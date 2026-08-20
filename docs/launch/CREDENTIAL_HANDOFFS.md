@@ -7,16 +7,16 @@ below is grounded in the file cited next to it. Repo facts used throughout:
 - **URL scheme:** `gnome` (`expo/app.json` → `scheme`)
 - **EAS projectId:** `b84fe5e3-5446-45dd-b078-9db076159143`, owner `marinelli1907` (`expo/app.json` → `extra.eas.projectId`, `owner`; `updates.url` points at the same project)
 - **Supabase project:** `fgybyghwcjlstqxkclch` → auth callback `https://fgybyghwcjlstqxkclch.supabase.co/auth/v1/callback`
-- **EAS build has never run.** `expo/eas.json` exists (development / preview / production profiles) but there are no build artifacts and no EAS credentials yet. `expo/ios` + `expo/android` are gitignored prebuild output — `app.json` is the source of truth for the build.
+- **EAS builds exist, but not the final reviewed launch artifacts.** Older iOS
+  builds and Android vc4 artifacts exist; `expo/eas.json` is still the source
+  of truth for the next build config. The final AAB/IPA must be cut from the
+  reviewed launch commit and inspected before submission.
 
-> **Cross-cutting blocker found during this audit:** `expo/eas.json` defines **no
-> `env` block**, and `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-> live only in the gitignored `expo/.env` (`expo/.env.example` documents them;
-> `expo/lib/supabase.ts` falls back to a placeholder client and the app renders
-> "Supabase isn't connected" states). A cloud EAS build today ships an
-> **unconfigured binary**. Fix before the first build: set both vars as EAS
-> environment variables (expo.dev → project → Environment variables, all three
-> environments) or add an `env` map to each profile in `expo/eas.json`.
+> **Cross-cutting build config — resolved:** `expo/eas.json` now defines
+> `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in every build
+> profile. A cloud EAS build has the public Supabase client config baked in;
+> still inspect the built app before submission, but the old unconfigured-binary
+> blocker is closed.
 
 ---
 
@@ -28,7 +28,12 @@ below is grounded in the file cited next to it. Repo facts used throughout:
 - [x] Capability flag: `expo/app.json` → `ios.usesAppleSignIn: true` (EAS will add the `com.apple.developer.applesignin` entitlement at build).
 - [x] Auth wiring: `expo/providers/AuthProvider.tsx` → `signInWithApple()` — **native idToken flow**: `Crypto.randomUUID()` raw nonce → SHA-256 hash into `AppleAuthentication.signInAsync()` → `supabase.auth.signInWithIdToken({ provider: 'apple', token, nonce: rawNonce })`. Also persists Apple's first-authorization full name to `profiles` (Apple only sends it once).
 - [x] UI: `expo/app/sign-in.tsx` renders `AppleAuthentication.AppleAuthenticationButton` (iOS-only, gated on `isAvailableAsync()`), error path swallows `ERR_REQUEST_CANCELED`.
-- [!] `expo/app/sign-in.tsx` hardcodes `OAUTH_READY = true` with a comment saying both providers were enabled in Supabase on 2026-08-08 ("Apple native via bundle id"). But `docs/LAUNCH.md` (older) recorded both providers **disabled** when verified via `/auth/v1/settings`. The dashboard state cannot be verified from this repo — **owner must confirm** `curl https://fgybyghwcjlstqxkclch.supabase.co/auth/v1/settings` shows `"apple": true` before shipping, because the button renders unconditionally and fails server-side if the provider is off.
+- [x] `expo/app/sign-in.tsx` no longer hardcodes provider visibility. It fetches
+  `/auth/v1/settings`, renders Apple only when Supabase reports
+  `"apple": true` and the native Apple sheet is available, and renders Google
+  only when Supabase reports `"google": true`. The dashboard state still needs
+  an owner verification before shipping, but a disabled provider no longer
+  leaves a visible dead button in front of a reviewer.
 
 ### Which flow is wired
 The app uses the **native `signInWithIdToken` flow**. For this flow the token's
@@ -137,29 +142,30 @@ has completed a real round-trip on a device.
 | Requirement | Status | Evidence |
 |---|---|---|
 | Account deletion (5.1.1(v)) | PRESENT | `supabase/functions/delete-account/index.ts` (JWT-authenticated, full cascade incl. storage buckets + `auth.admin.deleteUser`); exposed in `expo/app/settings.tsx` — "Delete my account" with two-step destructive confirm |
-| Password reset | PRESENT, **round-trip unverified — likely broken on native** | `expo/app/sign-in.tsx` `forgot`/`reset` modes; `AuthProvider.requestPasswordReset` sends `redirectTo: gnome://auth-callback`. **Gap:** no route or `Linking` listener consumes that deep link — `detectSessionInUrl: false`, `exchangeCodeForSession` is only called inside `signInWithGoogle`, and there is no `app/auth-callback.tsx` (the link lands on `+not-found`). The `PASSWORD_RECOVERY` event that flips `recoveryMode` has nothing to fire it from a cold-start link. Must be device-tested; expect to need a URL listener in `expo/providers/AuthProvider.tsx` that exchanges the code/tokens from the reset link. |
+| Password reset | PRESENT, **round-trip unverified on device** | `expo/app/sign-in.tsx` `forgot`/`reset` modes; `AuthProvider.requestPasswordReset` sends `redirectTo: gnome://auth-callback`. `expo/providers/AuthProvider.tsx` now consumes both cold-start `getInitialURL()` and warm `url` events, parses `?code=`, and calls `supabase.auth.exchangeCodeForSession(code)`, which should fire `PASSWORD_RECOVERY` and show "Set a new password." Device-test the full email round trip before submission. |
 | Terms / Privacy links | PRESENT | `expo/app/settings.tsx` (Terms, Privacy, Trust & Safety → gnomefarmersmarket.com/{terms,privacy,trust}); `expo/app/sign-in.tsx` legal row ("By continuing you agree…") |
-| Support contact | PARTIAL | No in-app mailto; in-app feedback form exists (`settings.tsx` → `useSendFeedback` → `feedback` table, `supabase/migrations/0017_feedback.sql`). `hello@gnomefarmersmarket.com` appears on the website (`web/app/privacy/page.tsx`, `web/app/terms/page.tsx`). App Store Connect requires a **Support URL** at submission — use `https://gnomefarmersmarket.com` (metadata task, no code change). |
-| Permission strings | COMPLETE for what the app uses | `expo/app.json` `ios.infoPlist`: `NSLocationWhenInUseUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSCameraUsageDescription`, `ITSAppUsesNonExemptEncryption: false`. Camera is never invoked (`expo/lib/images.ts` uses `launchImageLibraryAsync` only) — the camera string is unused but harmless. iOS needs no usage string for notifications. Nothing missing. |
+| Support contact | PRESENT | Settings has in-app feedback (`settings.tsx` → `useSendFeedback` → `feedback` table, `supabase/migrations/0017_feedback.sql`) and a `mailto:daniel@boonesystems.com?subject=Gnome%20support` support link. The web Privacy, Terms, and Delete Account pages use the same deliverable address. App Store Connect still needs a **Support URL** at submission — use `https://gnomefarmersmarket.com` unless a dedicated `/support` page is added. |
+| Permission strings | COMPLETE for what the app uses | `expo/app.json` `ios.infoPlist`: `NSLocationWhenInUseUsageDescription`, `NSPhotoLibraryUsageDescription`, `ITSAppUsesNonExemptEncryption: false`. Camera is never invoked; all photo paths use the library picker. iOS needs no usage string for notifications. Nothing missing. |
 | UGC moderation (1.2) | PRESENT | Report: `expo/lib/db.ts` `useReport` → `reports` table (`0013_trust_layer.sql`), surfaced in `expo/app/listing/[id].tsx`, `expo/app/market/[id].tsx`, `expo/app/chat/[claimId].tsx`. Block: `useBlockUser` (listing + market pages), unblock management in `settings.tsx`; blocks also silence match pushes (`notify/index.ts`). Admin side: `0024_admin_moderation.sql`, `web/app/admin`. |
 | Demo-content labeling | PRESENT | `is_demo` (`0023_demo_labeling.sql`): "Preview" tag on `expo/components/ListingCard.tsx:86`; full "Preview listing — sample content…" note on `expo/app/listing/[id].tsx:193` |
 | Broken routes | NONE FOUND | Every `router.push`/`replace` target in `expo/app` + `expo/components` maps to an existing route (`/sign-in`, `/post`, `/listing/[id]`, `/activity`, `/chat/[claimId]`, `/promote/[listingId]`, `/market/[id]`, `/market/edit/[id]`, `/upgrade`, `/garden`, `/profile/edit`, `/request/[listingId]`, `/settings`, `/edit-listing/[id]`); `+not-found.tsx` exists |
 | Leftover dev strings | CLEAN | Across `expo/{app,components,lib,providers,constants,types,scripts}`: `TODO`/`FIXME`: **0**; `console.log`: **0** (one intentional `console.warn` in `lib/notifications.ts:48`); `localhost`: **0**; "placeholder" hits are benign (Supabase fallback URL in `lib/supabase.ts`, a skeleton-component comment, `placeholderTextColor` props) |
-| Subscriptions / IAP (3.1.1) | NO CONFLICT TODAY — decision needed before paid plans go live in-app | The app contains **no Stripe link-out and no external purchase link at all**: `expo/app/upgrade.tsx` shows tiers with "Nothing to pay today — paid plans arrive soon"; `expo/components/UpgradePromptCard.tsx` and `expo/app/promote/[listingId].tsx` both alert "Coming soon" ("Prices shown for context — boosts are not charged in this version"). Stripe Payment Links live only on the web `/pricing`, which the app never links to. So the submitted binary sells nothing → reviewable as-is. **Policy note for later:** Gnome's seller plan is a tool for selling *physical goods* (produce), which supports the "services consumed outside the app / physical goods" exemption from IAP — but Apple has treated "seller tools" subscriptions inconsistently, so when payments switch on, either (a) keep all purchasing on the web with no in-app link (Netflix model — safest), or (b) get an explicit reading of 3.1.3(e) before adding any in-app purchase path. Displaying prices next to a tappable "Upgrade" that only says "coming soon" is fine now; do not wire that button to a Stripe URL without making this decision. |
+| Subscriptions / IAP (3.1.1) | NO PLAN-PURCHASE CONFLICT TODAY — iOS overage disclosed | The app contains no plan-subscription purchase button and no external link to `/pricing` or Stripe. `expo/app/upgrade.tsx` is now a "Your plan" information screen with no plan prices; `UpgradePromptCard` opens that screen with "See plans"; `expo/app/promote/[listingId].tsx` redeems included or previously granted promotion credits and otherwise states that extra promotions are not sold in the app. iOS can still open Stripe checkout for the $0.99 publish/renewal overage path; `APP_STORE_PACKAGE.md` §6 records the deliberate 3.1.1 risk posture and Review Notes disclosure. |
 
 ### REMAINING BLOCKERS (must be resolved before App Store submission)
-1. **Set Supabase env vars for EAS builds** — `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY` exist only in gitignored `expo/.env`; `expo/eas.json` has no `env` block. Without this the production binary ships unconfigured.
-2. **Confirm Apple + Google providers are actually enabled in Supabase** — `expo/app/sign-in.tsx` hardcodes `OAUTH_READY = true` (comment dated 2026-08-08) but `docs/LAUNCH.md`'s last recorded check showed both disabled. Verify via `/auth/v1/settings`; if off, the shipped buttons fail in front of the reviewer.
-3. **Add `gnome://auth-callback` to Supabase Auth → URL Configuration → Redirect URLs** — Google sign-in and the password-reset email both redirect there.
-4. **Password-reset deep link has no in-app handler** — nothing consumes `gnome://auth-callback` on arrival (no route, no Linking listener, `detectSessionInUrl: false`), so the recovery session likely never establishes on native. Device-test; expect a small fix in `expo/providers/AuthProvider.tsx`.
-5. **Run the first EAS build and set APNs credentials** (`eas credentials` / first `eas build --platform ios`), then execute the 13-step push script (Section 3) and both OAuth round-trips (Sections 1–2) on a physical iPhone. Nothing push- or OAuth-related has ever run on a device.
-6. **App Store Connect metadata** — Support URL (`https://gnomefarmersmarket.com`), Privacy Policy URL (`/privacy`), App Privacy questionnaire (collects: email, name, coarse location of listings, user content, device push tokens), age rating. Metadata-only; no code.
+1. **Confirm Apple + Google providers are actually enabled in Supabase** — `expo/app/sign-in.tsx` now hides disabled providers based on `/auth/v1/settings`, but reviewer coverage still requires the owner to verify Apple and Google are enabled before shipping.
+2. **Add `gnome://auth-callback` to Supabase Auth → URL Configuration → Redirect URLs** — Google sign-in and the password-reset email both redirect there.
+3. **Password-reset deep link round trip** — code now consumes `gnome://auth-callback`, but the email-link flow still needs a device test after the Supabase redirect allowlist is confirmed.
+4. **Run the final reviewed EAS build and confirm APNs credentials**
+   (`eas credentials` / `eas build --platform ios` as needed), then execute the
+   13-step push script (Section 3) and both OAuth round-trips (Sections 1–2) on
+   a physical iPhone. Nothing push- or OAuth-related has been proven on a final
+   reviewed device build.
+5. **App Store Connect metadata** — Support URL (`https://gnomefarmersmarket.com`), Privacy Policy URL (`/privacy`), App Privacy questionnaire (collects: email, name, coarse location of listings, user content, device push tokens), age rating. Metadata-only; no code.
 
 ### NON-BLOCKERS (fine as-is)
-1. Unused `NSCameraUsageDescription` (camera never invoked) — harmless.
+1. Camera remains unused and omitted from the generated permission surface.
 2. `notify` doesn't check Expo push receipts / prune dead tokens — cleanup, not launch-gating.
 3. `notify` `claim`/`approved` branch trusts any authenticated caller's `claimId` (push-spam vector, gated by `verify_jwt`) — tighten post-launch like the `message` branch.
 4. Single intentional `console.warn` in `expo/lib/notifications.ts`.
-5. Upgrade/Boost "coming soon" UX with visible prices — acceptable for review while nothing is purchasable (see IAP row above before changing this).
-6. In-app support = feedback form + website links; adequate given the App Store Connect Support URL (blocker 6) covers the requirement.
-7. Demo-content labeling, UGC moderation, account deletion, Terms/Privacy links — all present and correctly wired.
+5. Demo-content labeling, UGC moderation, account deletion, support contact, Terms/Privacy links — all present and correctly wired.

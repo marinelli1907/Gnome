@@ -1,21 +1,23 @@
 # Gnome monetization — the canonical model
 
-This is the source of truth for what Gnome sells and how it is enforced. If a surface, a prompt,
-or a future plan discussion disagrees with this page, this page wins until it is deliberately
-edited. Deployed to production 2026-08-16/17 (migrations 0104–0113); verified end-to-end in
-Stripe TEST mode; live charging is OFF by product decision (see Payments status).
+This page reflects the current 0126 three-tier model. If it disagrees with
+`supabase/migrations/0126_three_tier_pricing.sql`, trust the migration first and
+fix this page. Live charging is OFF by product decision (see Payments status).
 
 ## Plans
 
-| | FREE | PRO | MAX | FARM |
-|---|---|---|---|---|
-| **Price** | $0 | $9.99/mo | $29.99/mo | $99/mo |
-| **Sell publishes / period** | 3 | 20 | 40 | unlimited |
-| **Included renewals / period** | 0 | 3 | 10 | unlimited |
-| **Wanted introductions / day** | 1 | 5 | 15 | unlimited |
-| **Premium QR tools** | locked | ✓ | ✓ | ✓ |
-| **Public Market link** | ✓ | ✓ | ✓ | ✓ |
-| **Internal enum** | `free` | `grower` | `farm` | `sponsor` |
+| | FREE | PRO | FARM |
+|---|---|---|---|
+| **Price** | $0 | $9.99/mo | $29.99/mo |
+| **Sell publishes / period** | 3 | unlimited | unlimited |
+| **Included renewals / period** | 0 | unlimited | unlimited |
+| **Wanted introductions / day** | 1 | 5 | unlimited |
+| **Premium QR tools** | locked | ✓ | ✓ |
+| **Public Market link** | ✓ | ✓ | ✓ |
+| **Internal enum** | `free` | `grower` | `farm` |
+
+`sponsor` still exists as the internal **Legacy Farm** comp rung, but it is
+retired, not sellable, and its Stripe SKU is deactivated by 0126.
 
 "Unlimited" is subject to anti-abuse controls (per-plan hourly publish ceiling from 0105; the
 30-distinct-Wanted-responses-per-hour ceiling in 0110 applies to every plan, Farm included).
@@ -24,6 +26,8 @@ Stripe TEST mode; live charging is OFF by product decision (see Payments status)
 
 - **$0.99** per additional Sell publish beyond the period allowance.
 - **$0.99** per renewal beyond the plan's included renewals (on Free, every renewal is $0.99).
+- Android does not expose the in-app overage purchase surface for v1.1 (D1);
+  iOS and web still carry the test-mode path unless/until separately gated.
 - One payment funds exactly one publish or one renewal: the paid authorization
   (`listing_publish_authorizations`, UNIQUE on the Stripe session id) is consumed by the
   activation trigger, so replays, double-taps, and webhook retries cannot double-spend it.
@@ -58,7 +62,7 @@ lock, so parallel requests cannot slip past a one-slot allowance.
 
 ## FOUNDING3
 
-- **Pro (`grower`) only** — rejected server-side for Max and Farm (`promo_validate`; Stripe's
+- **Pro (`grower`) only** — rejected server-side for Farm and Legacy Farm (`promo_validate`; Stripe's
   coupon restrictions are NOT relied on, because Stripe silently drops `applies_to`).
 - 100% off for **3 months**, payment method required at checkout, then **$9.99/month**.
 - Distributed directly to selected early sellers; deliberately not advertised in the UI.
@@ -68,11 +72,13 @@ lock, so parallel requests cannot slip past a one-slot allowance.
 
 The database enums are frozen; the customer-facing names are a display layer:
 
-`free` → **Free** · `grower` → **Pro** · `farm` → **Max** · `sponsor` → **Farm**
+`free` → **Free** · `grower` → **Pro** · `farm` → **Farm** · `sponsor` → **Legacy Farm**
 
-The mapping is deliberately counter-intuitive at the top (`farm` is "Max", `sponsor` is "Farm"),
-so **raw enum values must never reach customer-visible text**. `plan_limits.display_name` is the
-server authority; `web/lib/allowance.ts` and `expo/lib/allowance.ts` are parity-tested mirrors.
+The remaining trap is that `grower` is customer-facing **Pro** and `sponsor` is
+a retired internal comp rung, not a sellable plan. **Raw enum values must never
+reach customer-visible text.** `plan_limits.display_name` is the server
+authority; `web/lib/allowance.ts` and `expo/lib/allowance.ts` are parity-tested
+mirrors.
 
 ## Payments status
 

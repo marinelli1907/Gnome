@@ -9,13 +9,12 @@ are identical across stores — listing copy rationale, the data-collection
 inventory, the in-app-purchase analysis — are summarized here and reasoned
 through in full there.
 
-> **Android has never been built.** `eas build:list --json` returns two builds,
-> both iOS, both 2026-08-08. There is no `.aab`, no Play Console record, no
-> Android keystore, and `eas build:version:get --platform android` answers
-> *"No remote versions are configured for this project."* Everything below about
-> Android runtime behavior is derived from configuration and source, **not from
-> a running Android app.** Two of the findings (B1, B2) will only be provable
-> once a build exists.
+> **Android build history is no longer empty, but the final launch artifact is
+> still unproven.** Older Android artifacts exist (remote Android `versionCode`
+> 4), and emulator testing has proven Maps/Firebase plumbing reached a build.
+> No final reviewed Play-bound AAB has been cut from this working tree, uploaded
+> to Play, installed through Play App Signing, or verified on a physical Android
+> device. Everything below keeps that distinction explicit.
 
 ---
 
@@ -42,9 +41,9 @@ generated files.
 | Application ID | `app.boonesystems.gnome` | `expo/app.json` → `android.package`; prebuilt `build.gradle` → `applicationId`, `namespace` | OK |
 | App label | `Gnome` | `expo/app.json` → `name` → `@string/app_name` | OK |
 | versionName | `1.1.0` | `expo/app.json` → `version` | OK |
-| versionCode | **Not configured anywhere** | no `android.versionCode` in `app.json`; prebuilt gradle has the template default `1` | See note |
+| versionCode | **Remote Android `versionCode` 4** | `eas build:version:get --platform android` | OK — next build should auto-increment |
 | `appVersionSource` | `remote` | `expo/eas.json` → `cli.appVersionSource` | OK |
-| Remote version state | **"No remote versions are configured for this project."** | `eas build:version:get --platform android` | Expected — no Android build yet |
+| Remote version state | Android remote version configured | `eas build:version:get --platform android` | OK |
 | minSdkVersion | **24** (Expo SDK 54 default) | `node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle:68` → `safeExtGet("minSdkVersion", 24)` | OK |
 | targetSdkVersion | **36** (Expo SDK 54 default) | `node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle:69` → `safeExtGet("targetSdkVersion", 36)` | OK — comfortably above Play's current target-API floor for new apps |
 | Architectures | `armeabi-v7a, arm64-v8a, x86, x86_64` | prebuilt `gradle.properties` → `reactNativeArchitectures` | OK |
@@ -52,11 +51,10 @@ generated files.
 | New architecture | Enabled | `app.json` → `newArchEnabled: true` | OK |
 | Edge-to-edge | Enabled | `gradle.properties` → `edgeToEdgeEnabled=true` | OK for Android 15 |
 
-**versionCode note.** With `appVersionSource: remote` and no remote value yet,
-the first EAS Android build initializes the remote versionCode (starting at 1)
-and `autoIncrement: true` carries it forward. No action needed, but do **not**
-hand-set `android.versionCode` in `app.json` afterwards — with remote versioning
-that is ignored and only creates confusion.
+**versionCode note.** With `appVersionSource: remote`, EAS owns the Android
+versionCode and `autoIncrement: true` carries it forward. Do **not** hand-set
+`android.versionCode` in `app.json` — with remote versioning that is ignored and
+only creates confusion.
 
 ### 1.2 Signing
 
@@ -93,12 +91,12 @@ From `android/app/src/main/AndroidManifest.xml`:
 | `ACCESS_FINE_LOCATION` | `app.json` → `android.permissions` | **Keep** — `Location.getCurrentPositionAsync({ accuracy: Balanced })` in `expo/lib/location.ts` |
 | `INTERNET` | Expo default | Keep |
 | `VIBRATE` | expo-notifications | Keep |
-| `CAMERA` | **removed** via `tools:node="remove"` (the `expo-image-picker` plugin's `cameraPermission: false`) | Correct — the camera is never invoked; `expo/lib/images.ts` uses `launchImageLibraryAsync` only |
+| `CAMERA` | **removed** via `tools:node="remove"` (the `expo-image-picker` plugin's `cameraPermission: false`) | Correct — the camera is never invoked; photo flows use the shared library picker path |
 | `RECORD_AUDIO` | **removed** via `tools:node="remove"` | Correct |
-| `SYSTEM_ALERT_WINDOW` | React Native dev-support default, landed in the **main** manifest, not `debug/` | **Remove** — see F1 |
-| `READ_EXTERNAL_STORAGE` | expo-image-picker legacy | **Review** — see F2 |
-| `WRITE_EXTERNAL_STORAGE` | expo-image-picker legacy | **Review** — see F2 |
-| `POST_NOTIFICATIONS` | **not in the app module**, merges in from the library manifest (`node_modules/expo-notifications/android/src/main/AndroidManifest.xml` declares it) | Expected present in the merged AAB manifest — **verify in the build output**, since no Android build has ever run |
+| `SYSTEM_ALERT_WINDOW` | React Native dev-support default, landed in the **main** manifest, not `debug/` | **Blocked in `app.json`** — verify absent in the final AAB |
+| `READ_EXTERNAL_STORAGE` | expo-image-picker legacy | **Blocked in `app.json`** — verify absent in the final AAB and test photo picking |
+| `WRITE_EXTERNAL_STORAGE` | expo-image-picker legacy | **Blocked in `app.json`** — verify absent in the final AAB and test photo picking |
+| `POST_NOTIFICATIONS` | **not in the app module**, merges in from the library manifest (`node_modules/expo-notifications/android/src/main/AndroidManifest.xml` declares it) | Expected present in the merged AAB manifest — **verify in the final build output** |
 | `RECEIVE_BOOT_COMPLETED` | same library manifest | Expected present |
 
 No background-location permission is requested anywhere
@@ -117,19 +115,16 @@ background-location review process entirely. Good.
 Same consequence as on iOS: password-reset emails carry a custom-scheme link, so
 tell reviewers to use the email-code sign-in path instead (§7.2).
 
-### 1.5 Push notifications — **not configured for Android**
+### 1.5 Push notifications — **configured / delivery unproven**
 
 `expo-notifications` ships an Android `ExpoFirebaseMessagingService` bound to
 `com.google.firebase.MESSAGING_EVENT` (read directly from
 `node_modules/expo-notifications/android/src/main/AndroidManifest.xml`). Expo's
 push service delivers to Android **through FCM**.
 
-What is missing, verified:
-- No `expo.android.googleServicesFile` key in `app.json`.
-- No `google-services.json` anywhere in the repo.
-- No FCM credential can be confirmed on the EAS side (interactive command).
-
-See **B2**.
+The original audit found no Firebase app config in the repo and no confirmable
+FCM credential on the EAS side. That finding is now historical; see **B2** for
+the current physical-device proof gate.
 
 > **CONFIGURED 2026-08-18, DELIVERY UNPROVEN.** Firebase was added to the
 > existing `Gnome Farmers Market` Cloud project, the Android app registered as
@@ -158,32 +153,32 @@ See **B2**.
 > routes on tap. Until that happens, treat Android push as a **release risk**:
 > the configuration is right, the last mile is unverified.
 
-### 1.6 Maps — **not configured for Android**
+### 1.6 Maps — **configured for Android / rebuild verify**
 
 `react-native-maps@1.20.1` is a dependency and `expo/components/MapListings.native.tsx`
 renders `<MapView>` with markers for the Map tab.
 
-Verified absences:
-- `grep -n "googleMaps\|apiKey" expo/app.json` → **no matches**. There is no
-  `android.config.googleMaps.apiKey`.
-- `grep -rn "com.google.android.geo.API_KEY" expo/android/` → **no matches**.
-  The prebuilt manifest's only `meta-data` entries are the five
-  `expo.modules.updates.*` keys.
+The original audit found no Android Maps key. That is no longer the current
+tree: `expo/app.json` now has `android.config.googleMaps.apiKey`. A compact
+config probe on 2026-08-20 also confirmed `android.googleServicesFile`,
+`android.blockedPermissions`, and the 15 configured iOS privacy-manifest data
+types without printing any key material.
 
-On Android, `react-native-maps` renders **Google Maps** and requires that API
-key. See **B1**.
+Remaining proof: inspect the final AAB/APK merged manifest and re-run the Map
+regression on the build that will be uploaded, then re-verify after Play App
+Signing adds the production SHA-1. See **B1**.
 
 ### 1.7 Icons and branding assets
 
 | Asset | Actual | Verdict |
 |---|---|---|
 | Adaptive icon foreground | `assets/images/adaptive-icon.png` — 1024×1024 RGBA | OK |
-| Adaptive icon background | `#F6F2E9` | OK |
+| Adaptive icon background | `#FFFFFF` | OK |
 | Legacy icon fallback | falls back to `icon.png` (1024×1024 RGBA) | OK |
 | Monochrome (themed) icon | **absent** | Optional; Android 13+ themed icons will fall back |
 | Notification icon / color | **not configured** — the `expo-notifications` plugin is listed with no options | Android renders a white silhouette of the app icon. Cosmetic; a `notification.icon` would be better |
-| Play Store icon (512×512) | must be produced for the listing | See §6 |
-| Feature graphic (1024×500) | must be produced — **Play will not let you publish without it** | See §6 |
+| Play Store icon (512×512) | `docs/release/play-icon-512.png` — 512×512 RGBA, 57 KB | OK |
+| Feature graphic (1024×500) | `docs/release/play-feature-graphic.png` — 1024×500 RGB/no alpha, 49 KB | OK |
 
 ---
 
@@ -212,61 +207,29 @@ key. See **B1**.
 > upload: Play Console → Setup → App signing → copy the app signing SHA-1 → add
 > it to the same credential alongside the upload SHA-1.
 
-Original finding, for the record:
+Historical finding, for the record: the original audit correctly identified the
+missing Android Maps key as a Play blocker. That is now fixed in configuration
+and verified on an emulator build. The remaining risk is narrower: a Play-signed
+install can use a different SHA-1 than the EAS upload build, so Maps must be
+regressed after Play App Signing is available.
 
-`react-native-maps` uses the Google Maps SDK on Android, which authenticates
-with a `com.google.android.geo.API_KEY` manifest entry. That key is absent from
-both `app.json` and the generated manifest (§1.6). Without it the map surface
-renders as a blank or grey tile with a "Authorization failure" log line — the
-map markers never appear.
+### B2 — Android push notifications. **CONFIGURED / DELIVERY UNPROVEN**
 
-Gnome ships **Map as one of six primary tabs** (`expo/app/(tabs)/_layout.tsx` →
-`name="map"`, title "Map"). A permanently blank primary tab is a
-"broken functionality" rejection under Play's Spam and Minimum Functionality
-policy, and a bad first impression regardless of policy.
+Expo push → Android goes through FCM (§1.5). The original audit found no
+Firebase app config and no confirmable FCM credential. That is now fixed in
+configuration and observed in an Android build: `google-services.json` is wired
+through `android.googleServicesFile`, and the Firebase messaging service is
+present in the built app.
 
-**Fix (coordinator owns `app.json`):**
-1. Google Cloud Console → enable **Maps SDK for Android** on the Gnome project.
-2. Create an Android-restricted API key bound to package `app.boonesystems.gnome`
-   and the release SHA-1 (available from `eas credentials` once the keystore
-   exists).
-3. Add to `app.json`:
-   ```json
-   "android": { "config": { "googleMaps": { "apiKey": "<key>" } } }
-   ```
-   The key is restricted by package + signing certificate, so shipping it in the
-   binary is the intended design — but prefer an EAS environment variable over a
-   literal in the committed file.
+Remaining proof is physical-device delivery, not repo configuration:
+1. Install the final Android build on a real device.
+2. Sign in and accept the notification permission prompt.
+3. Confirm a `device_tokens` row is created.
+4. Send an actual push.
+5. Tap it and verify routing.
 
-**Honest caveat:** I am asserting this from the library's documented Android
-requirement plus the verified absence of the key. It **cannot be proven from
-this machine** — no Android build has ever run. Confirm on the first internal
-build before treating it as fixed.
-
-### B2 — Push notifications will not work on Android. **BLOCKER for feature parity**
-
-Expo push → Android goes through FCM (§1.5). With no `google-services.json` and
-no `expo.android.googleServicesFile`, `Notifications.getExpoPushTokenAsync()`
-fails on Android, `registerForPushNotifications` swallows the error
-(`expo/lib/notifications.ts` — the whole body is wrapped in a silent
-`try/catch`), and **no `device_tokens` row is ever written.** The user sees
-nothing wrong; they simply never receive a claim, approval, message, or
-Wanted-match notification.
-
-The failure is invisible, which makes it worse: nothing surfaces in the app, and
-the backend has no token to fail on.
-
-**Fix:**
-1. Firebase Console → add an Android app with package `app.boonesystems.gnome`
-   → download `google-services.json`.
-2. Add `"googleServicesFile": "./google-services.json"` under `android` in
-   `app.json` (and gitignore the file, or keep it as an EAS file secret — it is
-   not a secret in the cryptographic sense but there is no reason to commit it).
-3. Upload the **FCM V1 service-account key** to EAS via
-   `eas credentials --platform android`.
-
-Not a policy blocker — Play will happily publish an app whose push is broken.
-It is a product blocker: Gnome's entire claim/approve/chat loop depends on push.
+Do not weaken `Device.isDevice` in `expo/lib/notifications.ts` to make emulator
+registration appear to work.
 
 ### B3 — Account deletion **web URL** — **RESOLVED 2026-08-16**
 
@@ -334,18 +297,21 @@ app.
 
 Either way this is a **web lane change** — outside this document's owned files.
 
-### F1 — `SYSTEM_ALERT_WINDOW` is declared in the production manifest. **HIGH**
+### F1 — `SYSTEM_ALERT_WINDOW` was declared in the production manifest. **CONFIG FIXED**
 
 "Draw over other apps" is a permission Play scrutinizes and users see on the
 listing. Gnome has no use for it; it arrives from React Native's dev-support
 defaults and landed in `src/main/` rather than `src/debug/`.
 
-**Fix (coordinator, `app.json`):**
+**Fixed in `app.json`:**
 ```json
 "android": { "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"] }
 ```
 
-### F2 — Legacy storage permissions. **MEDIUM**
+Remaining proof: inspect the merged manifest from the final AAB and confirm the
+permission is absent.
+
+### F2 — Legacy storage permissions. **CONFIG FIXED / DEVICE VERIFY**
 
 `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` are declared. On Android 13+
 these are inert for images, and `expo-image-picker` on SDK 54 uses the system
@@ -353,12 +319,15 @@ photo picker, which requires no permission at all. Play's Photo and Video
 Permissions policy restricts broad media access and can require a declaration
 form for apps that request it.
 
-**Recommended:** add both to `blockedPermissions` alongside F1, then confirm on a
-real device that picking a listing photo still works on Android 10 and Android 14.
-Do not skip that check — it is exactly the kind of change that looks free and
-breaks the oldest supported devices.
+**Fixed in `app.json`:** both legacy storage permissions are listed under
+`android.blockedPermissions` alongside `SYSTEM_ALERT_WINDOW`.
 
-### F3 — Privacy Policy names the wrong AI provider. **RESOLVED 2026-08-17** — the deployed policy names Google's Gemini models as the only provider (verified live). Standing condition: `ai_settings.allow_paid_fallback` is FALSE in prod (verified); flipping it re-enables OpenAI/Anthropic fallbacks and re-falsifies both the policy and these declarations. Original finding:
+Remaining proof: inspect the merged manifest from the final AAB and confirm both
+are absent, then confirm on a real device that picking a listing photo still
+works on Android 10 and Android 14. Do not skip that check — it is exactly the
+kind of change that looks free and breaks the oldest supported devices.
+
+### F3 — Privacy Policy names the wrong AI provider. **RESOLVED 2026-08-17** — the deployed policy names Google's Gemini models as the only provider (verified live). Standing condition: `ai_settings.allow_paid_fallback` is FALSE in prod (verified). Working-tree guard: OpenAI/Anthropic keys are also hidden unless `AI_PAID_FALLBACK_DISCLOSED=true`, so flipping the database flag alone cannot re-falsify the policy. Original finding:
 
 `web/app/privacy/page.tsx` says photos are processed by "our AI provider
 (Anthropic)". The real chain in `supabase/functions/draft-listing/index.ts:123-126`
@@ -394,40 +363,34 @@ no purchase, no waitlist. A repo-wide grep confirms the app's only remaining
 likewise stripped of its Stripe Payment Links. Evidence inventory:
 `docs/release/SEED_DROP_OFF.md`.
 
-**What still stands:** the **deployed** website is still the old one — the web
-fix is in the tree, undeployed. Play never sees it (the app no longer links
-there), but the store listing must not describe Seed Drop as available, and §3
-does not.
+**What still stands:** closed by direct production probe on 2026-08-20. The
+live `/seeds` page is Coming Soon only, with no `Build my box` copy, no visible
+price, and no Stripe subscription promise. Play never sees the old path anyway
+because the app no longer links there; §3 also does not describe Seed Drop as
+available.
 
 *(Policy-wise the old link was fine anyway: seed packets are physical goods,
 which must **not** use Play Billing.)*
 
-### F6 — Non-functional "coming soon" purchase surfaces. **LOW-MEDIUM on Play**
+### F6 — Non-functional "coming soon" purchase surfaces. **FIXED IN WORKING TREE**
 
-Upgrade and Boost show real prices behind buttons that open "coming soon"
-alerts (`expo/app/promote/[listingId].tsx:118`,
-`expo/components/UpgradePromptCard.tsx:47`, `expo/app/upgrade.tsx:95`). Play's
-Minimum Functionality policy covers this, though enforcement is far softer than
-Apple's Guideline 2.1. Fixing it for the App Store fixes it here.
+Upgrade and Boost used to show real prices behind buttons that opened "coming
+soon" alerts. The working tree removes those priced dead ends: `/upgrade` is
+informational, `expo/app/promote/[listingId].tsx` no longer offers a paid extra
+promotion button, and shared upgrade cards use Android-safe copy.
 
 ---
 
-### B4 — The $0.99 overage checkout is a REAL digital-service purchase. **BLOCKER (new since 54e141e)**
+### B4 — Android $0.99 overage checkout. **RESOLVED FOR V1.1.0 BY D1 GATE**
 
-`expo/lib/billing.ts` (`purchaseOverage`) opens a server-created Stripe
-Checkout session in an auth browser session from three surfaces
-(`app/(tabs)/post.tsx`, `app/(tabs)/ai.tsx`, `app/listing/[id].tsx`) whenever
-the server says a publish/renewal needs paying — which any Free seller hits on
-their 4th Sell listing of the month or first renewal (free = 3/mo, 0 included
-renewals). `payments_live_enabled=false` only selects Stripe TEST mode; the
-purchase UI itself is reachable today. Publish rights are a digital service,
-so Play's Payments policy requires Play Billing for it (subject to the current
-US external-offers rules — re-verify at submission time). **Owner decision
-required before the Play form can be answered:** (a) gate the overage purchase
-OFF on Android for v1.1.0 (allowance-exhausted sellers see "not available on
-Android yet"), (b) integrate Play Billing, or (c) rely on the US
-external-offers program with its disclosure requirements. Every "No purchases
-/ No IAP" answer in §3, §6 and §7.2 is conditional on (a).
+Publish rights are a digital service, so Android must not expose the Stripe
+overage checkout at launch. The working tree implements owner decision D1:
+Android sellers who exhaust the Free allowance see upgrade/reset copy, not a
+Stripe checkout button or link-out. The $0.99 architecture remains available for
+iOS/web and for a future native Play Billing implementation.
+
+Standing verification: before upload, retest allowance exhaustion on Android and
+confirm no `$0.99` checkout surface appears.
 
 ## 3. Store listing copy
 
@@ -441,7 +404,7 @@ Same product, Play's fields. Nothing below claims Seed Drop is available.
 | **Tags** | Marketplace, Food & Drink, Local | — | — |
 | **Content rating** | Teen / IARC (see §4) | — | — |
 | **Contains ads** | **No** | — | — |
-| **In-app purchases** | **No only if B4 is gated off on Android — otherwise Yes** | — | — |
+| **In-app purchases** | **No** | D1: Android exposes no in-app digital purchase UI | — |
 
 Play does not use keyword fields — the name and short description carry the
 search weight, which is why the Play name spells out "Local Farmers Market"
@@ -452,60 +415,44 @@ where the App Store name is just "Gnome" (there, the subtitle does that work).
 ```
 Gnome is a farmers market in your pocket.
 
-Whatever you grow, bake, or make, there are neighbors nearby who want it — and
-whatever you're looking for, someone within a few miles probably has too much of
-it. Gnome connects the two, without a middleman and without a delivery fleet.
+Whatever you grow, bake, or make, there are neighbors nearby who want it — and whatever you're looking for, someone within a few miles probably has too much of it. Gnome connects the two, without a middleman.
 
 BROWSE WHAT'S GROWING NEARBY
-See what neighbors are offering right now, sorted by distance. Filter by
-category or by how you want it: for sale, free to a good home, open to a trade,
-or a garden plot you can grow in. Set your radius anywhere from one mile to
-anywhere in the country.
+See what neighbors are offering right now, sorted by distance. Filter by category, or by how you want it: for sale, free to a good home, open to a trade, wanted, or a garden plot you can grow in. Set your search radius from one mile to the whole country. Search covers titles, descriptions, and category names and their synonyms.
+
+MAP THE MARKET AROUND YOU
+Switch to the Map tab and see what's nearby as color-coded pins on a real map, filtered by type and distance. Tap a pin and that listing opens right there. Pins sit at an approximate location — never anyone's exact address.
 
 FIVE WAYS TO POST
 • Sell — set your price and your unit
-• Give away — surplus zucchini finds a home
+• Share Free — surplus zucchini finds a home
 • Trade — your basil for their tomatoes
 • Wanted — ask for what you're after, and let neighbors offer it
-• Offer a plot — share space in your garden with someone who has none
+• Offer a Plot — share space in your garden with someone who has none
 
-GNOME AI TURNS A PHOTO INTO A LISTING
-Photograph what you have. Gnome AI drafts a title, description, category, unit,
-and a suggested price — then hands the draft back to you. Nothing is ever posted
-automatically. You review it, edit anything you like, and publish when it's
-right. Ask the Garden Planner what to plant and when for where you live.
+GNOME AI
+In the Ask AI tab, photograph what you have and Gnome AI drafts a title, description, category, unit, and a suggested price — one draft per photo, several at once. Nothing is published automatically: every draft waits for you to publish, edit, or discard it. Ask it what's worth selling this week, which listings expire soon, or to mark your cucumbers sold out — it proposes, you confirm, and only then does anything change. Already selling elsewhere? Hand it screenshots of your existing shop and it turns them into drafts. And the Garden Planner will tell you what to plant, and when, for where you live.
 
 YOUR OWN MARKET
-Every seller gets a Market: a page that collects your listings, your pickup
-spots, your hours, and your story. Neighbors can follow it and see when you post
-something new.
+Every seller gets a Market — its own tab — holding your listings, your pickup spots and hours, your story, and the payment handles you already use. Neighbors can follow it. Run a Market Drop — a time-boxed "Saturday Harvest, 8AM–1PM" collection of what you have ready. Or build a Gift Basket that sells several of your items as one offer.
 
-CLAIMS, CHAT, AND PICKUP
-When someone wants what you posted, they send a request. Approve it and a
-private thread opens for the two of you to sort out time and place. Set standing
-pickup locations and hours so you're not negotiating the same details twice.
-Payment happens between the two of you, however you already pay each other —
-Gnome doesn't take a cut of your sale and doesn't process the payment.
+PICKUP, DELIVERY, AND PRIVATE CHAT
+Buyers order from your Market and choose a pickup window you set — or, if you offer it, a local delivery inside the radius you choose, for the fee you set. Someone claiming a single listing sends a request instead; approve it and a private thread opens to sort out time and place. Payment happens between the two of you, in whatever app you already use. Gnome takes no cut of your sale and never handles the money.
 
 A SALES NOTEBOOK THAT MATCHES YOUR SEASON
-Record sales you make off the app — at the roadside stand, at the co-op, to the
-neighbor who knocked on your door — alongside your Gnome sales, plus your seed,
-soil, and mileage expenses. One ledger for the whole season.
+Record the sales you make off the app — at the roadside stand, at the co-op, to the neighbor who knocked — alongside your Gnome sales, plus your seed, soil, and mileage expenses. One ledger for the whole season, with a monthly summary.
 
 GROW LOG FOR PLOTS
-If you're growing on someone else's plot, log the stages with photos so the plot
-owner can follow along.
+Growing on someone else's plot? Log each stage with photos so the plot owner can follow along. When it's ready to harvest, one tap starts the listing.
 
 BUILT FOR A REAL NEIGHBORHOOD
-• Your exact address is never shown. Listings appear at an approximate location,
-  and photos are stripped of their metadata before they're uploaded.
-• Report and block are one tap away on every listing, Market, and conversation.
-• Sellers can upload permits and licenses for the categories that need them.
+• Your exact address is never shown. Listings appear at an approximate location, and photos are stripped of their metadata — GPS included — before upload.
+• Report and block are one tap away on every listing, Market, and conversation, and reports reach a staffed queue.
+• Listings in regulated categories are screened before they go live, and sellers can upload the permits those categories require.
+• Location is optional and foreground-only. The app works without it — you just can't sort by distance.
 • Delete your account, and everything in it, from Settings.
 
-Gnome works anywhere in the United States. Sellers are responsible for following
-their own state and local food laws; Gnome is not a party to any sale between
-neighbors and does not process payments between them.
+Gnome works anywhere in the United States. Sellers are responsible for following their own state and local food laws. Gnome is not a party to any sale between neighbors and does not process payments between them.
 ```
 
 ~2,600 characters.
@@ -527,11 +474,11 @@ Notebook and a Grow Log. Settings → Send feedback goes straight to the builder
 
 | Field | Value | Verified |
 |---|---|---|
-| Email | `daniel@boonesystems.com` | Swapped 2026-08-17 from `hello@gnomefarmersmarket.com`, which cannot receive mail (no MX for that domain). boonesystems.com runs Google Workspace mail — MX verified deliverable. Appears on `/privacy`, `/terms` and `/delete-account` |
+| Email | `daniel@boonesystems.com` | Swapped 2026-08-17 from `hello@gnomefarmersmarket.com`, which cannot receive mail (no MX for that domain). boonesystems.com runs Google Workspace mail — MX verified deliverable. Appears on `/support`, `/privacy`, `/terms` and `/delete-account` |
 | Website | `https://gnomefarmersmarket.com` | HTTP 200 today |
 | Privacy Policy | `https://gnomefarmersmarket.com/privacy` | HTTP 200 today |
 | Countries | United States only | The app is US-scoped: `countrycodes=us` on the geocoder, US state table in `expo/lib/location.ts`, USD throughout |
-| Free / Paid | Free | Purchase posture pending **B4** — the $0.99 overage checkout is reachable in-app |
+| Free / Paid | Free | D1 gates Android digital purchase UI; no Google Play Billing products |
 
 ---
 
@@ -547,7 +494,7 @@ SDK exists in `expo/package.json`.** The full reasoning behind each row is in
 |---|---|---|
 | Does your app collect or share any of the required user data types? | **Yes** | §4.2 |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | All traffic is HTTPS (Supabase, exp.host, nominatim). `NSAllowsArbitraryLoads: false` on iOS; no cleartext traffic config on Android |
-| Do you provide a way for users to request that their data be deleted? | **Yes** | §5; URL field = `https://gnomefarmersmarket.com/delete-account` (B3 resolved — deploy before submitting) |
+| Do you provide a way for users to request that their data be deleted? | **Yes** | §5; URL field = `https://gnomefarmersmarket.com/delete-account` (B3 resolved and live) |
 | Does your app have an account creation feature? | **Yes** | Email/password, email code, Sign in with Apple, Google |
 | Data collected in an ephemeral way only? | **No** for most rows; see the Precise Location note in 4.2 |
 | Is data collection required, or can users choose? | **Mixed** — email and name are required to have an account; phone, address, photos, location, and permits are all optional |
@@ -571,11 +518,11 @@ decision (F4).**
 | Location → **Precise location** | **Yes** | **See F4** | App functionality | Optional | `Location.getCurrentPositionAsync({ accuracy: Balanced })` (`expo/lib/location.ts`). The device reading itself is used in memory for distance filtering; the **geocoded lat/lng of a delivery address is stored** on the buyer's private row (`expo/lib/delivery.ts:145-160`), so this cannot be declared ephemeral-only |
 | Financial info → **Other financial info** | Yes | No | App functionality | Optional | Sales Notebook — sale amounts, quantities, optional buyer label, expenses with vendor and category (`expo/components/RecordSaleSheet.tsx`, `expo/app/notebook.tsx`) |
 | Financial info → **Payment info** | **No** | — | — | — | Gnome never collects a card or bank detail. Payment links open the seller's own Venmo/PayPal/Cash App/Zelle; `PaymentDisclaimer` states it every time |
-| Photos and videos → **Photos** | Yes | **See §4.3b** | App functionality | Optional | `expo/lib/images.ts` → `listing-images`; grow-log photos; compliance document images. Photos are sent to the AI provider from FOUR functions: `draft-listing`, `analyze-listing-photo`, `gnome-assistant` (draft_from_photos), `market-import` — all Gemini FREE tier, whose content Google may use for product improvement (Gnome's own /privacy says so) |
+| Photos and videos → **Photos** | Yes | **See §4.3b** | App functionality | Optional | `expo/lib/images.ts` → `listing-images`; grow-log photos; compliance document images. Photos are sent to the AI provider from five functions: `draft-listing`, `analyze-listing-photo`, `gnome-assistant` (draft_from_photos), `garden-planner`, `market-import` — all Gemini FREE tier, whose content Google may use for product improvement (Gnome's own /privacy says so) |
 | Files and docs | Yes | No | App functionality | Optional | Permit/license uploads via `expo-document-picker` → `compliance-docs` bucket |
 | Messages → **Other in-app messages** | Yes | No | App functionality | Optional | `claim_messages`; previews also travel in push payloads (`supabase/functions/notify/index.ts`) |
-| Messages → AI chat / Other user content | Yes | **See §4.3b** | App functionality | Optional | Gnome AI tab chat turns + city/county/state context go to Gemini (`gnome-assistant`); full user and assistant text stored verbatim in `ai_chat_messages` with no retention window; Garden Planner question text also logged to `events` |
-| App activity → **App interactions** | Yes | No | Analytics, App functionality | Required | `logEvent` → `events` with `user_id` (`expo/lib/db.ts:12-27`). 31 distinct event names today (one, `garden_planner_used`, logs the user's full question text in metadata — check AI_DATA_FLOW.md before declaring analytics content-free), e.g. `listing_viewed`, `listing_claim_started`, `claim_message_sent`, `market_order_requested`, `payment_link_opened`, `ai_draft_used`, `sale_recorded_mobile`, `plan_limit_hit` |
+| Messages → AI chat / Other user content | Yes | **See §4.3b** | App functionality | Optional | Gnome AI tab chat turns + city/county/state context go to Gemini (`gnome-assistant`); Garden Planner sends coarsened city/state-style location plus recent turns with street-address/coordinate shapes redacted; full Gnome AI user and assistant text is stored verbatim in `ai_chat_messages` with no retention window |
+| App activity → **App interactions** | Yes | No | Analytics, App functionality | Required | `logEvent` → `events` with `user_id` (`expo/lib/db.ts:12-27`). `garden_planner_used` now logs non-content metadata (`chars`, `has_photo`), not the user's question text. Other examples: `listing_viewed`, `listing_claim_started`, `claim_message_sent`, `market_order_requested`, `payment_link_opened`, `ai_draft_used`, `sale_recorded_mobile`, `plan_limit_hit` |
 | Device or other IDs | Yes | No | App functionality | Optional | Expo push token in `device_tokens` (`expo/lib/notifications.ts`) |
 | App info and performance → Crash logs, Diagnostics | **No** | — | — | — | No crash-reporting SDK installed |
 | Health and fitness, Contacts, Calendar, Web browsing, Search history, Audio, Music, Installed apps | **No** | — | — | — | None collected |
@@ -622,8 +569,8 @@ without installing the app.
 | **Server implementation** | `supabase/functions/delete-account/index.ts` — identity from the caller's JWT, never the body. Purges `device_tokens`, `claim_messages`, `claims` (as claimer and on own listings), `listings`, `seller_credentials` + `credential_taxonomy_scope`, `markets`, `user_blocks` both directions, `events`, `profiles`, `seed_orders` (NO-ACTION FK — added in delete-account v9, 2026-08-17), then `auth.admin.deleteUser`. Known gap: `ai_usage` / `ai_daily_counter` rows (no FK) survive deletion — fix pending. Storage: `grow-log` folders per affected claim, `compliance-docs/<uid>`, `listing-images/<uid>` |
 | **Web URL** | `https://gnomefarmersmarket.com/delete-account` — **live, HTTP 200, verified 2026-08-17** (see B3) |
 
-So: not a blocker for the app's behavior, but **a blocker for completing the
-Play form.** B3 is resolved in the repo; the remaining step is deploying the web page so the URL answers 200.
+So: not a blocker for the app's behavior and not a blocker for completing the
+Play form. B3 is resolved in the repo and live on the public website.
 
 ---
 
@@ -701,17 +648,24 @@ A local marketplace for surplus produce and homemade goods. Neighbors post what
 they grow or make and sell, give away, trade, or request it. Handoffs are
 arranged directly between the two people, in person.
 
-NO PURCHASES
-This version sells nothing. There is no Google Play Billing integration and no
-payment processing inside the app. When a buyer and seller settle up, the app
-can open the seller's own Venmo / PayPal / Cash App / Zelle handle; the payment
-happens entirely in that app and Gnome never sees or records it. A disclaimer
-saying so is shown every time.
+NO PURCHASES ON ANDROID
+This version sells nothing on Android. There is no Google Play Billing
+integration and no payment processing inside the Android app. Sellers who
+exhaust their monthly publishing allowance are shown the plan comparison, not a
+purchase. When a buyer and seller settle up for goods, the app can open the
+seller's own Venmo / PayPal / Cash App / Zelle handle; the payment happens
+entirely in that app and Gnome never sees or records it. A disclaimer saying so
+is shown every time.
 
 ACCOUNT DELETION
 Profile tab → Settings → "Delete my account". Two confirmations, then the
 account, Market, listings, photos, and messages are permanently deleted
 server-side. Web instructions: https://gnomefarmersmarket.com/delete-account.
+
+DELIVERY SETTINGS
+Market tab → edit Market → Delivery settings. A Free Market can offer delivery
+up to 15 miles with one flat fee; paid plans add distance surcharges and
+scheduling controls.
 
 USER-GENERATED CONTENT
 Every listing, Market page, and conversation has a Report control, and any user
@@ -745,7 +699,7 @@ daniel@boonesystems.com
 | Government app | No |
 | **Financial features** | **"My app doesn't provide any financial features."** Gnome does not process, transfer, or hold funds. It opens the seller's own peer-payment app via a deep link and records nothing (`expo/lib/marketops.ts:168-192`). The Sales Notebook is the seller's own private ledger of sales that happened elsewhere. **Flagged deliberately** — an auditor could look at "Pay seller" and ask; the answer above is the accurate one |
 | Health apps | No |
-| **Photo and video permissions** | Declaration required only if `READ_MEDIA_IMAGES` / broad storage permissions are retained. Resolve **F2** first, then answer |
+| **Photo and video permissions** | Declaration should not be required if the final AAB confirms no `READ_MEDIA_IMAGES` / broad storage permissions are retained. Verify F2 in the built manifest first. |
 | **Location permissions** | Declaration required — `ACCESS_FINE_LOCATION` is requested. Justification: "Sorting and filtering marketplace listings by distance from the user, and one-tap fill of the user's town/state/ZIP on their profile. Foreground only; no background location is requested; the app is fully usable with location denied." |
 
 ---
@@ -756,8 +710,8 @@ daniel@boonesystems.com
 
 | Asset | Spec | Status |
 |---|---|---|
-| App icon | 512 × 512, 32-bit PNG **with alpha** | Produce from `assets/images/icon.png` (already 1024×1024 RGBA) |
-| Feature graphic | 1024 × 500, PNG or JPEG, **no alpha** | **Must be created — Play blocks publishing without it** |
+| App icon | 512 × 512, 32-bit PNG **with alpha** | `docs/release/play-icon-512.png` generated and verified |
+| Feature graphic | 1024 × 500, PNG or JPEG, **no alpha** | `docs/release/play-feature-graphic.png` generated and verified |
 | Phone screenshots | 2–8, PNG/JPEG, 16:9 or 9:16, 320–3840 px per side | §8.2 |
 | 7" tablet screenshots | Optional | Skip — the app is phone-oriented (`supportsTablet: false` on iOS; no tablet layouts) |
 | 10" tablet screenshots | Optional | Skip. Play will show a "not optimized for tablets" note on tablet devices; acceptable for 1.1.0 |
@@ -783,7 +737,7 @@ portrait-locked via `android:screenOrientation="portrait"`).
   avatars** in any frame.
 - **Do not capture the Map tab until B1 is fixed and verified** — right now it
   will photograph as a blank tile.
-- Skip Upgrade and Boost (F6 — priced buttons that do nothing).
+- Skip Upgrade and Boost; they are not part of the Play screenshot story.
 - The Seed Drop card may appear in frame 1 — it now carries a "Coming soon" pill
   and opens a non-transactional modal (F5). Do not screenshot that modal as a
   feature; it is an announcement, not shipped functionality.
@@ -794,23 +748,24 @@ portrait-locked via `android:screenOrientation="portrait"`).
 
 Ordered. **(owner)** marks anything needing a Google account or console.
 
-### Must happen before the first Android build
+### Must happen before the final Android build/upload
 
-1. **(owner + coordinator)** **B1** — create the Google Maps Android API key,
-   restrict it to `app.boonesystems.gnome` + the release SHA-1, add
-   `android.config.googleMaps.apiKey` to `app.json`.
-2. **(owner + coordinator)** **B2** — Firebase project → `google-services.json`
-   → `android.googleServicesFile` in `app.json`; upload the FCM V1 key with
-   `eas credentials --platform android`.
-3. **(coordinator)** **F1/F2** — add `android.blockedPermissions` for
-   `SYSTEM_ALERT_WINDOW`, and decide on the two storage permissions.
+1. **(owner + coordinator)** **B1** — Google Maps config is present in
+   `app.json`; re-verify Map tiles after the final AAB is signed with the Play
+   signing SHA-1.
+2. **(owner + coordinator)** **B2** — Firebase config is present in
+   `app.json`/`google-services.json`; upload or confirm the FCM V1 credential in
+   EAS, then prove push on a physical Android device.
+3. **(coordinator)** **F1/F2** — `android.blockedPermissions` is configured for
+   `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, and
+   `WRITE_EXTERNAL_STORAGE`; verify the final merged manifest and photo picker.
 4. ~~**(web lane)** **B3** — publish an account-deletion page~~ **DONE — deployed and verified 2026-08-17** (`/delete-account`, HTTP 200). Superseded text: or expand
    `/privacy` with an explicit deletion section, and capture its URL.
-5. **(web lane)** **F3/F4** — correct the AI-provider naming; decide the
-   Nominatim question, because it changes the Data safety answers (§4.3).
-6. **(coordinator)** **F6** — remove prices from the non-functional
-   Upgrade/Boost surfaces. (**F5** was fixed in the tree by the Seed Drop lane
-   during this audit; the web `/seeds` half of that fix is **not deployed** yet.)
+5. **(owner)** **§4.3b** — decide Gemini free-tier data safety: paid Gemini key,
+   or declare the affected photos / AI chat content shared with Google (§4.3).
+6. ~~**(coordinator)** **F6** — remove prices from the non-functional
+   Upgrade/Boost surfaces~~ **DONE in working tree.** (**F5** is closed in
+   production as of the 2026-08-20 direct `/seeds` and `/pricing` probes.)
 
 ### Play Console (owner)
 
@@ -832,9 +787,10 @@ Ordered. **(owner)** marks anything needing a Google account or console.
 
 ### Build and submit
 
-14. `cd expo && eas build --platform android --profile production`. This
-    initializes the remote versionCode. First Android build ever — expect to
-    fix things.
+14. `cd expo && eas build --platform android --profile production`. Remote
+    versioning is active; the latest remote Android versionCode observed on
+    2026-08-20 was 4, so the final production build must increment beyond every
+    prior upload.
 15. **On that build, verify before promoting:** the Map tab renders (B1); push
     registration writes a `device_tokens` row on a physical Android device (B2);
     the merged manifest contains `POST_NOTIFICATIONS` and does **not** contain
@@ -853,16 +809,16 @@ Ordered. **(owner)** marks anything needing a Google account or console.
 
 | # | Item | Severity | Owner |
 |---|---|---|---|
-| B1 | No Google Maps API key → Map tab blank on Android | **BLOCKER** | coordinator + owner |
-| B2 | No FCM config → Android push silently dead | **BLOCKER** | coordinator + owner |
-| ~~B3~~ | ~~No account-deletion web URL~~ **RESOLVED 2026-08-16** — `/delete-account` built; deploy pending | done (deploy) | web lane |
+| B1 | Google Maps config present; Map must be re-verified after final Play-signed build | **DEVICE VERIFY** | coordinator + owner |
+| B2 | Firebase config present; Android push still needs physical-device proof | **DEVICE VERIFY** | coordinator + owner |
+| ~~B3~~ | ~~No account-deletion web URL~~ **RESOLVED** — `/delete-account` live, HTTP 200, re-verified 2026-08-20 | Done | — |
 | §7.1 | Possible 12-tester / 14-day closed-test requirement | **SCHEDULE BLOCKER if personal account** | owner |
-| F1 | `SYSTEM_ALERT_WINDOW` in the production manifest | High | coordinator |
-| F2 | Legacy storage permissions | Medium | coordinator |
-| F3 | Privacy policy names the wrong AI provider | Medium | web lane |
+| ~~F1~~ | ~~`SYSTEM_ALERT_WINDOW` in the production manifest~~ **CONFIG FIXED** — verify absent in final AAB | Device/build verify | coordinator |
+| F2 | Legacy storage permissions blocked in config; photo picker still needs Android 10/14 proof | Device/build verify | coordinator |
+| ~~F3~~ | ~~Privacy policy names the wrong AI provider~~ **RESOLVED** — live policy names Gemini and OpenStreetMap, re-verified 2026-08-20 | Done | — |
 | F4 | Buyer address sent to OpenStreetMap; changes the Data safety answers | Medium | coordinator/web |
-| F5 | Seed Drop card — **fixed in tree during this audit**; web `/seeds` fix undeployed | Low (was Medium) | Seed Drop lane |
-| F6 | "Coming soon" priced buttons | Low-Medium | coordinator |
+| ~~F5~~ | ~~Seed Drop paid web copy~~ **RESOLVED** — live `/seeds` is Coming Soon only, re-verified 2026-08-20 | Done | — |
+| ~~F6~~ | ~~"Coming soon" priced buttons~~ **RESOLVED in working tree** | Done | — |
 | — | **Account deletion (in-app)** | **Done — verified** | — |
 | — | Target API 36, min 24 | Done | — |
 | — | No ads, no IAP, no tracking SDKs | Done | — |

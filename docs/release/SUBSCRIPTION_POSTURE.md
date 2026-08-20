@@ -1,5 +1,17 @@
 # Paid-subscription launch posture — iOS
 
+> **SUPERSEDED FOR LAUNCH.** This was a 2026-08-13 pre-0126 analysis of an
+> older pricing model. Do not paste its tier names, limits, reviewer notes, or
+> App Store answers into a launch submission. Current pricing truth is
+> `supabase/migrations/0126_three_tier_pricing.sql` and
+> `docs/MONETIZATION.md`: Free, Pro (`grower`), Farm (`farm`), with
+> `sponsor` retained only as retired Legacy Farm.
+>
+> Current launch posture differs from this memo: Android gates digital purchase
+> UI off, while the $0.99 extra Sell listing remains live on iOS/web and must be
+> disclosed as a deliberate App Review 3.1.1 risk. Use
+> `APP_STORE_PACKAGE.md` §6 and `APP_STORE_PRIVACY.md` §11.5 for submission.
+
 **Decision owner:** Daniel · **Prepared:** 2026-08-13 · **Repo state:** `main`, migrations
 through `0092` applied (`supabase/migrations/APPLIED.tsv` tail), `0089`/`0090`/`0091`
 declared unapplied (`supabase/migrations/UNAPPLIED.txt`).
@@ -475,9 +487,9 @@ cancellation path — none of which exist today.
 **BLOCKER: none.** Nothing in the subscription surface breaks production or harms a
 user today, because nothing in it can transact.
 
-### FIX BEFORE APP REVIEW
+### Resolved before App Review
 
-**S-1 · Priced, non-purchasable commerce surfaces in the iOS binary.**
+**S-1 · Priced, non-purchasable commerce surfaces in the iOS binary. RESOLVED IN WORKING TREE.**
 Nine strings across five files (enumerated in §2.1) show prices for plans, promotions
 and add-ons that cannot be bought on any platform, behind controls labelled "Upgrade"
 and "Buy a promotion" that resolve to alerts. Guideline **2.1(a)** (placeholder and
@@ -485,6 +497,11 @@ temporary content must be scrubbed before submission) and **2.3.1(a)** (promotin
 false price is grounds for removal). Replacement copy: §6.1–§6.5.
 *This is the same defect as R1 in `APP_STORE_PACKAGE.md:125`; this document supplies
 the line-level inventory and the exact replacement strings.*
+
+The working tree applies that posture in current 0126 terms: `/upgrade` is now
+"Your plan," plan/add-on prices are removed from the app screen, the nudge card
+opens the information screen instead of a dead "Coming soon" alert, and
+promotion overflow is explanatory copy rather than a priced purchase button.
 
 **S-2 · `expo/app/(tabs)/post.tsx:327` states the wrong free-tier cap.**
 "Free Markets can have up to 10 active listings." The real cap is **5**
