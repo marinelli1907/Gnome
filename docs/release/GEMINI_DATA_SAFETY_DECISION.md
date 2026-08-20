@@ -1,7 +1,7 @@
 # Gemini Data Safety release decision
 
-Status: **OWNER ACTION REQUIRED**  
-Audit date: 2026-08-20  
+Status: **OWNER ACTION REQUIRED**
+Audit date: 2026-08-20
 Source audited: `codex/gnome-launch-finish-20260819`
 
 This is the short Play Data Safety decision record for §4.3b. It is based on

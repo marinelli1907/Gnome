@@ -59,10 +59,14 @@ const CORS = {
 const MAX_TURNS = 12;          // last N chat turns forwarded
 const MAX_TURN_CHARS = 2000;   // per-message cap
 const MAX_LOCATION_CHARS = 120;
-const COORD_RE = /\b-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}\b/;
-const COORD_GLOBAL_RE = /\b-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}\b/g;
+const DECIMAL_COORD = String.raw`[+-]?\d{1,3}\.\d{4,}`;
+const COORD_PATTERN = String.raw`(?:\b${DECIMAL_COORD}\s*,\s*${DECIMAL_COORD}\b|\b(?:lat(?:itude)?\s*[:=]?\s*)${DECIMAL_COORD}\s+(?:lon(?:gitude)?|lng)\s*[:=]?\s*${DECIMAL_COORD}\b)`;
+const COORD_RE = new RegExp(COORD_PATTERN, 'i');
+const COORD_GLOBAL_RE = new RegExp(COORD_PATTERN, 'gi');
 const STREET_SUFFIX_RE = /\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|drive|dr\.?|lane|ln\.?|court|ct\.?|circle|cir\.?|boulevard|blvd\.?|way|place|pl\.?|terrace|ter\.?|trail|trl\.?|parkway|pkwy\.?|highway|hwy\.?)\b/i;
 const STREET_ADDRESS_RE = /\b\d{1,6}\s+[A-Za-z0-9'.-]+(?:\s+[A-Za-z0-9'.-]+){0,5}\s+(?:street|st\.?|avenue|ave\.?|road|rd\.?|drive|dr\.?|lane|ln\.?|court|ct\.?|circle|cir\.?|boulevard|blvd\.?|way|place|pl\.?|terrace|ter\.?|trail|trl\.?|parkway|pkwy\.?|highway|hwy\.?)\b/gi;
+const STREET_FRAGMENT_RE = /\b\d{1,6}\s+(?:[NSEW]\s+|North\s+|South\s+|East\s+|West\s+)?[A-Za-z0-9'.-]+(?:\s+[A-Za-z0-9'.-]+){0,4}(?=\s*,)/gi;
+const LEADING_STREET_NUMBER_RE = /^\d{1,6}\s+(?:[NSEW]\s+|North\s+|South\s+|East\s+|West\s+)?[A-Za-z0-9'.-]+(?:\s+[A-Za-z0-9'.-]+){0,4}\b/i;
 const UNIT_ONLY_RE = /^(?:apt|apartment|unit|suite|ste|#|floor|fl)\b/i;
 const ZIP_RE = /\b\d{5}(?:-\d{4})?\b/g;
 
@@ -75,7 +79,7 @@ const tidyLocation = (s: string) =>
     .trim();
 
 const looksLikeStreetAddress = (s: string) =>
-  /\d/.test(s) && STREET_SUFFIX_RE.test(s);
+  /\d/.test(s) && (STREET_SUFFIX_RE.test(s) || LEADING_STREET_NUMBER_RE.test(s));
 
 /**
  * Garden Planner needs climate context, not a doorstep. Keep city/state-style
@@ -97,7 +101,8 @@ export function coarsenGardenLocation(input: unknown): string | null {
 export function redactGardenPlannerText(input: string): string {
   return input
     .replace(COORD_GLOBAL_RE, '[location redacted]')
-    .replace(STREET_ADDRESS_RE, '[address redacted]');
+    .replace(STREET_ADDRESS_RE, '[address redacted]')
+    .replace(STREET_FRAGMENT_RE, '[address redacted]');
 }
 
 const SYSTEM_BASE = `You are Gnome's garden planner — a warm, practical gardening expert inside Gnome, a hyperlocal farmers-market app where neighbors share, trade, buy, and sell homegrown goods.

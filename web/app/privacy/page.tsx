@@ -172,9 +172,9 @@ export default function PrivacyPage() {
         many active listings you have, your town, county and state, and, if you
         have a seed order, its status, tracking number, and the varieties in it.
         So the assistant can tell you what neighbors are looking for, it is also
-        given the titles of recent public &ldquo;wanted&rdquo; posts in your state
-        and a count of listings by category — public listing text, never
-        anyone&rsquo;s name or contact details.
+        given a count of recent public &ldquo;wanted&rdquo; posts by category in your
+        state — aggregate demand, never anyone&rsquo;s post text, name, or contact
+        details.
       </p>
       <p>
         <strong>What is not sent:</strong> your sign-in email, your password,
@@ -350,7 +350,7 @@ export default function PrivacyPage() {
 
       <h2>Deleting your account</h2>
       <p>
-        In the mobile app, go to <strong>Settings → Delete my account</strong>.
+        In the mobile app, go to <strong>Profile → Settings → Delete my account</strong>.
         On the web, use <a href="/delete-account">gnomefarmersmarket.com/delete-account</a> —
         sign in there and confirm. Either way it is permanent, it takes two
         confirmations, and it removes your listings and conversations for

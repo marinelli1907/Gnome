@@ -254,7 +254,7 @@ Not mine to fix, and it will be visible in screenshot #6 and #4:
 | Category | **Shopping** | Gnome is a marketplace first. "Food & Drink" is the plausible alternative but is dominated by recipe and restaurant apps and would bury a peer-to-peer marketplace |
 | Tags | Up to **5**, from Play's fixed list in Store settings → App category → Manage tags | Play's tag vocabulary is a closed list that changes; pick the closest available matches to **marketplace / classifieds / grocery / local / food** and confirm the exact strings in the console. Do not invent tag names |
 | Contains ads | **No** | No ad, analytics or attribution SDK in `expo/package.json` |
-| In-app purchases | **No** — resolved by D1 | Was "blocked on B4". See §2.1 for the two leaks that must close first |
+| In-app purchases | **No** — resolved by D1 | Android exposes no native digital purchase UI, Android-opened first-party web pages disable digital checkout, and Android-facing AI copy suppresses overage prices |
 | Free or paid | **Free** | |
 | Countries | **United States only** | |
 | Email | **daniel@boonesystems.com** | B3 closed; MX verified deliverable |
@@ -269,40 +269,30 @@ determinate rather than conditional:
 
 > **"Does the app allow users to purchase digital goods?"** — §6 answered *"No
 > if B4 is gated off; otherwise Yes."* **D1 gates it off.** `canBuyDigitalInApp`
-> is `false` on Android at every purchase call site, so the Android build
-> presents no digital purchase. The answer is **No**, and Store settings →
-> In-app purchases is **No**.
+> is `false` on Android at every purchase call site; Android-opened first-party
+> web pages carry an app-platform marker that disables digital checkout; and
+> Android-facing AI copy suppresses overage prices. The answer is **No**, and
+> Store settings → In-app purchases is **No**.
 
 Expected outcome unchanged: ESRB **Teen** / PEGI **12** / USK **12**, with
 "Users Interact" and "Shares Location" descriptors — driven by messaging and
 approximate location sharing, not by depicted content.
 
-### 2.1 Two leaks that must close before "In-app purchases: No" is truthful
+### 2.1 Digital-goods posture checks
 
-D1 is correctly implemented at the three *checkout* call sites. It is not
-implemented in two *copy* surfaces, and Play review reads strings:
+D1 is implemented at the checkout call sites and the copy surfaces that can
+otherwise confuse Play review:
 
-| Where | What it says on Android today | Why it matters |
+| Where | Android behavior | Why it matters |
 |---|---|---|
-| `expo/app/market/bundles.tsx:62` | On `PUBLISH_ALLOWANCE_EXHAUSTED`: *"…grab a $0.99 extra publish **from My Market on the web**, or upgrade your plan."* | This is an explicit instruction to buy a digital item outside the app. `digitalPurchase.ts`'s own header says a link-out "would be the same violation wearing a coat". The file imports neither `Platform` nor `canBuyDigitalInApp` |
-| `expo/app/upgrade.tsx:27,39,40` | Renders *"renewals $0.99 each"*, *"Extra Sell listings and renewals: $0.99 each."* on all platforms | Prices a digital item on a screen the Android user can open. Less severe than the link-out — it states a price without offering a route — but it contradicts a "No" declaration |
+| Native overage buttons | `canBuyDigitalInApp` is false, so Android branches to upgrade/plan copy instead of Stripe checkout | No native digital purchase UI |
+| Bundles / upgrade / allowance copy | Android paths suppress `$0.99` extra-purchase prices | Play review reads strings, not just button wiring |
+| AI assistant action copy | Android calls include platform context; paid overage summaries say checkout is unavailable on this device instead of naming `$0.99` | The assistant cannot surface a hidden digital-purchase prompt |
+| First-party web opened from Android | App-opened `/terms`, `/privacy`, and `/trust` URLs carry `app_platform=android`; the site stores that marker for the tab and disables pricing checkout CTAs | A legal/support link from the Android app does not become a link-out to Stripe |
 
-Neither file is mine. Both are small, contained changes: route the bundles
-message through `OVERAGE_UNAVAILABLE_BODY`, and suppress the `$0.99` fragments
-when `!canBuyDigitalInApp`. **Until they land, answer the IARC and Store-settings
-questions as if the purchase exists, or fix them first — do not declare "No"
-over copy that says otherwise.**
-
-Separately, and outside this file's scope but noted because it bears on the same
-declaration: `RELEASE_BOARD.md` records that the app opens
-`gnomefarmersmarket.com/terms`, `/privacy` and `/trust` from
-`app/settings.tsx` and `app/sign-in.tsx`, and every one of those live pages
-carries a nav link to `/pricing`. I re-checked `/pricing` live today: three
-tiers, monthly only, no annual, no "priority support", no "advanced
-analytics" — D4 and D5 hold — **but it still carries "Upgrade to Pro" /
-"Upgrade to Farm" buttons and the text "Extra Sell listing: $0.99"**. That is
-an owner decision (release board §8 item 2), not a listing decision, and it is
-recorded here only so the "No" answer is made with full knowledge.
+Historical note: the app can still be used on the public web, and `/pricing`
+still describes the plans. The Android store declaration is about the Android
+app surface and app-opened web path, which now present no digital checkout.
 
 ---
 

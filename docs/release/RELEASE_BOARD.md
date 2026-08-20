@@ -103,7 +103,7 @@ Android identity is settled and verified in the merged manifest of a real build:
 | Version | `1.1.0` |
 | versionCode | remote + autoIncrement (last: vc4) |
 | Signing | EAS-managed upload keystore; Play App Signing at upload |
-| Maps key | `android.config.googleMaps.apiKey` — restricted to the package + upload SHA-1 |
+| Maps key | `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` injects `android.config.googleMaps.apiKey` at build time; key is restricted to the package + upload SHA-1 |
 | Firebase | `android.googleServicesFile: ./google-services.json`, project `gnome-farmers-market-70414` |
 | Blocked perms | `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` |
 

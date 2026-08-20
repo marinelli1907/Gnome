@@ -19,11 +19,11 @@
 import { Alert, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { parseServerError, type ServerError } from './taxonomy';
-import { WEB_BASE } from './links';
+import { nativeWebUrl } from './links';
 import type { Listing } from '@/types';
 
 /** Marketplace rules — the public policy page a blocked listing points at. */
-const RULES_URL = `${WEB_BASE}/trust`;
+const RULES_URL = nativeWebUrl('/trust');
 const APPEAL_MAILTO = 'mailto:daniel@boonesystems.com?subject=Listing%20review';
 
 /** Wording for the held state, single-sourced so the badge and the copy agree. */

@@ -6,6 +6,7 @@ import { GnomeMark } from './components/art';
 import AuthNavLink from './components/AuthNavLink';
 import GnomeAssistant from './components/GnomeAssistant';
 import MobileNav from './components/MobileNav';
+import NativeAppVisitMarker from './components/NativeAppVisitMarker';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 // Display face: a soft, seed-catalog serif for headlines only.
@@ -63,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
         />
+        <NativeAppVisitMarker />
         <header className="site-header">
           <div className="container inner">
             <Link href="/" className="brand">

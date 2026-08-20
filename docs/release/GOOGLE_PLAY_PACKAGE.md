@@ -158,9 +158,10 @@ the current physical-device proof gate.
 `react-native-maps@1.20.1` is a dependency and `expo/components/MapListings.native.tsx`
 renders `<MapView>` with markers for the Map tab.
 
-The original audit found no Android Maps key. That is no longer the current
-tree: `expo/app.json` now has `android.config.googleMaps.apiKey`. A compact
-config probe on 2026-08-20 also confirmed `android.googleServicesFile`,
+The original audit found no Android Maps key. That is no longer the intended
+release config: `expo/app.config.js` injects `android.config.googleMaps.apiKey`
+from `EXPO_ANDROID_GOOGLE_MAPS_API_KEY`, keeping key material out of source. A
+compact config probe on 2026-08-20 also confirmed `android.googleServicesFile`,
 `android.blockedPermissions`, and the 15 configured iOS privacy-manifest data
 types without printing any key material.
 
@@ -189,8 +190,8 @@ Signing adds the production SHA-1. See **B1**.
 > **Key configured and behaviourally verified.** The owner created a restricted
 > Android key in the `Gnome Farmers Market` Google Cloud project (Maps SDK for
 > Android enabled, restricted to package `app.boonesystems.gnome` + the EAS
-> upload key's SHA-1), wired into `app.json` as
-> `android.config.googleMaps.apiKey` (commit `be8bb2e`). Verified on an
+> upload key's SHA-1), wired into release config through
+> `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` (commit `be8bb2e`). Verified on an
 > Android 16 emulator with build vc3: Google tiles render with attribution,
 > four market pins plot correctly, pan/zoom works, and the app survives a full
 > Browse→Map→My Gnome cycle on one PID with zero `API key not found` or
@@ -589,7 +590,7 @@ Play form. B3 is resolved in the repo and live on the public website.
 | — Can users communicate with strangers? | **Yes** | Any user can request another user's listing, which opens a thread on approval |
 | — Is user interaction moderated? | **Yes** | Report on every listing, Market, and chat (`useReport` → `reports`, `0013_trust_layer.sql`); block/unblock (`useBlockUser`, managed in Settings); admin moderation (`0024_admin_moderation.sql`, `web/app/admin/`) |
 | **Does the app share the user's current location with other users?** | **Yes — approximate only** | Listings show an approximate area and a distance. Exact coordinates are deliberately withheld: `listings.lat/lng` is revoked at the DB level, photo EXIF including GPS is stripped before upload (`expo/lib/images.ts`), and exact pickup addresses are released only to an approved counterparty |
-| **Does the app allow users to purchase digital goods?** | **No if B4 is gated off; otherwise Yes** | The $0.99 publish/renewal overage (`expo/lib/billing.ts`) is a digital-service purchase via Stripe — see B4. Previously: no Play Billing integration; nothing purchasable (§8 in the App Store package) |
+| **Does the app allow users to purchase digital goods?** | **No** | D1 gates Android native digital checkout off, Android-opened first-party web pages disable digital checkout, and Android-facing AI copy suppresses overage prices |
 | Does the app provide unrestricted internet access (a browser)? | **No** | Only specific first-party and payment-app URLs via `Linking.openURL`, plus `expo-web-browser` for the OAuth session |
 | Is the app "Designed for Families" / targeted at children? | **No** | The privacy policy states Gnome is not for children under 13 |
 
@@ -735,8 +736,8 @@ portrait-locked via `android:screenOrientation="portrait"`).
 **Rules:**
 - Purpose-made screenshot account. **No real names, addresses, phone numbers, or
   avatars** in any frame.
-- **Do not capture the Map tab until B1 is fixed and verified** — right now it
-  will photograph as a blank tile.
+- Capture the Map tab only from the rebuilt upload-candidate APK/AAB after the
+  required Map regression confirms tiles, pins, attribution, and clean logs.
 - Skip Upgrade and Boost; they are not part of the Play screenshot story.
 - The Seed Drop card may appear in frame 1 — it now carries a "Coming soon" pill
   and opens a non-transactional modal (F5). Do not screenshot that modal as a

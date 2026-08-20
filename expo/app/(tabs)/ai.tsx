@@ -135,7 +135,7 @@ export default function AiTab() {
     setBusy(true);
     try {
       const { data, error: e } = await supabase.functions.invoke('gnome-assistant', {
-        body: { action: 'chat', messages: next },
+        body: { action: 'chat', messages: next, platform: Platform.OS },
       });
       if (e) throw e;
       if (data?.error) throw new Error(data.message ?? data.error);

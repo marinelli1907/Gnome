@@ -44,10 +44,19 @@ test('comma-separated street address is coarsened to city and state', () => {
     coarsenGardenLocation('123 Main Street Apt 2, Cleveland Heights, OH 44118'),
     'Cleveland Heights, OH',
   );
+  assert.equal(
+    coarsenGardenLocation('123 Main, Cleveland Heights, OH'),
+    'Cleveland Heights, OH',
+  );
+  assert.equal(
+    coarsenGardenLocation('123 W 5th, Cleveland Heights, OH'),
+    'Cleveland Heights, OH',
+  );
 });
 
 test('uncoarsenable street address is rejected', () => {
   assert.equal(coarsenGardenLocation('123 Main St Cleveland Heights OH 44118'), null);
+  assert.equal(coarsenGardenLocation('123 W 5th Cleveland Heights OH 44118'), null);
 });
 
 test('exact coordinates are rejected as a planner location', () => {
@@ -61,9 +70,10 @@ test('blank or non-string location is rejected', () => {
 
 test('forwarded chat turns redact street addresses and coordinates', () => {
   const out = redactGardenPlannerText(
-    'The bed behind 123 Main Street gets afternoon sun at 41.51234, -81.61234.',
+    'The bed behind 123 Main Street gets afternoon sun at 41.51234, -81.61234. GPS is lat 41.51234 lon -81.61234. My other bed is 123 W 5th, Cleveland Heights.',
   );
   assert.ok(!out.includes('123 Main'), out);
+  assert.ok(!out.includes('123 W 5th'), out);
   assert.ok(!out.includes('41.51234'), out);
   assert.match(out, /\[address redacted\]/);
   assert.match(out, /\[location redacted\]/);

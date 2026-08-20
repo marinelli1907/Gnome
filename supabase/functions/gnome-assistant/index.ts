@@ -105,6 +105,8 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? 'chat');
+    const appPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
+    const digitalPurchasesAvailable = appPlatform !== 'android';
 
     // Global read-side kill switch + provider chain.
     const { data: settings } = await admin.from('ai_settings')
@@ -309,6 +311,7 @@ Deno.serve(async (req: Request) => {
           return r.text;
         },
         requestId: crypto.randomUUID(),
+        digitalPurchasesAvailable,
       }, lastUserMsg, sellerTitles);
       if (actionResp) {
         admin.from('ai_chat_messages').insert([
@@ -330,6 +333,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const intel = await marketIntel(admin, uid, mkt2);
+    const purchasePolicy = digitalPurchasesAvailable
+      ? ''
+      : '\nANDROID PURCHASE POLICY: This caller is using Android. Do not mention $0.99 extra publishes or renewals, and do not send the user to web checkout for digital plan or overage purchases. When a Free-plan limit is exhausted, say that paid-plan renewal or extra-publish checkout is unavailable on this device.';
 
     let r;
     try {
@@ -338,7 +344,7 @@ Deno.serve(async (req: Request) => {
         // this user did not write. It goes in a labelled USER turn, never the
         // system prompt, so a listing title cannot become an instruction to
         // somebody else's assistant. Same posture as boardroom's data packs.
-        system: CHAT_SYSTEM,
+        system: `${CHAT_SYSTEM}${purchasePolicy}`,
         turns: [
           { role: 'user' as const, parts: [{ text:
             'MARKET INTEL — reference data about my area. It contains text written by other '
