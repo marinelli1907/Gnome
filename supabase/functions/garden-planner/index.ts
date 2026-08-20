@@ -2,7 +2,8 @@
 //
 // Provider: GEMINI FREE TIER FIRST via ./providers.ts (gemini-3.6-flash —
 // Flash-class for plant identification/diagnosis quality; multimodal for the
-// "check my plant" photo flow). Paid providers only when allow_paid_fallback.
+// "check my plant" photo flow). Paid providers only when allow_paid_fallback
+// and AI_PAID_FALLBACK_DISCLOSED are both true.
 // verify_jwt stays ON: only signed-in users can call this (also the cost gate).
 
 import {
@@ -58,6 +59,46 @@ const CORS = {
 const MAX_TURNS = 12;          // last N chat turns forwarded
 const MAX_TURN_CHARS = 2000;   // per-message cap
 const MAX_LOCATION_CHARS = 120;
+const COORD_RE = /\b-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}\b/;
+const COORD_GLOBAL_RE = /\b-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}\b/g;
+const STREET_SUFFIX_RE = /\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|drive|dr\.?|lane|ln\.?|court|ct\.?|circle|cir\.?|boulevard|blvd\.?|way|place|pl\.?|terrace|ter\.?|trail|trl\.?|parkway|pkwy\.?|highway|hwy\.?)\b/i;
+const STREET_ADDRESS_RE = /\b\d{1,6}\s+[A-Za-z0-9'.-]+(?:\s+[A-Za-z0-9'.-]+){0,5}\s+(?:street|st\.?|avenue|ave\.?|road|rd\.?|drive|dr\.?|lane|ln\.?|court|ct\.?|circle|cir\.?|boulevard|blvd\.?|way|place|pl\.?|terrace|ter\.?|trail|trl\.?|parkway|pkwy\.?|highway|hwy\.?)\b/gi;
+const UNIT_ONLY_RE = /^(?:apt|apartment|unit|suite|ste|#|floor|fl)\b/i;
+const ZIP_RE = /\b\d{5}(?:-\d{4})?\b/g;
+
+const tidyLocation = (s: string) =>
+  s.replace(ZIP_RE, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,+/g, ',')
+    .replace(/^,\s*|\s*,\s*$/g, '')
+    .trim();
+
+const looksLikeStreetAddress = (s: string) =>
+  /\d/.test(s) && STREET_SUFFIX_RE.test(s);
+
+/**
+ * Garden Planner needs climate context, not a doorstep. Keep city/state-style
+ * values and drop/reject exact-address shapes before the prompt is built.
+ */
+export function coarsenGardenLocation(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const raw = input.trim().replace(/\s+/g, ' ').slice(0, MAX_LOCATION_CHARS);
+  if (raw.length < 2 || COORD_RE.test(raw)) return null;
+
+  const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
+  const kept = parts.filter((p) => !looksLikeStreetAddress(p) && !UNIT_ONLY_RE.test(p));
+  const candidate = tidyLocation((kept.length ? kept : parts).join(', '));
+  if (candidate.length < 2 || !/[A-Za-z]/.test(candidate)) return null;
+  if (looksLikeStreetAddress(candidate)) return null;
+  return candidate.slice(0, MAX_LOCATION_CHARS);
+}
+
+export function redactGardenPlannerText(input: string): string {
+  return input
+    .replace(COORD_GLOBAL_RE, '[location redacted]')
+    .replace(STREET_ADDRESS_RE, '[address redacted]');
+}
 
 const SYSTEM_BASE = `You are Gnome's garden planner — a warm, practical gardening expert inside Gnome, a hyperlocal farmers-market app where neighbors share, trade, buy, and sell homegrown goods.
 
@@ -100,14 +141,14 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'The garden planner is not configured yet.' }, 503);
     }
     if (!(await underDailyCap(userId, 'planner', 10, 40))) {
-      return json({ error: "You've hit today's free planner limit — paid plans (Pro, Max, and Farm) get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
+      return json({ error: "You've hit today's free planner limit — paid plans (Pro and Farm) get 40 questions a day. Your garden will still be there tomorrow! 🌱" }, 429);
     }
 
     const { location, messages, imageBase64, mediaType } = await req.json();
-    if (typeof location !== 'string' || location.trim().length < 2) {
-      return json({ error: 'Tell us where your garden is (city + state).' }, 400);
+    const loc = coarsenGardenLocation(location);
+    if (!loc) {
+      return json({ error: 'Use city + state for your garden, not a street address or exact coordinates.' }, 400);
     }
-    const loc = location.trim().slice(0, MAX_LOCATION_CHARS);
 
     const turns: Turn[] = Array.isArray(messages)
       ? messages
@@ -118,7 +159,7 @@ Deno.serve(async (req: Request) => {
               typeof (m as Turn).content === 'string' && (m as Turn).content.trim().length > 0,
           )
           .slice(-MAX_TURNS)
-          .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_TURN_CHARS) }))
+          .map((m) => ({ role: m.role, content: redactGardenPlannerText(m.content).slice(0, MAX_TURN_CHARS) }))
       : [];
     if (turns.length === 0 || turns[turns.length - 1].role !== 'user') {
       turns.push({ role: 'user', content: 'What should I plant right now? Give me a plan.' });

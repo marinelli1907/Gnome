@@ -4,7 +4,8 @@
 // Entitlement is resolved SERVER-SIDE from market_effective_plan (paid or
 // complimentary Grower/Farm/Sponsor — never "a Stripe sub exists").
 // Provider-neutral via ./providers.ts: GEMINI FREE TIER FIRST (multimodal
-// gemini-3.6-flash); OpenAI/Anthropic only when allow_paid_fallback=true.
+// gemini-3.6-flash); OpenAI/Anthropic only when allow_paid_fallback=true and
+// AI_PAID_FALLBACK_DISCLOSED=true.
 // The model returns STRUCTURED JSON only; every field is validated here and
 // taxonomy candidates are matched against the real tree — the AI cannot
 // invent nodes. Every call is logged to ai_usage_log; the per-user daily cap
@@ -65,7 +66,7 @@ Deno.serve(async (req: Request) => {
     const { data: ep } = await admin.rpc('market_effective_plan', { p_market: mkt.id });
     const eff = Array.isArray(ep) ? ep[0] : ep;
     if (!eff || eff.plan === 'free') {
-      return json({ error: 'PLAN_REQUIRED', message: 'The AI Listing Assistant is included with the Pro, Max, and Farm plans.' }, 403);
+      return json({ error: 'PLAN_REQUIRED', message: 'The AI Listing Assistant is included with the Pro and Farm plans.' }, 403);
     }
     effPlan = eff.plan;
 

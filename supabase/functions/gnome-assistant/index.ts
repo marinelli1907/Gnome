@@ -49,7 +49,7 @@ You help with four things:
 3. WHAT TO SELL AND WHY — give a clear opinion, with the reason. Lean on demand signals (open Wanted posts), supply gaps (categories few neighbors list), the season, and how much of their plan's Sell publish allowance is left. Say the reasoning out loud so they can judge it.
 4. USING THE APP — how to post, promote, set pickup, handle requests, delivery, Seed Drop, plans.
 
-PLANS — the only plan facts; never invent others, and prefer the user's own numbers in MARKET INTEL when present: Free $0 — 3 Sell publishes a month, no included renewals, 1 Wanted intro a day, QR tools locked. Pro $9.99/mo — 20 Sell publishes a period, 3 included renewals, 5 Wanted intros a day, premium QR tools. Max $29.99/mo — 40 Sell publishes a period, 10 included renewals, 15 Wanted intros a day, premium QR tools. Farm $99/mo — unlimited publishes, renewals, and Wanted intros (subject to anti-abuse controls), premium QR tools. Every Sell listing runs 7 days, then expires; renewing past the included renewals costs $0.99 (on Free, every renewal is $0.99), and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do; offering a plot needs a paid plan. Every Market has a free public link; the premium QR tools are the paid part.
+PLANS — the only plan facts; never invent others, and prefer the user's own numbers in MARKET INTEL when present: Free $0 — 3 Sell publishes a month, no included renewals, 1 Wanted intro a day, QR tools locked. Pro $9.99/mo — unlimited Sell listings, unlimited renewals, 5 Wanted intros a day, premium QR tools. Farm $29.99/mo — unlimited Sell listings, renewals, and Wanted intros (subject to anti-abuse controls), premium QR tools. Every Sell listing runs 7 days, then expires; on Free, every renewal is $0.99 and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do; offering a plot needs a paid plan. Every Market has a free public link; the premium QR tools are the paid part.
 
 STYLE: warm, plain text, no markdown, no asterisks or headers. Conversational. Usually 2–6 sentences; use a short plain list only when genuinely listing things. Sparing dry humor. Never childish, never salesy.
 
@@ -135,7 +135,7 @@ Deno.serve(async (req: Request) => {
       const { data: ep } = await admin.rpc('market_effective_plan', { p_market: mkt.id });
       const eff = Array.isArray(ep) ? ep[0] : ep;
       if (!eff || eff.plan === 'free') {
-        return json(403, { error: 'PLAN_REQUIRED', message: 'Drafting listings from photos is included with the Pro, Max, and Farm plans.' });
+        return json(403, { error: 'PLAN_REQUIRED', message: 'Drafting listings from photos is included with the Pro and Farm plans.' });
       }
       const chain = chainFor(true);
       if (!chain.length) return json(503, { error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet.' });
@@ -406,9 +406,10 @@ async function marketIntel(
       const plan = String(eff?.plan ?? mkt.plan ?? 'free');
       // Canonical allowance columns (migration 0104). plan_limits.display_name is
       // the customer-facing name — the enum is internal and maps
-      // counter-intuitively (farm → "Max", sponsor → "Farm"), so the raw enum
-      // must never reach the prompt. In an environment where 0104 has not been
-      // applied yet this select errors and `lim` is null; we then say the
+      // counter-intuitively before 0126; now farm is customer-facing Farm and
+      // sponsor is the retired Legacy Farm comp rung, so the raw enum must never
+      // reach the prompt. In an environment where 0104 has not been applied yet
+      // this select errors and `lim` is null; we then say the
       // details are unavailable — we never fall back to the retired
       // max_active_listings cap model.
       const { data: limRow } = await admin.from('plan_limits')
@@ -422,7 +423,7 @@ async function marketIntel(
         qr_tools: boolean | null;
       } | null;
       const display = lim?.display_name
-        ?? ({ free: 'Free', grower: 'Pro', farm: 'Max', sponsor: 'Farm' } as Record<string, string>)[plan]
+        ?? ({ free: 'Free', grower: 'Pro', farm: 'Farm', sponsor: 'Legacy Farm' } as Record<string, string>)[plan]
         ?? 'Free';
       if (lim) {
         const n = (v: unknown, unit: string) =>

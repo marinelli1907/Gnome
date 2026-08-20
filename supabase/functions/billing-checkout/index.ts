@@ -289,8 +289,8 @@ Deno.serve(async (req: Request) => {
       // is safe rather than a compromise: allow_promotion_codes DEFAULTS to
       // false, so omitting it still leaves the customer unable to type a code
       // into Stripe's own UI — which they must not be able to do, because
-      // FOUNDING3 is unrestricted at the Stripe layer and typing it against Max
-      // or Farm would hand those out free.
+      // FOUNDING3 is unrestricted at the Stripe layer and typing it against
+      // Farm would hand that plan out free.
       ...(discounts.length ? { discounts } : { allow_promotion_codes: false }),
       // A $0.99 payment must expire rather than linger: an abandoned session
       // that could be completed days later would authorize a publish long after
