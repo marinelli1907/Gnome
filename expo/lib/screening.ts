@@ -19,11 +19,11 @@
 import { Alert, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { parseServerError, type ServerError } from './taxonomy';
-import { WEB_BASE } from './links';
+import { nativeWebUrl } from './links';
 import type { Listing } from '@/types';
 
 /** Marketplace rules — the public policy page a blocked listing points at. */
-const RULES_URL = `${WEB_BASE}/trust`;
+const RULES_URL = nativeWebUrl('/trust');
 const APPEAL_MAILTO = 'mailto:daniel@boonesystems.com?subject=Listing%20review';
 
 /** Wording for the held state, single-sourced so the badge and the copy agree. */
@@ -51,7 +51,7 @@ export function alertUnderReview(
     'This listing needs a quick compliance review in your area. It has been saved but is not public yet.';
   Alert.alert(
     UNDER_REVIEW_LABEL,
-    `${reason}\n\nSomeone at Gnome reads it by hand and you’ll be notified either way. Nothing was lost: it sits in My Gnome under “${UNDER_REVIEW_LABEL}” until then.`,
+    `${reason}\n\nSomeone at Gnome reads it by hand and you’ll be notified either way. Nothing was lost: it sits in Market under “${UNDER_REVIEW_LABEL}” until then.`,
     [
       {
         text: 'Seller verification',

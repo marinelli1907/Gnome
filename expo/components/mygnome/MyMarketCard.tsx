@@ -8,6 +8,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useBoostCreditsRemaining, useMyListingAllowance, useMyListings, useMyMarket, useMyWantedAllowance, usePlanLimits } from '@/lib/db';
 import { exhaustedHint, listingsMeter, renewalsMeter, wantedMeter, planDisplay, resetLabel, type Meter } from '@/lib/allowance';
+import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import type { MarketPlan } from '@/types';
 
 // One LISTINGS or RENEWALS block. Lines come straight from the shared formatter, which renders
@@ -72,8 +73,14 @@ export default function MyMarketCard({ uid }: { uid: string }) {
         )}
         {row && (
           <View style={styles.meters}>
-            <MeterBlock meter={listingsMeter(row)} hint={exhaustedHint(row, 'listings')} />
-            <MeterBlock meter={renewalsMeter(row)} hint={exhaustedHint(row, 'renewals')} />
+            <MeterBlock
+              meter={listingsMeter(row)}
+              hint={exhaustedHint(row, 'listings', { canBuyExtras: canBuyDigitalInApp })}
+            />
+            <MeterBlock
+              meter={renewalsMeter(row, { canBuyExtras: canBuyDigitalInApp })}
+              hint={exhaustedHint(row, 'renewals', { canBuyExtras: canBuyDigitalInApp })}
+            />
             {wantedAllow.data ? (
               <MeterBlock
                 meter={wantedMeter(wantedAllow.data)}

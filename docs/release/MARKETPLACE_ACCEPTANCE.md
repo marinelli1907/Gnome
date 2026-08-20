@@ -40,15 +40,18 @@ distinction matters for the Seed Drop findings below:
 ?? supabase/migrations/0091_founding_members.sql
 ```
 
-None of that is committed, and **none of it is deployed**.
+At the time this audit opened, none of that was committed or deployed. The
+production Seed Drop pages have since been re-probed and are now Coming Soon
+only.
 
 ---
 
 # BLOCKERS
 
-## BLOCKER 1 — production is selling Seed Drop right now, with prices
+## BLOCKER 1 — production sold Seed Drop with prices during the audit
 
-**Status: PROBED. This is live on the public internet at the time of writing.**
+**Status: CLOSED.** This was live on the public internet when the audit was
+first written; direct re-probes on 2026-08-20 confirmed it is no longer live.
 
 `https://gnomefarmersmarket.com/seeds` returned HTTP 200 and rendered a
 purchase page. Extracted visible text (verbatim):
@@ -65,11 +68,11 @@ purchase page. Extracted visible text (verbatim):
 > anytime. Build your garden profile → … **Grower + Seed Drop (~$199/yr)** and
 > **Farm + Seed Drop (~$429/yr)** bundles are coming
 
-The deployed page `<title>` is
+At the time of the original probe, the deployed page `<title>` was
 `The Gnome Seed Drop — seeds picked for your zone, shipped to your door | Gnome`.
 The repository's `web/app/seeds/page.tsx:14` sets
 `title: 'The Gnome Seed Drop — coming soon'`. **The titles do not match, which
-is conclusive proof the production web deploy is stale relative to the repo.**
+was conclusive proof the production web deploy was stale relative to the repo.**
 
 This violates the launch constraint directly ("Seed Drop must ship as Coming
 Soon only. No price, no date, no purchase"), and it advertises a subscription
@@ -82,15 +85,11 @@ for a product that has:
   ends at `profiles_public_projection` / 0087–0088),
 - no supplier, no packet stock, and no shipping operation.
 
-The fix is already written in the working tree by a sibling lane. **The
-remaining blocker is entirely a deployment action, not a code action.**
-
-**Required before launch:** commit the in-flight `web/app/seeds/*` and
-`web/app/pricing/page.tsx` changes and run `web/deploy/deploy.sh` against the
-Hostinger VPS. Then re-probe: `/seeds` must contain no `$` figure and no
-"Build my box"; `/pricing` must contain no "$24.99". Until that deploy lands,
-a customer can read a price and a Stripe promise on a product Gnome cannot
-ship.
+**Current state, re-probed 2026-08-20:** this blocker is closed in production.
+`https://www.gnomefarmersmarket.com/seeds` now returns the Coming Soon page with
+no purchase CTA, no `Build my box` copy, and no visible price. `/pricing` no
+longer advertises the old Seed Drop bundles or `$24.99` subscription copy.
+Search snippets can still show stale cached text; trust the direct fetch.
 
 **Related, same root cause:** at HEAD, the mobile Seed Drop banner
 (`expo/app/(tabs)/index.tsx`, pre-edit) called
@@ -427,10 +426,10 @@ Platform column: **M** = Expo mobile app, **W** = web.
 | 79 | Deep link | PARTIAL | Custom scheme only — `expo/app.json:5` `gnome://`; cold + warm handled at `expo/providers/AuthProvider.tsx:83-98`; push routing `expo/lib/useNotificationRouting.ts:24-50`. **No Universal Links** (backlog item 9). | CODE |
 | 80 | Push notifications | **CANNOT VERIFY WITHOUT A DEVICE** | `expo/lib/notifications.ts:20-45` registration; `notify` edge fn v13 ACTIVE; routing `expo/lib/useNotificationRouting.ts` | CODE + PROBED (fn deployed) |
 | 81 | Terms reachable | IMPLEMENTED | `/terms` → **200**, 29828 bytes. Linked from `expo/app/sign-in.tsx:371` and `expo/app/settings.tsx:173`. | **PROBED** |
-| 82 | Privacy reachable | IMPLEMENTED | `/privacy` → **200**, 27998 bytes. Covers deletion rights and gives `hello@gnomefarmersmarket.com`. Linked from `expo/app/sign-in.tsx:375`, `expo/app/settings.tsx:181`. | **PROBED** |
+| 82 | Privacy reachable | IMPLEMENTED | `/privacy` → **200**, 27998 bytes. Covers deletion rights and gives `daniel@boonesystems.com`. Linked from `expo/app/sign-in.tsx:375`, `expo/app/settings.tsx:181`. | **PROBED** |
 | 83 | Trust & Safety reachable | IMPLEMENTED | `/trust` → **200**, 36055 bytes. Linked from `expo/app/settings.tsx:189`. | **PROBED** |
-| 84 | Seed Drop shows "Coming Soon" only | **FAILS IN PRODUCTION** | See BLOCKER 1. Fix written but undeployed. Mobile fix (`expo/components/SeedDropComingSoon.tsx`) uncommitted. | **PROBED** |
-| 85 | No purchase route to Seed Drop | **FAILS IN PRODUCTION** | Live `/seeds` has "Build my box" CTAs and a Stripe subscription promise. See BLOCKER 1. | **PROBED** |
+| 84 | Seed Drop shows "Coming Soon" only | IMPLEMENTED W | Live `/seeds` re-probed 2026-08-20: Coming Soon page, no price, no checkout CTA. | **PROBED** |
+| 85 | No purchase route to Seed Drop | IMPLEMENTED W | Live `/seeds` re-probed 2026-08-20: no `Build my box`, no Stripe subscription promise, no purchase path. | **PROBED** |
 
 ---
 
@@ -579,7 +578,7 @@ the account at step 22, which cleans up everything it made.
 | 44 | `/my` → drag to reorder your listings; star up to 4 as featured; try starring a 5th. | Order persists on the public page; the 5th star is refused with "Up to 4 featured listings". |
 | 45 | Visit another Market page and click **Follow**, then `/following`. | Market appears in the followed feed. Click Unfollow — it disappears. |
 | 46 | `/my` notebook → record a sale as **Card (external)**. | Recorded. (Mobile cannot do this — that is the known gap.) |
-| 47 | **Re-probe `/seeds` and `/pricing` after the web deploy.** | `/seeds` contains **no** `$` price and **no** "Build my box". `/pricing` contains **no** "$24.99". **Until this passes, BLOCKER 1 is open.** |
+| 47 | **Re-probe `/seeds` and `/pricing` after the web deploy.** | **PASSED 2026-08-20.** `/seeds` contains no `Build my box` purchase path; `/pricing` contains no `$24.99` Seed Drop subscription copy. |
 
 ---
 
@@ -587,10 +586,10 @@ the account at step 22, which cleans up everything it made.
 
 | Severity | Item |
 |---|---|
-| **BLOCKER** | 1. Production `/seeds` and `/pricing` sell Seed Drop with prices and a Stripe subscription promise. Fix is written but **undeployed**. Verify by re-probing both URLs after deploy. |
+| **BLOCKER** | None in this lane after the 2026-08-20 direct web probes. |
 | **FIX BEFORE SUBMISSION** | 1. `gnome://auth-callback` redirect allowlist unconfirmed — would break mobile password reset (script step 6). |
 | | 2. `NEXT_PUBLIC_IOS_APP_URL` unset → every "Get the app" CTA lands on the App Store homepage. |
-| | 3. `docs/LAUNCH.md` stale — Google/Apple are live, not disabled. |
+| | 3. ~~`docs/LAUNCH.md` stale — Google/Apple are live, not disabled~~ **UPDATED in working tree** with a superseded notice and current provider status. |
 | **FIX BEFORE PUBLICATION** | 4. Zero real inventory: 6 listings (5 demo, 1 QA), no free/sale/trade at all; 8 of 11 markets are demo/QA, three exposing the owner's email local part as a public market name. |
 | **FIX WITHIN 72 HOURS** | 5. Follow/unfollow absent from mobile (web-only). |
 | | 6. Reorder and feature/unfeature absent from mobile (web-only). |

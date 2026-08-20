@@ -14,6 +14,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyMarket, useMyBundles, useCreateBundle, useMarketListings } from '@/lib/db';
+import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 
 const price = (c: number | null) =>
   c == null ? '' : `$${(c / 100).toFixed(2).replace(/\.00$/, '')}`;
@@ -59,7 +60,9 @@ export default function MarketBundlesScreen() {
           const msg = e instanceof Error ? e.message : '';
           Alert.alert('Gift Basket',
             /PUBLISH_ALLOWANCE_EXHAUSTED/.test(msg)
-              ? 'Your plan’s Sell publishes are used up for this period. A basket publishes like any listing — grab a $0.99 extra publish from My Market on the web, or upgrade your plan.'
+              ? (canBuyDigitalInApp
+                ? 'Your plan’s Sell publishes are used up for this period. A basket publishes like any listing — publish an extra one for $0.99, or upgrade your plan.'
+                : 'Your plan’s Sell publishes are used up for this period. A basket publishes like any listing — upgrade for unlimited Sell publishes, or try again when your allowance resets.')
               : /BUNDLE_NEEDS_ITEMS/.test(msg) ? 'A basket needs at least two items.'
               : /BUNDLE_ITEM_LIMIT/.test(msg) ? 'A basket holds up to 12 items.'
               : /COMPONENT_NOT_AVAILABLE/.test(msg) ? 'One of those listings isn’t live right now.'

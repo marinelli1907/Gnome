@@ -168,6 +168,9 @@ export default function MobileNav({ iosUrl }: { iosUrl: string }) {
             <Link className={`mn-item${isHere('/my') ? ' is-here' : ''}`} href="/my">
               My Market
             </Link>
+            <Link className={`mn-item${isHere('/support') ? ' is-here' : ''}`} href="/support">
+              Support
+            </Link>
             {/* Matches AuthNavLink: "Account" once there's a session. */}
             <a className={`mn-item${isHere('/login') ? ' is-here' : ''}`} href="/login">
               {ready && session ? 'Account' : 'Sign in'}

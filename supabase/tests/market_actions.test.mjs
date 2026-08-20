@@ -104,12 +104,13 @@ ck('unknown errors fall back to a safe sentence',
     : true);
 
 // ---- orchestrator against a scripted server --------------------------------
-function fakeDeps({ intent, listings = [], rpcLog = [], rpcResults = {} }) {
-  return {
-    log: rpcLog,
-    deps: {
-      requestId: 'req-test',
-      extract: async () => JSON.stringify(intent),
+  function fakeDeps({ intent, listings = [], rpcLog = [], rpcResults = {}, digitalPurchasesAvailable }) {
+    return {
+      log: rpcLog,
+      deps: {
+        requestId: 'req-test',
+        ...(digitalPurchasesAvailable === undefined ? {} : { digitalPurchasesAvailable }),
+        extract: async () => JSON.stringify(intent),
       rpc: async (fn, args) => {
         rpcLog.push({ fn, args });
         if (fn === 'ai_find_my_listings') return { data: listings, error: null };
@@ -174,6 +175,20 @@ function fakeDeps({ intent, listings = [], rpcLog = [], rpcResults = {} }) {
     && !log.some((c) => c.fn === 'renew_listing' || c.fn === 'ai_confirm_action'),
     JSON.stringify(resp));
   ck('proposal reply says nothing happened yet', resp.reply.includes('Nothing is changed yet'), resp.reply);
+}
+{
+  const { deps } = fakeDeps({
+    intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
+    listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
+    rpcResults: { my_overage_required: { data: [{ required: true, intent: 'renewal' }], error: null } },
+    digitalPurchasesAvailable: false,
+  });
+  const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
+  ck('Android renewal proposal suppresses the $0.99 price string',
+    resp?.proposal?.action === 'renew' && !resp.reply.includes('$0.99')
+    && resp.reply.includes('unavailable') === false
+    && resp.reply.includes('paid plan on this device'),
+    JSON.stringify(resp));
 }
 
 // Hide -> canonical mark-sold with the honest explanation.

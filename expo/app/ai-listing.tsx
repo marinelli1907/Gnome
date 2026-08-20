@@ -3,11 +3,9 @@
 // goes through, so plan limits, taxonomy, and compliance all still run.
 // Images are resized/re-encoded on device (EXIF/GPS stripped) and analyzed in
 // memory server-side — never stored. Entitlement comes from the backend's
-// resolved plan (paid OR complimentary Grower/Farm/Sponsor).
+// resolved plan (paid OR complimentary Pro/Farm/Legacy Farm).
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -17,6 +15,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { resolveListingType } from '@/lib/listingType';
+import { pickImages } from '@/lib/images';
 
 interface Draft {
   candidate_name: string;
@@ -60,33 +59,17 @@ export default function AiListingScreen() {
 
   const eligible = !!ent.data?.ai_listing_assistant;
 
-  const capture = async (fromCamera: boolean) => {
+  const capture = async () => {
     setFailed(null);
-    // The library path needs no permission gate: the SDK 54 picker is the
-    // system photo picker, and Android blocks the legacy storage permissions
-    // outright — requestMediaLibraryPermissionsAsync would auto-deny there and
-    // dead-end a flow the OS is happy to run. The camera is iOS-only (CAMERA is
-    // stripped from the Android manifest), so only that path asks.
-    if (fromCamera) {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Permission needed', 'Allow camera access to continue.'); return; }
-    }
-    const res = fromCamera
-      ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (res.canceled || !res.assets[0]) return;
+    const [asset] = await pickImages({ selectionLimit: 1 });
+    if (!asset) return;
 
     setBusy(true);
     try {
-      // Re-encode: strips EXIF/GPS and bounds the payload.
-      const small = await ImageManipulator.manipulateAsync(
-        res.assets[0].uri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-      );
-      setPhotoUri(small.uri);
+      if (!asset.base64) throw new Error('IMAGE_BASE64_MISSING');
+      setPhotoUri(asset.uri);
       const { data, error } = await supabase.functions.invoke('analyze-listing-photo', {
-        body: { image_base64: small.base64, media_type: 'image/jpeg' },
+        body: { image_base64: asset.base64, media_type: asset.mimeType ?? 'image/jpeg' },
       });
       if (error) throw new Error(error.message ?? 'ANALYZE_FAILED');
       if (data?.error) throw new Error(data.message ?? data.error);
@@ -142,7 +125,7 @@ export default function AiListingScreen() {
         <EmptyState
           emoji="🔒"
           title="AI Listing Assistant"
-          subtitle="Snap a photo and Gnome drafts the listing for you — included with every paid plan."
+          subtitle="Choose a photo and Gnome drafts the listing for you — included with every paid plan."
         >
           <Button label="See plans" onPress={() => router.push('/upgrade')} style={{ marginTop: 14 }} />
         </EmptyState>
@@ -154,16 +137,11 @@ export default function AiListingScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 40 }}>
       <Text style={styles.heading}>✨ Photo to listing</Text>
       <Text style={styles.sub}>
-        Take a photo of what you grew or made. Gnome identifies it, finds the right
+        Choose a photo of what you grew or made. Gnome identifies it, finds the right
         category, and drafts the listing — you review and publish.
       </Text>
 
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        {Platform.OS === 'ios' && (
-          <Button label="📷 Take photo" onPress={() => void capture(true)} disabled={busy} style={{ flex: 1 }} />
-        )}
-        <Button label="🖼 Library" variant="secondary" onPress={() => void capture(false)} disabled={busy} style={{ flex: 1 }} />
-      </View>
+      <Button label="Choose photo" onPress={() => void capture()} disabled={busy} />
 
       {busy && (
         <View style={[styles.center, { marginTop: 30 }]}>
@@ -180,7 +158,7 @@ export default function AiListingScreen() {
         <View style={styles.failBox}>
           <Text style={styles.failText}>{failed}</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            <Button label="Try another photo" variant="secondary" onPress={() => void capture(Platform.OS === 'ios')} style={{ flex: 1 }} />
+            <Button label="Try another photo" variant="secondary" onPress={() => void capture()} style={{ flex: 1 }} />
             <Button label="Create manually" onPress={() => router.replace('/(tabs)/post')} style={{ flex: 1 }} />
           </View>
         </View>

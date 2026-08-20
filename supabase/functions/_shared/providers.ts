@@ -3,10 +3,11 @@
 //
 // STRATEGY (pre-revenue): Gemini Developer API free tier is PRIMARY for every
 // feature. OpenAI/Anthropic adapters remain fully working but are opt-in:
-// they only run when ai_settings.allow_paid_fallback = true AND their key is
-// present. Business logic never talks to a vendor SDK — it builds a chain
-// with resolveChain() and calls callWithFallback(); swapping models later is
-// an Admin config change (ai_agents provider/model/fallback_*), not a rewrite.
+// they only run when ai_settings.allow_paid_fallback = true, their key is
+// present, AND the deployment explicitly says the privacy policy discloses paid
+// fallback providers. Business logic never talks to a vendor SDK — it builds a
+// chain with resolveChain() and calls callWithFallback(); swapping models later
+// is an Admin config change (ai_agents provider/model/fallback_*), not a rewrite.
 //
 // Free-tier privacy: free-tier Gemini content may be used by Google for
 // product improvement → callers must keep MINIMUM-DATA packs (ids, zones,
@@ -57,10 +58,12 @@ export function actualCents(provider: Provider, model: string, inTok: number, ou
 }
 
 export function providerKeys(): Record<Provider, string | undefined> {
+  const paidFallbackDisclosed =
+    Deno.env.get('AI_PAID_FALLBACK_DISCLOSED')?.trim().toLowerCase() === 'true';
   return {
     gemini: Deno.env.get('GEMINI_API_KEY')?.trim() || undefined,
-    openai: Deno.env.get('OPENAI_API_KEY')?.trim() || undefined,
-    anthropic: Deno.env.get('ANTHROPIC_API_KEY')?.trim() || undefined,
+    openai: paidFallbackDisclosed ? Deno.env.get('OPENAI_API_KEY')?.trim() || undefined : undefined,
+    anthropic: paidFallbackDisclosed ? Deno.env.get('ANTHROPIC_API_KEY')?.trim() || undefined : undefined,
   };
 }
 
@@ -73,7 +76,8 @@ export class RateLimitedError extends Error {
 }
 
 // Ordered call chain. Gemini rides free; paid providers join ONLY when the
-// server-side allow_paid_fallback flag is true (default false, pre-revenue).
+// server-side allow_paid_fallback flag is true AND providerKeys exposes them
+// through AI_PAID_FALLBACK_DISCLOSED=true.
 export function resolveChain(
   preferred: ModelRef | null, fallback: ModelRef | null, allowPaid: boolean,
 ): ModelRef[] {

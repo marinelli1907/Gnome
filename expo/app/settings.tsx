@@ -18,6 +18,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyBlocks, useSendFeedback, useUnblockUser } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
+import { nativeWebUrl } from '@/lib/links';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -170,7 +171,7 @@ export default function SettingsScreen() {
 
       <View style={styles.legalLinks}>
         <Pressable
-          onPress={() => Linking.openURL('https://gnomefarmersmarket.com/terms')}
+          onPress={() => Linking.openURL(nativeWebUrl('/terms'))}
           style={styles.legalLink}
           accessibilityRole="link"
           accessibilityLabel="Open Terms of Service"
@@ -178,7 +179,7 @@ export default function SettingsScreen() {
           <Text style={styles.legalLinkText}>Terms of Service</Text>
         </Pressable>
         <Pressable
-          onPress={() => Linking.openURL('https://gnomefarmersmarket.com/privacy')}
+          onPress={() => Linking.openURL(nativeWebUrl('/privacy'))}
           style={styles.legalLink}
           accessibilityRole="link"
           accessibilityLabel="Open Privacy Policy"
@@ -186,7 +187,7 @@ export default function SettingsScreen() {
           <Text style={styles.legalLinkText}>Privacy Policy</Text>
         </Pressable>
         <Pressable
-          onPress={() => Linking.openURL('https://gnomefarmersmarket.com/trust')}
+          onPress={() => Linking.openURL(nativeWebUrl('/trust'))}
           style={styles.legalLink}
           accessibilityRole="link"
           accessibilityLabel="Open Trust and Safety"

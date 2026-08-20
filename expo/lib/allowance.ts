@@ -44,8 +44,10 @@ export type Meter = {
   exhausted: boolean;
   unlimited: boolean;
 };
+export type PurchaseCopyOptions = { canBuyExtras?: boolean };
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+const canMentionExtras = (opts?: PurchaseCopyOptions) => opts?.canBuyExtras !== false;
 
 /**
  * Next upgrade in the customer-facing ladder, or null at the top. Keyed on display_name because
@@ -119,7 +121,7 @@ export function listingsMeter(row: AllowanceRow): Meter {
   };
 }
 
-export function renewalsMeter(row: AllowanceRow): Meter {
+export function renewalsMeter(row: AllowanceRow, opts?: PurchaseCopyOptions): Meter {
   const heading = `Renewals ${periodLabel(row)}`;
 
   if (row.renewals_allowed === null) {
@@ -135,7 +137,7 @@ export function renewalsMeter(row: AllowanceRow): Meter {
   }
 
   // Free includes none. "0 of 0 used" is technically true and tells the seller nothing, so this
-  // states the plan fact and the price instead.
+  // states the plan fact and, only where platform policy allows, the extra-renewal price.
   if (row.renewals_allowed === 0) {
     return {
       heading: 'Renewals',
@@ -146,7 +148,7 @@ export function renewalsMeter(row: AllowanceRow): Meter {
         ...(row.renewals_actual > 0
           ? [{ value: `${row.renewals_actual} renewed ${periodLabel(row)}` }]
           : []),
-        { value: '$0.99 each' },
+        { value: canMentionExtras(opts) ? '$0.99 each' : 'Upgrade for renewals' },
       ],
     };
   }
@@ -184,7 +186,8 @@ export function renewalsMeter(row: AllowanceRow): Meter {
  * what an extra costs, and the real purchase goes through the publish/renew flow where the server
  * decides whether payment is genuinely owed.
  */
-export function exhaustedHint(row: AllowanceRow, which: 'listings' | 'renewals'): string | null {
+export function exhaustedHint(row: AllowanceRow, which: 'listings' | 'renewals', opts?: PurchaseCopyOptions): string | null {
+  if (!canMentionExtras(opts)) return null;
   if (which === 'listings') {
     if (row.publishes_allowed === null || row.publishes_remaining !== 0) return null;
     return 'Additional listing: $0.99';

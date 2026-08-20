@@ -1,5 +1,5 @@
 // AI listing drafts — client for the `draft-listing` Edge Function.
-// Snap a photo → Claude drafts title/category/description (+ price for sales).
+// Choose a photo → Claude drafts title/category/description (+ price for sales).
 // Best-effort feature: every failure surfaces a friendly message and the user
 // just fills the form by hand, exactly as before.
 import { supabase, isSupabaseConfigured } from './supabase';

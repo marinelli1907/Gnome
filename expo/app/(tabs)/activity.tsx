@@ -79,7 +79,7 @@ export default function MyGnomeScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <Text style={styles.h1}>My Gnome</Text>
+      <Text style={styles.h1}>Market</Text>
 
       <MyMarketCard uid={userId} />
       <BuildMarketCard />

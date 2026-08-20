@@ -9,8 +9,8 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useMyMarket, usePlanLimits } from '@/lib/db';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { formatPrice } from '@/lib/listingType';
 import { listingsMeter, planDisplay, renewalsMeter, resetLabel } from '@/lib/allowance';
+import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import { useMyListingAllowance } from '@/lib/db';
 import type { MarketPlan, PlanLimit } from '@/types';
 
@@ -21,10 +21,11 @@ const tierListings = (l?: PlanLimit) =>
   l === undefined || l.monthly_publish_allowance === undefined ? null
     : l.monthly_publish_allowance === null ? 'Unlimited Sell listings'
     : `${l.monthly_publish_allowance} new Sell listings/mo`;
-const tierRenewals = (l?: PlanLimit) =>
+const tierRenewals = (l?: PlanLimit, canBuyExtras = true) =>
   l === undefined || l.included_renewals_per_period === undefined ? null
     : l.included_renewals_per_period === null ? 'unlimited renewals'
-    : l.included_renewals_per_period === 0 ? 'renewals $0.99 each'
+    : l.included_renewals_per_period === 0
+      ? 'renewals require a higher plan'
     : `${l.included_renewals_per_period} free renewals/mo`;
 const tierWanted = (l?: PlanLimit) =>
   l === undefined || l.wanted_intros_per_day === undefined ? null
@@ -33,11 +34,12 @@ const tierWanted = (l?: PlanLimit) =>
 const tierQr = (l?: PlanLimit) =>
   l === undefined || l.qr_tools === undefined ? null
     : l.qr_tools ? 'Custom Market QR tools' : 'Market link included · QR tools locked';
-const tierCaveat = (l?: PlanLimit) => {
+const tierCaveat = (l?: PlanLimit, canBuyExtras = true) => {
   if (l === undefined || l.included_renewals_per_period === undefined) return null;
   if (l.included_renewals_per_period === null) return 'No listing or renewal overage charges.';
-  if (l.included_renewals_per_period === 0) return 'Extra Sell listings and renewals: $0.99 each.';
-  return `Extra Sell listings $0.99 · renewals after the first ${l.included_renewals_per_period}: $0.99.`;
+  if (!canBuyExtras) return 'Review higher plans for unlimited Sell listings and renewals, or post again when your allowance resets.';
+  if (l.included_renewals_per_period === 0) return 'Review higher plans for renewal access.';
+  return `Review higher plans after the first ${l.included_renewals_per_period} renewal${l.included_renewals_per_period === 1 ? '' : 's'}.`;
 };
 
 // The three sellable tiers, in ladder order (0126: Free / Pro / Farm). Labels
@@ -88,11 +90,11 @@ export default function UpgradeScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}>
-      <Text style={styles.heading}>Grow your Market</Text>
+      <Text style={styles.heading}>Your plan</Text>
       <Text style={styles.sub}>
-        More monthly Sell listings, free renewals, pickup locations and delivery tools as you grow —
-        every number below comes straight from the plan the platform enforces. All Sell listings run
-        for 7 days; Share Free, Trade and Wanted posts never touch your Sell allowance.
+        What your Market can do today, and what each seller plan includes. Plans are not sold in
+        the app — nothing on this screen charges you. All Sell listings run for 7 days; Share Free,
+        Trade and Wanted posts never touch your Sell allowance.
       </Text>
 
       {/* Your resolved entitlements — the same numbers the backend enforces. */}
@@ -119,7 +121,7 @@ export default function UpgradeScreen() {
                 {listingsMeter(row).lines.map((l) => l.value).join(' · ')}
               </Text>
               <Text style={styles.entLine}>
-                {renewalsMeter(row).lines.map((l) => l.value).join(' · ')}
+                {renewalsMeter(row, { canBuyExtras: canBuyDigitalInApp }).lines.map((l) => l.value).join(' · ')}
               </Text>
               <Text style={styles.entHint}>{resetLabel(row)}</Text>
             </>
@@ -131,7 +133,7 @@ export default function UpgradeScreen() {
           </Text>
           {ent.data.extra_location_fee_cents != null ? (
             <Text style={styles.entHint}>
-              Additional locations {formatPrice(ent.data.extra_location_fee_cents)}/mo each — billing setup coming soon.
+              Additional pickup locations are not available in the app.
             </Text>
           ) : null}
         </View>
@@ -163,16 +165,15 @@ export default function UpgradeScreen() {
               </Text>
               <Text style={styles.tierMeta}>
                 {tierListings(l) ?? '—'}
-                {tierRenewals(l) ? ` · ${tierRenewals(l)}` : ''}
+                {tierRenewals(l, canBuyDigitalInApp) ? ` · ${tierRenewals(l, canBuyDigitalInApp)}` : ''}
                 {tierWanted(l) ? ` · ${tierWanted(l)}` : ''}
                 {tierQr(l) ? ` · ${tierQr(l)}` : ''}
                 {l?.max_pickup_locations
-                  ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}${l.extra_location_fee_cents ? ` (+${formatPrice(l.extra_location_fee_cents)}/mo each extra)` : ''}`
+                  ? ` · ${l.max_pickup_locations} pickup location${l.max_pickup_locations === 1 ? '' : 's'}`
                   : ''}
                 {l?.included_boost_credits ? ` · ${l.included_boost_credits} promotions/mo` : ''}
-                {l && l.price_cents > 0 ? ` · ${formatPrice(l.price_cents)}/mo` : ' · free'}
               </Text>
-              {tierCaveat(l) ? <Text style={styles.tierPerk}>{tierCaveat(l)}</Text> : null}
+              {tierCaveat(l, canBuyDigitalInApp) ? <Text style={styles.tierPerk}>{tierCaveat(l, canBuyDigitalInApp)}</Text> : null}
               {p !== 'free' && (
                 <Text style={styles.tierPerk}>
                   AI Listing Assistant · delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules
@@ -186,6 +187,10 @@ export default function UpgradeScreen() {
           </View>
         );
       })}
+      <Text style={styles.tierPerk}>
+        Pro and Farm are not available to buy in the app. If your Market already has paid or
+        complimentary access, the limits above are live right now.
+      </Text>
     </ScrollView>
   );
 }

@@ -40,12 +40,11 @@ const row = (o) => ({
 });
 const PRO = (o) => row({
   display_name: 'Pro', period_source: 'subscription', period_end: '2026-09-16T04:00:00Z',
-  publishes_allowed: 20, renewals_allowed: 3, publishes_remaining: 20, renewals_remaining: 3, ...o,
+  publishes_allowed: null, renewals_allowed: null, publishes_remaining: null, renewals_remaining: null, ...o,
 });
-const MAX = (o) => PRO({ display_name: 'Max', publishes_allowed: 40, renewals_allowed: 10,
-  publishes_remaining: 40, renewals_remaining: 10, ...o });
 const FARM = (o) => PRO({ display_name: 'Farm', publishes_allowed: null, renewals_allowed: null,
   publishes_remaining: null, renewals_remaining: null, ...o });
+const LEGACY_FARM = (o) => FARM({ display_name: 'Legacy Farm', ...o });
 
 console.log('\nseller allowance card presentation\n');
 
@@ -82,55 +81,25 @@ ck('Free unused shows 0 of 3 and 3 remaining',
   ck('Free renewals say there are none free, at $0.99',
     has(m, 'No free renewals') && has(m, '$0.99 each'), lines(m).join(' | '));
   ck('Free renewals heading has no period suffix', m.heading === 'Renewals');
+  const android = A.renewalsMeter(row({}), { canBuyExtras: false });
+  ck('Free renewals can suppress price copy',
+    has(android, 'No free renewals') && has(android, 'Upgrade for renewals') && !lines(android).some((v) => v.includes('$0.99')),
+    lines(android).join(' | '));
 }
 ck('Free paid renewal still shows actual activity',
   has(A.renewalsMeter(row({ renewals_actual: 1, paid_renewals_period: 1 })), '1 renewed this month'));
 
 // ---- PRO -----------------------------------------------------------------
-ck('Pro unused shows 0 of 20', has(A.listingsMeter(PRO({})), '0 of 20 used'));
 {
-  const m = A.listingsMeter(PRO({ publishes_used: 14, publishes_actual: 14, publishes_remaining: 6 }));
-  ck('Pro partial shows 14 of 20 used, 6 remaining',
-    has(m, '14 of 20 used') && has(m, '6 remaining'), lines(m).join(' | '));
-  ck('Pro uses billing-period wording', m.heading === 'Listings this billing period');
-}
-{
-  const r = PRO({ publishes_used: 20, publishes_actual: 23, publishes_remaining: 0, paid_publishes_period: 3,
-                  renewals_used: 3, renewals_actual: 5, renewals_remaining: 0, paid_renewals_period: 2 });
+  const r = PRO({ publishes_actual: 14, renewals_actual: 2 });
   const lm = A.listingsMeter(r), rm = A.renewalsMeter(r);
-  ck('Pro overage listings read 20 included / 23 total / 0 remaining',
-    has(lm, '20 of 20 included used') && has(lm, '23 published total') && has(lm, '0 included remaining'),
-    lines(lm).join(' | '));
-  ck('Pro overage renewals read 3 included / 5 total / 0 remaining',
-    has(rm, '3 of 3 included used') && has(rm, '5 renewed total') && has(rm, '0 included remaining'),
-    lines(rm).join(' | '));
-  ck('Pro exhausted renewals offer $0.99',
-    A.exhaustedHint(r, 'renewals') === 'Additional renewal: $0.99');
-  ck('Pro exhausted offers the Max upgrade', A.upgradeHint(r)?.name === 'Max');
-  ck('Pro overage never renders "23 of 20"', !lines(lm).some((v) => /23 of 20/.test(v)));
-}
-{
-  const m = A.renewalsMeter(PRO({ renewals_used: 2, renewals_actual: 2, renewals_remaining: 1 }));
-  ck('Pro partial renewals show 2 of 3 and 1 free remaining',
-    has(m, '2 of 3 used') && has(m, '1 free renewal remaining'), lines(m).join(' | '));
-}
-
-// ---- MAX -----------------------------------------------------------------
-ck('Max unused shows 0 of 40', has(A.listingsMeter(MAX({})), '0 of 40 used'));
-{
-  const r = MAX({ publishes_used: 27, publishes_actual: 27, publishes_remaining: 13,
-                  renewals_used: 7, renewals_actual: 7, renewals_remaining: 3 });
-  ck('Max partial shows 27 of 40 used, 13 remaining',
-    has(A.listingsMeter(r), '27 of 40 used') && has(A.listingsMeter(r), '13 remaining'));
-  ck('Max partial renewals show 7 of 10 and 3 free remaining',
-    has(A.renewalsMeter(r), '7 of 10 used') && has(A.renewalsMeter(r), '3 free renewals remaining'));
-  ck('Max not exhausted offers no upgrade advert', A.upgradeHint(r) === null);
-}
-{
-  const r = MAX({ publishes_used: 40, publishes_actual: 40, publishes_remaining: 0,
-                  renewals_used: 10, renewals_actual: 10, renewals_remaining: 0 });
-  ck('Max exhausted offers the Farm upgrade', A.upgradeHint(r)?.name === 'Farm');
-  ck('Max exhausted renewals offer $0.99', A.exhaustedHint(r, 'renewals') === 'Additional renewal: $0.99');
+  ck('Pro shows actual publishes AND unlimited',
+    has(lm, '14 published') && has(lm, 'Unlimited'), lines(lm).join(' | '));
+  ck('Pro shows actual renewals AND unlimited',
+    has(rm, '2 renewed') && has(rm, 'Unlimited'), lines(rm).join(' | '));
+  ck('Pro uses billing-period wording', lm.heading === 'Listings this billing period');
+  ck('Pro gets no paid overage or upgrade hints',
+    A.exhaustedHint(r, 'listings') === null && A.exhaustedHint(r, 'renewals') === null && A.upgradeHint(r) === null);
 }
 
 // ---- FARM ----------------------------------------------------------------
@@ -160,18 +129,24 @@ ck('an unparseable period_end degrades to empty, not "Invalid Date"',
 
 // The enum must never appear. Render every plan and scan the whole output.
 {
-  const all = [row({}), PRO({}), MAX({}), FARM({ publishes_actual: 1, renewals_actual: 1 })]
+  const all = [row({}), PRO({}), FARM({ publishes_actual: 1, renewals_actual: 1 }), LEGACY_FARM({ publishes_actual: 1, renewals_actual: 1 })]
     .flatMap((r) => lines(A.listingsMeter(r)).concat(lines(A.renewalsMeter(r))).concat([r.display_name]));
   ck('no internal enum name reaches the seller UI',
     !all.some((v) => /\b(grower|sponsor)\b/i.test(v)) && !all.some((v) => /^farm$/.test(v)),
     all.filter((v) => /grower|sponsor/i.test(v)).join(','));
-  ck('display names are the customer-facing four',
-    ['Free', 'Pro', 'Max', 'Farm'].every((n) => Object.keys(A.NEXT_PLAN).includes(n)));
+  ck('display names are the customer-facing ladder plus retired comp rung',
+    ['Free', 'Pro', 'Farm', 'Legacy Farm'].every((n) => Object.keys(A.NEXT_PLAN).includes(n))
+    && !Object.keys(A.NEXT_PLAN).includes('Max'));
 }
-ck('planDisplay maps every enum, including the counter-intuitive two',
+ck('planDisplay maps every enum, including the retired comp rung',
   A.planDisplay('free') === 'Free' && A.planDisplay('grower') === 'Pro'
-  && A.planDisplay('farm') === 'Max' && A.planDisplay('sponsor') === 'Farm');
+  && A.planDisplay('farm') === 'Farm' && A.planDisplay('sponsor') === 'Legacy Farm');
 ck('planDisplay never emits a raw enum for an unknown value', A.planDisplay('mystery') === 'Free');
+{
+  const r = row({ publishes_used: 3, publishes_actual: 3, publishes_remaining: 0 });
+  ck('exhausted hints can suppress extra-purchase price copy',
+    A.exhaustedHint(r, 'listings', { canBuyExtras: false }) === null);
+}
 
 const failed = results.filter((r) => !r.ok).length;
 console.log(`\nallowance card: ${results.length - failed}/${results.length} passed\n`);

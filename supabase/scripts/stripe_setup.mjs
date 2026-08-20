@@ -166,7 +166,7 @@ async function main() {
   if (!grower) {
     console.error(`\nGrower product ${GROWER_PRODUCT} not found on this account.\n` +
       'FOUNDING3 must be restricted to it; without the restriction a 100%-off coupon would apply\n' +
-      'to Max and Farm too. If you are on a different Stripe account, set GROWER_PRODUCT_ID.');
+      'to Farm and retired Legacy Farm too. If you are on a different Stripe account, set GROWER_PRODUCT_ID.');
     process.exit(1);
   }
   note('reuse', 'product', 'Grower/Pro (restrict)', grower.id, grower.name);
@@ -193,18 +193,8 @@ async function main() {
     reuseProductId: publish.productId,
   });
 
-  console.log('\nFarm $99/month  (customer-facing "Farm" = internal plan enum `sponsor`)');
-  // NAMING TRAP, read before editing: customer-facing Farm is the enum value `sponsor`.
-  // GNOME_FARM_MONTHLY already exists at $29.99 and is customer-facing "Max". Keying this as
-  // GNOME_FARM_MONTHLY would collide with a live product and mis-sell two tiers at once.
-  const sponsor = await ensurePrice({
-    lookupKey: 'gnome_sponsor_monthly',
-    productName: 'Gnome Farm',
-    gnomeKey: 'GNOME_SPONSOR_MONTHLY',
-    unitAmount: 9900,
-    recurring: 'month',
-    description: 'Farm plan — unlimited listings and renewals, monthly.',
-  });
+  console.log('\nSubscriptions');
+  console.log('  = owned by migrations/billing-admin: GNOME_FARM_MONTHLY is Farm; GNOME_SPONSOR_MONTHLY is retired Legacy Farm');
 
   console.log('\nFOUNDING3');
   //
@@ -214,8 +204,8 @@ async function main() {
   // accepts the parameter and silently drops it.
   //
   // So FOUNDING3 is an UNRESTRICTED 100%-off coupon at the Stripe layer. Anything that lets a
-  // customer attach it to a checkout session attaches it to ANY plan, which would hand out Max
-  // ($29.99) and Farm ($99) free.
+  // customer attach it to a checkout session attaches it to ANY plan, including the sellable Farm
+  // tier or the retired Legacy Farm rung.
   //
   // Eligibility therefore has to be Gnome's job, enforced server-side in billing-checkout against
   // promotion_campaigns.applicable_plan before the code is ever passed to Stripe. That is where the
@@ -273,7 +263,6 @@ async function main() {
   const rows = [
     ['GNOME_LISTING_PUBLISH',  'one_time',      99,  'Publish one additional listing beyond the monthly allowance', publish],
     ['GNOME_LISTING_RENEWAL',  'one_time',      99,  'Renew one expired listing for a further 7 days',              renewal],
-    ['GNOME_SPONSOR_MONTHLY',  'subscription', 9900, 'Farm plan (internal enum sponsor), monthly',                  sponsor],
   ].filter(([, , , , r]) => r.priceId);
 
   // Postgres string literals are single-quoted; a double-quoted value is an IDENTIFIER, so

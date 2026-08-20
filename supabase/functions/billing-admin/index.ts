@@ -32,13 +32,12 @@
 import Stripe from 'npm:stripe';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-// The catalogue ensure_products provisions in TEST. Three keys were missing and
-// they were the ones that matter most: GNOME_LISTING_PUBLISH and
-// GNOME_LISTING_RENEWAL are the $0.99 overages billing-checkout resolves every
-// paid publish to, and GNOME_SPONSOR_MONTHLY is customer-facing "Farm" (internal
-// enum `sponsor`, which is why the name reads backwards). The paid-publishing
-// flow therefore had no test products at all, and the one QA tool meant to make
-// the round-trip possible could not set it up.
+// The catalogue ensure_products provisions in TEST. The paid-publishing keys
+// matter most: GNOME_LISTING_PUBLISH and GNOME_LISTING_RENEWAL are the $0.99
+// overages billing-checkout resolves every paid publish to. Since 0126,
+// GNOME_FARM_MONTHLY is customer-facing Farm and GNOME_SPONSOR_MONTHLY is the
+// retired Legacy Farm comp rung, so a clean TEST catalogue must keep sponsor
+// inactive.
 //
 // kind/description/currency/active are carried here, not just the amount,
 // because a key that has never been seeded (a partially-built environment) is

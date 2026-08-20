@@ -1,7 +1,7 @@
 # Gnome 1.1.0 — Android release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-19 against `7d3be90`.
+Updated 2026-08-20 against `727abba` plus the current working tree.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -16,15 +16,16 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | **B1** Google Maps | **CLOSED — re-verified 2026-08-19** | — | Re-verify after first upload with the Play signing SHA-1 (§3) |
 | **B2** FCM push | **CONFIGURED / NOT PROVEN** | Daniel + Claude | Physical Android run (§2) |
 | **B3** Deletion URL + contact | **CLOSED** | — | — |
-| **B4** Purchase posture | **DECIDED — D1** | — | Gate shipped (`ffb2d28`); copy leaks open, see §9 |
-| **§4.3b** Gemini data safety | **DECISION REQUIRED** | **Daniel** | §7 — decision drives the Data safety answers |
-| Website ↔ app parity | **CLOSED** (3 fixes, `90b7c36`) | — | Deploy web; two owner items in §8 |
-| `/pricing` test-mode redirect | **FIXED** (`9945b24`) | — | Deploy web |
-| **App icon + feature graphic** | **BLOCKER — art does not exist** | **Daniel** | §10 — now the critical path |
-| **D1 copy leaks** | **BLOCKER — 7 surfaces, not 2** | Claude | §9 — pure code fix |
-| Reviewer notes (Play + iOS) | **BLOCKER — misstate the product** | Claude | §9 — text already drafted |
+| **B4** Purchase posture | **DECIDED — D1** | — | Gate shipped (`ffb2d28`); Android copy leaks fixed in working tree, see §9 |
+| **§4.3b** Gemini data safety | **OWNER ACTION** | **Daniel** | See `GEMINI_DATA_SAFETY_DECISION.md`: paid Gemini key, or declare Shared = Yes |
+| Website ↔ app parity | **CLOSED** (3 fixes, `90b7c36`) | — | Live web re-probed 2026-08-20; two owner items in §8 |
+| `/pricing` test-mode redirect | **DEPLOYED / VERIFIED** (`9945b24`) | — | Live `/pricing` re-probed 2026-08-20 |
+| **App icon + feature graphic** | **FIXED IN WORKING TREE** | — | §10 — generated + mechanically verified |
+| **D1 copy leaks** | **FIXED IN WORKING TREE** | — | §9.1 — gated copy + focused tests |
+| Reviewer notes (Play + iOS) | **FIXED IN WORKING TREE** | — | §9.2 — Play/iOS notes match code; iOS overage ships with explicit 3.1.1 risk disclosure |
+| iOS priced dead-end purchase copy | **FIXED IN WORKING TREE** | — | `/upgrade` is informational; no priced "coming soon" promotion/plan buttons |
 | Store assets | **DRAFTED** (`8714ca4`) | Claude + Daniel | Screenshots from the final RC |
-| **Final AAB** | **HOLD** | Claude | Blocked on §9 + §10, not on B4 |
+| **Final AAB** | **READY AFTER REVIEW** | Claude | Cut from this working tree once committed; B2 still needs physical proof after build |
 | **Play upload** | **HOLD** | Daniel | Blocked on final AAB |
 
 ### Remodel sprint — landed 2026-08-18/19
@@ -74,21 +75,21 @@ Two lanes were adversarially re-derived, and both had a load-bearing claim fail.
 Recorded here because the corrections change what has to be done, not just what
 is known:
 
-1. **Gating the $0.99 surface on Android does not by itself close B4.** The app
+1. **Gating the $0.99 surface on Android did not by itself close B4.** The app
    opens `gnomefarmersmarket.com/terms`, `/privacy` and `/trust`
    (`expo/app/settings.tsx:173,181,189` and `expo/app/sign-in.tsx:371,375`), and
    every one of those live pages carries a nav link to `/pricing`, whose
-   "Upgrade to Pro/Max/Farm" buttons run `billing-checkout` straight into
-   Stripe. That is two taps from inside the app — one of them from the sign-in
-   flow, which Play's Payments policy §4 names explicitly. Any B4 remedy has to
-   account for the outbound legal links, not just the in-app checkout.
+   old upgrade buttons used to run `billing-checkout` straight into Stripe. That
+   path is now handled by D1 plus the `/pricing` test-mode fix and Android-safe
+   copy in §9.1.
 2. **`/pricing` was silently sending real visitors into a test-mode Stripe
    page.** Fixed in `9945b24` — see §8. This was live on production, and is a
    defect rather than a policy question.
 
-**Rule for the two HOLDs:** the final AAB is built once, from the commit that
-carries the B4 decision. Building before that decision guarantees a rebuild, and
-a rebuild after upload costs a versionCode and a review cycle.
+**Rule for the remaining HOLD:** build the final AAB once, from the reviewed
+commit that carries the D1 copy fixes, 0126 pricing cleanup, reviewer-note fixes
+and identity-v4 assets. A rebuild after upload costs a versionCode and a review
+cycle.
 
 ---
 
@@ -102,7 +103,7 @@ Android identity is settled and verified in the merged manifest of a real build:
 | Version | `1.1.0` |
 | versionCode | remote + autoIncrement (last: vc4) |
 | Signing | EAS-managed upload keystore; Play App Signing at upload |
-| Maps key | `android.config.googleMaps.apiKey` — restricted to the package + upload SHA-1 |
+| Maps key | `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` injects `android.config.googleMaps.apiKey` at build time; key is restricted to the package + upload SHA-1 |
 | Firebase | `android.googleServicesFile: ./google-services.json`, project `gnome-farmers-market-70414` |
 | Blocked perms | `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` |
 
@@ -123,10 +124,22 @@ cd expo && eas build --platform android --profile production --non-interactive
 ```
 
 Verify before upload — all three, on the artifact itself:
-1. `eas build:view <id>` → `gitCommitHash` is the B4 decision commit
+1. `eas build:view <id>` → `gitCommitHash` is the reviewed final launch commit
 2. versionCode is higher than every prior upload
 3. The AAB's merged manifest contains `com.google.android.geo.API_KEY` and
    `ExpoFirebaseMessagingService` (unzip the AAB or install the paired APK)
+
+Local tooling status as of 2026-08-20:
+
+- `cd expo && npx expo-doctor` passes all 18 checks after lockfile-only Expo SDK
+  54 patch updates.
+- `npm audit --omit=dev --audit-level=high` still reports Expo/Metro tooling
+  advisories whose automated fix requires a forced Expo 57 upgrade. That is not
+  a launch-RC fix because the customer app is pinned to SDK 54 and the admin app
+  is the separate SDK 57 surface.
+- EAS CLI is installed and authenticated, and the remote Android versionCode is
+  currently 4. The final AAB should still be cut only from the reviewed commit,
+  not from this dirty working tree.
 
 ---
 
@@ -206,9 +219,11 @@ whole app until force-stop, including tabs the user never opened.
 
 ## 4. Owner actions outstanding
 
-1. **B4 decision** — purchase posture (Agent 1's options)
-2. **§4.3b decision** — Gemini tier / data-safety declaration (Agent 2's options)
-3. **B2 physical run** — §2 above; needs an Android phone
+1. **§4.3b decision** — Gemini tier / data-safety declaration (paid Gemini key,
+   or declare Shared = Yes)
+2. **B2 physical run** — §2 above; needs an Android phone
+3. **Rebuilt-device checks** — launcher icon, splash, Browse badge, and Map
+   regression after the final AAB/APK is cut
 4. **Play Console** — create the app, upload the final AAB, complete Data safety
 5. **Post-upload** — §3 Maps SHA-1
 6. Housekeeping: delete the Firebase service-account JSON from `~/Downloads`
@@ -234,15 +249,15 @@ whole app until force-stop, including tabs the user never opened.
 NOT), Maps closed, Firebase configured, B2 unproven, payments off. If the
 remodel goes wrong, that is the commit to return to.
 
-**Verified in production before planning the Free/Pro/Max/Farm -> Free/Pro/Farm
+**Verified in production before planning the pre-0126 four-tier -> Free/Pro/Farm
 migration** (13 markets, so this was checked exhaustively rather than sampled):
 
 | Check | Result |
 |---|---|
 | `market_subscriptions` rows, ever | **0** |
 | `admin_plan_grants` rows, ever | **0** |
-| Markets on `farm` (= customer-facing "Max") | **0** |
-| Markets on `sponsor` (= customer-facing "Farm") | **0** |
+| Markets on `farm` (= pre-0126 Max tier) | **0** |
+| Markets on `sponsor` (= pre-0126 Farm tier) | **0** |
 | Only non-free market | `Maria G.'s Market` on `grower`, with no subscription backing it |
 | Paid publishes ever / authorizations consumed | 2 / 2 — both from §13 QA |
 
@@ -250,11 +265,11 @@ migration** (13 markets, so this was checked exhaustively rather than sampled):
 migrates zero customers, and there is no production subscription state that a
 tier change could damage. This is a pre-customer rename, not a data migration.
 
-Two things that does NOT make trivial, so they stay in scope: the **code** work
-is unchanged (entitlement checks in SQL and in both clients, `plan_limits`,
-pricing UI, Stripe product objects), and the **naming trap** is unchanged — the
-enum value `farm` is customer-facing "Max" while `sponsor` is customer-facing
-"Farm", so a plan that reads the enum literally will restructure the wrong tier.
+Two things that did NOT make trivial, so they stayed in scope: the **code** work
+was unchanged (entitlement checks in SQL and in both clients, `plan_limits`,
+pricing UI, Stripe product objects), and the pre-0126 **naming trap** meant a
+plan that read the enum literally would restructure the wrong tier. Post-0126,
+`farm` is customer-facing Farm and `sponsor` is retired Legacy Farm.
 
 ---
 
@@ -312,10 +327,11 @@ everything reaching Gemini must be declared **Shared**.
 **Broader than the standing audit said.** Five functions send photos, not four
 (`garden-planner` was missed). Five of eight AI surfaces are reachable by FREE
 users and three of those send photos — AI is not a paid perk. And it is not only
-a Photos/chat question: the welcome conversation sends the neighbour's real
-first and last name, and city/county/state travel with assistant and planner
-requests. Exactly one PII redactor exists and it is wired to one of the eight
-functions.
+a Photos/chat question: the welcome conversation can include the neighbour's
+real first and last name, and city/county/state travel with assistant and
+planner requests. Working-tree hardening now redacts email/phone in onboarding
+and street-address/coordinate shapes in Garden Planner location/turns, but it
+does not remove user-volunteered names from arbitrary chat.
 
 **Two options:**
 - **Move `GEMINI_API_KEY` to a billed (paid-tier) key.** Google's paid tier
@@ -329,14 +345,23 @@ functions.
 Declaring not-shared while on the free tier is an inaccurate Data safety
 declaration, which is itself a Play violation. That option does not exist.
 
+Repo-side mitigation landed in the working tree: Garden Planner no longer sends
+street addresses or exact coordinates from its location field to Gemini, and
+planner turns redact street-address/coordinate shapes before prompt assembly.
+The mobile Garden Planner analytics event also drops the free-text question and
+logs only `chars` and `has_photo`. This reduces the declaration to approximate
+location for that surface and keeps `events` analytics-only; it does not remove
+the owner decision above because free-tier Gemini still processes submitted AI
+content for Google's own product-improvement purposes.
+
 ## 8. Owner items surfaced by the sprint (not blockers)
 
-1. **The privacy policy says "Google is the only AI provider Gnome uses."**
-   True today — `ai_settings.allow_paid_fallback` is false — but it is an
-   absolute backed by a runtime flag, and `ai_usage_log` records one real
-   Anthropic call (`claude-haiku-4-5`, 2026-08-11). Flipping that flag silently
-   falsifies a published privacy commitment. Either couple the flag to the
-   disclosure or soften the wording; both are Daniel's call.
+1. **Paid AI fallback disclosure.** Repo guard added in working tree:
+   `_shared/providers.ts` hides OpenAI/Anthropic keys unless
+   `AI_PAID_FALLBACK_DISCLOSED=true`, so flipping
+   `ai_settings.allow_paid_fallback` alone can no longer falsify the public
+   privacy policy's Gemini-only claim. Enabling paid fallback later still
+   requires a privacy-policy update and that env flag.
 2. **Should `/pricing` offer upgrade CTAs at all while payments are off?** The
    silent-redirect defect is fixed, but the page still advertises plans nobody
    can actually buy. Product call.
@@ -355,44 +380,44 @@ the report at its word, because a wrong blocker costs more than a missed one.
 **Verified** means I reproduced it; where my reading differs from the report's,
 that is stated.
 
-### 9.1 The real blocker — D1 leaks into copy in seven surfaces, not two
+### 9.1 D1 copy leaks — fixed in working tree
 
-**Verified.** `expo/lib/digitalPurchase.ts` gates the three *checkout* call
-sites correctly. It does not gate the *strings*. These five carry `$0.99` and do
-not import the gate at all:
+**Fixed in working tree.** `expo/lib/digitalPurchase.ts` already gated the three
+*checkout* call sites correctly; this pass gates the customer-facing strings
+that Android users could still see.
 
-| File | What an Android user reads |
+| File | Fix |
 |---|---|
-| `expo/components/UpgradePromptCard.tsx:65` | "Publish more for $0.99 each, or upgrade to … — $9.99/mo." under a CTA reading **Upgrade** |
-| `expo/lib/taxonomy.ts:295` | "Publish this one for $0.99, or upgrade for more each month." |
-| `expo/lib/allowance.ts:190` | "Additional listing: $0.99" (also `:149`, `:195`) |
-| `expo/app/(tabs)/ai.tsx:176` | "publishing this basket needs a $0.99 extra publish" — this file *does* import the gate elsewhere, but this branch is ungated |
-| `expo/lib/importReview.ts:165` | "publish extras for $0.99 each." |
+| `expo/components/UpgradePromptCard.tsx` | Imports `canBuyDigitalInApp`; Android copy starts at upgrade, not "$0.99 each". |
+| `expo/components/mygnome/MyMarketCard.tsx` | Passes `{ canBuyExtras: canBuyDigitalInApp }` into allowance meters/hints. |
+| `expo/app/upgrade.tsx` | Android renewal/overage plan copy no longer names the extra-purchase price. |
+| `expo/app/import.tsx` + `expo/lib/importReview.ts` | Import result allowance summary can suppress extra-publish pricing on Android; web/Expo twin remains byte-identical. |
+| `expo/app/(tabs)/ai.tsx` | Bundle and renewal payment-needed chat branches use Android-safe copy before the existing gated card/button. |
+| `expo/app/market/bundles.tsx` | Removed the Android-visible web/Stripe workaround copy. |
+| `expo/lib/taxonomy.ts` | Bare-token fallback for `PUBLISH_ALLOWANCE_EXHAUSTED` follows the same gate. |
 
-`UpgradePromptCard` is the sharp one. It renders from
-`expo/components/mygnome/MyMarketCard.tsx:98`, which renders from
-`expo/app/(tabs)/activity.tsx:84` — **the Market tab**. An Android reviewer who
-exhausts the free allowance is shown in-app pricing for a digital good on a
-first-level tab, while the store declaration says In-app purchases: No.
-
-This is the item that decides the submission date. It is a pure code fix with no
-schema, no migration and no product decision attached.
+Verification: `node web/lib/allowance.test.mjs` (31/31), `node
+expo/lib/allowance.test.mjs` (34/34), `node web/lib/importReview.test.mjs`
+(32/32), `npm run typecheck` in `expo/`, `npm run typecheck` in `web/`, and
+`git diff --check` all pass. No Map file changed. The worktree still carries
+pre-existing dirty migration/temp files; they are outside this launch-copy pass
+and were not cleaned, reverted or staged.
 
 ### 9.2 Reviewer notes that misdescribe the product
 
-**Verified.** `docs/release/GOOGLE_PLAY_PACKAGE.md:704-709` tells Google "This
-version sells nothing." D1 preserved the $0.99 in product and backend; it is
-live on web and iOS from the same `billing-checkout`. The corrected text is
-already drafted at `PLAY_STORE_LISTING.md:733-741` and simply never moved into
-the file that gets pasted into the console.
+**Fixed in working tree.** `docs/release/GOOGLE_PLAY_PACKAGE.md` now says
+"No purchases on Android" and explains that Android shows plan comparison, not
+an overage purchase, when allowance is exhausted.
 
-The iOS pair is worse. `APP_STORE_PACKAGE.md:457-461` and
-`APP_STORE_PRIVACY.md:726` both assert there is no Stripe call path in the
-binary. There is: `expo/lib/billing.ts:63` invokes `billing-checkout`, and
-`purchaseOverage` is called from `post.tsx:253`, `ai.tsx:286`, `ai.tsx:422` and
-`listing/[id].tsx:127` — all four **live on iOS**, since the gate is
-`Platform.OS !== 'android'`. This also reopens the 3.1.1 analysis at
-`APP_STORE_PACKAGE.md:474-512`, which was written assuming nothing is buyable.
+The iOS pair no longer asserts "no Stripe call path." `APP_STORE_PACKAGE.md`
+and `APP_STORE_PRIVACY.md` now state the actual posture: no StoreKit products or
+subscriptions are configured, but `expo/lib/billing.ts` can open
+`billing-checkout` for the $0.99 publish/renewal overage path on iOS/web.
+
+What remains is not a hidden reviewer-note bug; the launch posture is to submit
+with a deliberate 3.1.1 risk explanation. Current official Apple Guideline 3.1.1
+still requires IAP for unlocking app functionality, while 3.1.1(a) and US
+storefront rules add external-link nuance.
 
 ### 9.3 The link-out path — real, open, but not the date-driver
 
@@ -421,26 +446,52 @@ the upload. Tracked, not blocking.
 
 ### 9.4 Verified corrections to stale text
 
-- **`delivery_eligible` is dead.** `PLAY_STORE_LISTING.md:175-182` tells the
-  reviewer a Free account "will not find a delivery setting." I grepped the
-  whole repo: the column appears only in `0005_markets.sql:128,132`, two
-  baseline dumps, and `expo/types/index.ts:101`. **Nothing reads it.** The real
-  gate is `enforce_delivery_plan` (`0063_market_delivery_settings.sql:88-97`),
-  which lets a free market deliver 15 miles for a flat fee. The note would send
-  a reviewer looking in the wrong place.
-- **Two competing full descriptions.** `GOOGLE_PLAY_PACKAGE.md:452-509` is
-  pre-remodel, names a listing type the app does not ship ("Give away" — the
-  shipped labels are in `expo/lib/listingType.ts:41-45`), and carries no
-  superseded marker. Whoever fills the console can paste the wrong one.
-- **Retired tier names survive** in `SUBSCRIPTION_POSTURE.md:39-42,444-448`
-  ("Neighbor", "Grower"), `docs/MONETIZATION.md:11-12,71` (still a four-tier
-  table with **MAX**, and it declares itself source-of-truth), and
-  `docs/billing/STRIPE_LIVE_ACTIVATION.md:21` (calls the $29.99 SKU "Max" — the
-  runbook Daniel would follow when creating the live Stripe product, so the
-  wrong name would land on receipts).
-- **"My Gnome" survives in five in-app strings** after D3:
-  `(tabs)/activity.tsx:82`, `(tabs)/profile.tsx:82`, `(tabs)/post.tsx:350`,
-  `listing/[id].tsx:403`, `lib/screening.ts:54`.
+- **Delivery reviewer note fixed in working tree.** `PLAY_STORE_LISTING.md` and
+  `GOOGLE_PLAY_PACKAGE.md` now describe the real gate: Free Markets can offer
+  delivery up to 15 miles with one flat fee; paid plans add advanced controls.
+- **Duplicate Play description fixed in working tree.** `GOOGLE_PLAY_PACKAGE.md`
+  now uses the current paste-ready Play description, including "Share Free" and
+  D3 tab names, instead of the pre-remodel duplicate.
+- **Retired tier docs fixed in working tree.** `docs/MONETIZATION.md` now
+  describes the 0126 Free/Pro/Farm ladder and Legacy Farm retirement;
+  `docs/billing/STRIPE_LIVE_ACTIVATION.md` calls `GNOME_FARM_MONTHLY`
+  customer-facing Farm and keeps `GNOME_SPONSOR_MONTHLY` inactive; the old
+  `SUBSCRIPTION_POSTURE.md` is marked superseded for launch rather than
+  silently edited as if it were freshly audited.
+- **"My Gnome" user-facing strings fixed in working tree.** The five §9.4
+  surfaces now say Market; the `activity` route and internal component/comment
+  names are intentionally untouched for D3 compatibility.
+- **Launch packet stale-status cleanup fixed in working tree.** The Play package
+  now says Maps and Firebase are configured but need rebuilt/device proof, the
+  Play listing checklist marks the Android D1 copy fixes complete, and the App
+  Store privacy packet treats OpenStreetMap as disclosed with proxying tracked
+  post-launch. `APP_STORE_PACKAGE.md` §5 is also reconciled to the App Privacy
+  source of truth: marketplace order records are **Purchase History = Yes**,
+  while **Payment Info = No** remains correct.
+- **Support URL fixed in working tree.** `web/app/support/page.tsx` adds a
+  public support page with contact, account deletion, order, safety-report, AI
+  and policy guidance, linked from the footer, mobile menu and sitemap. App
+  Store metadata now uses
+  `https://gnomefarmersmarket.com/support`; deploy the web change before pasting
+  that Support URL.
+- **Legal audit stale-status cleanup fixed in working tree.** G9/G10 now point
+  at the current privacy policy disclosures for Expo push, Stripe, Google and
+  OpenStreetMap; G7 now matches the iOS overage risk posture in
+  `APP_STORE_PACKAGE.md` §6 instead of preserving the old no-mobile-purchase
+  assumption.
+- **Legacy launch runbook stale-status cleanup fixed in working tree.**
+  `docs/LAUNCH.md` is marked superseded for the 1.1.0 store launch and no longer
+  says Google/Apple providers are disabled. A 2026-08-20 app-shaped
+  `/auth/v1/settings` probe (with the public Supabase anon header, not printed)
+  returned Google `true`, Apple `true`, `mailer_autoconfirm=true`, and
+  `disable_signup=false`.
+- **Final stale-artifact pass fixed in working tree.** `APP_STORE_PACKAGE.md`
+  and `GOOGLE_PLAY_PACKAGE.md` no longer say Android has never been built; they
+  distinguish older Android `versionCode` 4 artifacts from the missing final
+  reviewed Play-bound AAB. `docs/LAUNCH.md` no longer preserves the old Payment
+  Link switch-on runbook as current instructions. The AI tab also has a
+  defensive Android guard before `purchaseOverage`, and the web Ask Gnome prompt
+  says paid checkout is Stripe-managed only when checkout is enabled.
 
 ### 9.5 What the audit checked and found correct
 
@@ -454,52 +505,73 @@ The account-deletion path is stated identically and correctly in all three
 store docs. Migration 0126 asserts its own success, including a guard that
 fails loudly if `display_name = 'Max'` survives.
 
+Additional local verification on 2026-08-20:
+
+- Re-run after the final stale-artifact pass: `npm run typecheck` in `expo` and
+  `web`; `node expo/lib/allowance.test.mjs` 34/34; `node web/lib/allowance.test.mjs`
+  31/31; `node web/lib/importReview.test.mjs` 32/32; `node expo/lib/billing.test.mjs`
+  11/11; `node supabase/scripts/stripe_setup.test.mjs` 24/24; `node
+  supabase/tests/ai_privacy.test.mjs` 19/19; `supabase/tests/run_edge_typecheck.sh`
+  6 passed, 5 skipped, 3 known-failing, 0 new failures.
+- Garden Planner privacy hardening re-run: `node --test
+  supabase/tests/garden_planner_privacy.test.mjs` 9/9; `npm run typecheck` in
+  `expo`; `node supabase/tests/ai_privacy.test.mjs` 19/19;
+  `supabase/tests/run_edge_typecheck.sh` still 6 passed, 5 skipped, 3
+  known-failing, 0 new failures. Direct `deno check
+  supabase/functions/garden-planner/index.ts` is not usable locally because
+  `providers.ts` is bundled at deploy and absent from the function directory.
+- AI provider disclosure guard: `node --test
+  supabase/tests/ai_provider_disclosure.test.mjs` 3/3 and `npm run typecheck`
+  in `web` pass. `_shared/providers.ts` now requires
+  `AI_PAID_FALLBACK_DISCLOSED=true` before OpenAI/Anthropic keys are exposed to
+  any AI edge function.
+- Current dirty-tree package gates: `npm run build` in `web` passed; `npm run
+  lint` in `expo` exits 0 after the Garden Planner copy escape fix, with 19
+  pre-existing warnings still reported; `npm run typecheck` in `expo` passed.
+- Support route verification: `npm run build` in `web` passed and listed
+  `/support` as a static route; re-run `npm run typecheck` in `web` passed after
+  the build completed. Standalone local smoke (`PORT=3038 HOSTNAME=127.0.0.1
+  node .next/standalone/server.js`) returned HTTP 200 for `/support` and
+  confirmed `/support`, `/delete-account`, `/privacy` and `/terms` in
+  `/sitemap.xml`.
+- `node expo/lib/billing.test.mjs` — 11/11 passed.
+- `node web/lib/marketQr.test.mjs` — 5/5 passed.
+- `node supabase/tests/ai_privacy.test.mjs` — 19/19 passed.
+- `node supabase/tests/listing_draft_schema.test.mjs` — 26/26 passed.
+- `node supabase/tests/market_actions.test.mjs` — 58/58 passed.
+- `node supabase/tests/market_import_schema.test.mjs` — 27/27 passed.
+- `supabase/tests/run_edge_typecheck.sh` — 6 passed, 5 skipped for deploy-time
+  bundled `providers.ts`, 3 known-failing, 0 new failures.
+- AGENTS money suites: `payment_hardening` 34/34, `renew_window` 24/24,
+  `listing_allowance` 38/38, `lifecycle_guard` 9/9, `seed_drop_off` all passed.
+
 ---
 
-## 10. The art is now the critical path
+## 10. Store and launcher art — fixed in working tree
 
-This was already recorded as a blocker in `PLAY_STORE_LISTING.md` §3.2. The
-emulator run on 2026-08-19 turned it from a sampled-hex argument into something
-you can look at, and added a second defect that recolouring alone would not fix.
+This was the critical path; it is now a working-tree fix. The old
+dark-green/cream raster set has been replaced with an identity-v4 interim mark
+that uses a red-hat Gnome mascot, white canvas, charcoal outline and the five
+semantic hues in the basket. Final commissioned character art can fast-follow,
+but Play no longer lacks required graphics.
 
-**The identity flip could not reach the raster assets.** `constants/colors.ts`
-re-skinned ~70 importers through one file, but `expo/assets/images/` was last
-touched at `123b362`, long before `18e64cf`. So `icon.png`, `adaptive-icon.png`,
-`splash-icon.png` and `badge.png` are all still the olive-green/cream artwork —
-the exact identity the remodel exists to leave behind. `badge.png` is the
-wordmark in the Browse header; `icon.png` is what the Play Store shows first.
+Generated / updated:
+- `expo/assets/images/gnome-mark.svg` — source mark.
+- `expo/assets/images/icon.png` — 1024 × 1024 RGBA.
+- `expo/assets/images/adaptive-icon.png` — 1024 × 1024 RGBA, padded foreground.
+- `expo/assets/images/splash-icon.png` — 512 × 512 RGBA.
+- `expo/assets/images/badge.png` — 192 × 192 RGBA.
+- `expo/assets/images/favicon.png` — 16 × 16 RGBA.
+- `docs/release/play-icon-512.png` — 512 × 512 RGBA, 57 KB.
+- `docs/release/play-feature-graphic.png` — 1024 × 500 RGB/no alpha, 49 KB.
 
-**Three separate problems, and only one of them is colour:**
+`app.json` now sets both `android.adaptiveIcon.backgroundColor` and
+`splash.backgroundColor` to `#FFFFFF`.
 
-1. **Off-identity.** Dark-green figure on cream, with an olive field. The
-   competitor-proximity problem that started the remodel.
-2. **Mechanically wrong as an adaptive icon.** `adaptive-icon.png` is
-   byte-identical to `icon.png` (md5 `7a1d3c50…`) — a full-bleed 1024×1024
-   illustration used as an adaptive *foreground*. Android masks the foreground
-   to its safe zone, so the gnome's hat is clipped and the banner is cut at both
-   edges. On the emulator launcher it is the **only icon on the screen that is
-   not a clean circle**; it sits among Gmail, Chrome and Maps looking broken
-   rather than merely different. Recolouring the same art would not fix this —
-   an adaptive foreground needs its subject inside the safe zone.
-3. **Illegible at size.** "GNOME" is barely readable at launcher scale and
-   "FARMERS MARKET" is unreadable mush. A detailed vegetable illustration cannot
-   survive 48dp.
-
-`app.json` also still sets `adaptiveIcon.backgroundColor` and
-`splash.backgroundColor` to Parchment `#F6F2E9` — the last two dead-palette
-hexes in the repo. `splash-icon.png` is on transparent ground, so it would sit
-correctly on white once the artwork is replaced.
-
-**And the feature graphic does not exist at all.** 1024 × 500, no alpha,
-required — Play will not let you publish without it. A repo-wide search finds no
-such asset.
-
-**Why this changes the plan:** the icon, the adaptive foreground and the feature
-graphic are all art, and the mascot direction is on hold pending Daniel's pick.
-That makes the character decision the critical path to launch rather than a
-parallel nicety — and it argues for treating the hero gnome, the icon and the
-feature graphic as **one commission**, so the store, the launcher and the app
-tell the same story.
+Verification: `sips` confirmed dimensions and alpha/no-alpha state; `file`
+confirmed PNG color model; visual inspection was done for app icon, adaptive
+foreground and feature graphic. A rebuilt-device launcher/splash check and Map
+regression still need to happen with the final AAB because `app.json` changed.
 
 ### 10.1 Also found, not blocking — the map is blank for the first ~90 seconds on a cold device
 

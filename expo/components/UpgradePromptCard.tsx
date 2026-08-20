@@ -1,18 +1,18 @@
 import React, { useEffect } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { logEvent, usePlanLimits } from '@/lib/db';
-import { formatPrice } from '@/lib/listingType';
 import { planDisplay } from '@/lib/allowance';
 import type { MarketPlan } from '@/types';
 
 const NEXT: Record<string, MarketPlan | null> = {
   free: 'grower',
   grower: 'farm',
-  farm: 'sponsor',
+  farm: null,
   sponsor: null,
 };
 // Customer-facing names only; the internal enum stays internal.
@@ -24,6 +24,7 @@ export default function UpgradePromptCard({
   plan: MarketPlan;
   reason: 'nudge' | 'limit';
 }) {
+  const router = useRouter();
   const { userId } = useAuth();
   const limits = usePlanLimits();
   const next = NEXT[plan] ?? null;
@@ -36,7 +37,6 @@ export default function UpgradePromptCard({
   if (!next) return null;
 
   const nextLimit = limits.data?.[next];
-  const price = nextLimit ? formatPrice(nextLimit.price_cents) : '';
   // 0104 columns; undefined until the migrations apply, in which case the pitch omits numbers
   // rather than falling back to the retired active-listing cap.
   const monthly = nextLimit?.monthly_publish_allowance;
@@ -44,10 +44,7 @@ export default function UpgradePromptCard({
 
   const onUpgrade = () => {
     void logEvent('upgrade_prompt_tapped', { userId: userId ?? null, metadata: { plan, next, reason } });
-    Alert.alert(
-      'Coming soon',
-      `${planDisplay(next)} plans arrive soon — we’ll let you know the moment you can upgrade.`,
-    );
+    router.push('/upgrade');
   };
 
   return (
@@ -62,16 +59,17 @@ export default function UpgradePromptCard({
             : 'You’re close to this period’s included listings'}
         </Text>
         <Text style={styles.body}>
-          Publish more for $0.99 each, or upgrade to {planDisplay(next)}
+          See what changes with{' '}
+          {planDisplay(next)}
           {monthly === null ? ' for unlimited Sell listings'
             : monthly != null ? ` for ${monthly} new Sell listings a month` : ''}
           {renewals === null ? ' and unlimited renewals'
             : renewals != null && renewals > 0 ? ` and ${renewals} free renewals` : ''}
-          {price ? ` — ${price}/mo` : ''}.
+          . Plans are not sold in the app.
         </Text>
       </View>
       <View style={styles.cta}>
-        <Text style={styles.ctaText}>Upgrade</Text>
+        <Text style={styles.ctaText}>See plans</Text>
       </View>
     </Pressable>
   );

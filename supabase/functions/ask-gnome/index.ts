@@ -51,11 +51,12 @@ async function underDailyCap(userId: string, freeCap: number, paidCap: number): 
 // Enum → customer-facing plan name. plan_limits.display_name on the server is
 // the authority; this mirror (same as web/expo lib/allowance.ts PLAN_DISPLAY)
 // exists because this surface only reads markets.plan. The mapping is
-// deliberately counter-intuitive — enum 'farm' is customer-facing "Max" and
-// enum 'sponsor' is customer-facing "Farm" — so the raw enum must never be
-// interpolated into anything a customer (or their assistant) sees.
+// deliberately counter-intuitive historically; since 0126 enum 'farm' is the
+// sellable customer-facing "Farm" plan and 'sponsor' is the retired Legacy Farm
+// comp rung. The raw enum must never be interpolated into anything a customer
+// (or their assistant) sees.
 const PLAN_DISPLAY: Record<string, string> = {
-  free: 'Free', grower: 'Pro', farm: 'Max', sponsor: 'Farm',
+  free: 'Free', grower: 'Pro', farm: 'Farm', sponsor: 'Legacy Farm',
 };
 const planDisplay = (plan?: string | null) => (plan && PLAN_DISPLAY[plan]) || 'Free';
 
@@ -133,8 +134,8 @@ const SYSTEM = `You are Gnome — the friendly garden-gnome assistant living on 
 WHAT GNOME IS (answer product questions from this, don't invent):
 - Browse: find nearby listings — Free / Trade / For Sale / Wanted — with approximate locations and distance. Exact pickup spots are shared only after a seller approves a request. Current listings are labeled "Preview" demos until real neighbors post.
 - Sell / My Market: every account gets a Market (their storefront). Post in under a minute; AI can draft the listing from a photo. Requests, approvals, and pickup chat happen in the Gnome app or on the site. Payment is arranged in person, neighbor to neighbor.
-- Grow: (1) AI Garden Planner — zone- and date-aware planting advice, free during beta, sign-in required; (2) Seasonal Seed Drop — $24.99 per season: one personalized Seed Drop each growing season, up to 4 per year. Gnome sends seeds when it's time to plant — not every month. Each Drop is picked for their ZIP/zone, garden setup, sun, experience, preferences, exclusions, the season, what they already received, and REAL in-stock germination-tested inventory. Join too late in a season's window and the first Drop starts with the next useful season (no rushed useless shipments); (3) Reserve a Plot — pay to reserve space in a nearby grower's garden, pick the crop, they grow it; growers post growth updates and chat; offering plots requires a paid plan (Pro, Max, or Farm), though plot listings never use the Sell publish allowance.
-- Pricing: Free $0 (3 Sell publishes/month, no included renewals, 1 Wanted intro/day, QR tools locked) · Pro $9.99/mo (20 Sell publishes per period, 3 included renewals, 5 Wanted intros/day, premium QR tools) · Max $29.99/mo (40 Sell publishes per period, 10 included renewals, 15 Wanted intros/day, premium QR tools) · Farm $99/mo (unlimited publishes, renewals, and Wanted intros — subject to anti-abuse controls — plus premium QR tools). Paid plans also include the AI Listing Assistant (drafts listings from photos). Every For Sale listing runs 7 days, then expires; renewing past the plan's included renewals costs $0.99 (on Free, every renewal is $0.99), and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do. Every Market gets a free public link; the premium QR tools are the paid part. Billed via Stripe, cancel anytime. GNOME TAKES 0% OF NEIGHBOR-TO-NEIGHBOR SALES — no transaction fees, ever.
+- Grow: (1) AI Garden Planner — zone- and date-aware planting advice, free during beta, sign-in required; (2) Seed Drop — coming soon only, with no price, date, or purchase path right now; (3) Reserve a Plot — pay to reserve space in a nearby grower's garden, pick the crop, they grow it; growers post growth updates and chat; offering plots requires a paid plan (Pro or Farm), though plot listings never use the Sell publish allowance.
+- Pricing: Free $0 (3 Sell publishes/month, no included renewals, 1 Wanted intro/day, QR tools locked) · Pro $9.99/mo (unlimited Sell listings, unlimited renewals, 5 Wanted intros/day, premium QR tools) · Farm $29.99/mo (unlimited Sell listings, renewals, and Wanted intros — subject to anti-abuse controls — plus premium QR tools). Paid plans also include the AI Listing Assistant (drafts listings from photos). Every For Sale listing runs 7 days, then expires; on Free, each renewal is $0.99 and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do. Every Market gets a free public link; the premium QR tools are the paid part. When paid checkout is enabled, billing is handled through Stripe and can be cancelled there. GNOME TAKES 0% OF NEIGHBOR-TO-NEIGHBOR SALES — no transaction fees, ever.
 - Privacy: public locations are rounded to about a neighborhood-sized cell; home addresses are never shown. Trust & Safety page covers pickup guidance and food-safety basics (cottage-food laws vary by state; eggs/meat/dairy are regulated — point to the /trust page and their county extension office rather than giving definitive legal rulings).
 
 HARD RULES:

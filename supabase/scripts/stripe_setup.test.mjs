@@ -138,13 +138,13 @@ await withStub({}, async (port, stub) => {
 await withStub({}, async (port, stub) => {
   const { out } = await run(port, ['--apply']);
   const posts = (path) => stub.created.filter((c) => c.path === path).length;
-  check('creates 2 products (credit + farm)', posts('/v1/products') === 2, `${posts('/v1/products')}`);
+  check('creates 1 product (credit)', posts('/v1/products') === 1, `${posts('/v1/products')}`);
   // Without a tax code every checkout fails at payment time under Managed Payments, which is on by
   // default for this account — so this is a purchase-blocking omission, not metadata hygiene.
   check('every product carries a tax code',
     stub.created.filter((c) => c.path === '/v1/products').every((c) => c.params.tax_code === 'txcd_10000000'),
     stub.created.filter((c) => c.path === '/v1/products').map((c) => c.params.tax_code).join(','));
-  check('creates 3 prices', posts('/v1/prices') === 3, `${posts('/v1/prices')}`);
+  check('creates 2 prices', posts('/v1/prices') === 2, `${posts('/v1/prices')}`);
   check('creates 1 coupon', posts('/v1/coupons') === 1, `${posts('/v1/coupons')}`);
   check('creates 1 promotion code', posts('/v1/promotion_codes') === 1, `${posts('/v1/promotion_codes')}`);
 
@@ -164,12 +164,12 @@ await withStub({}, async (port, stub) => {
     coupon['metadata[gnome_applicable_plan]']);
 
   const amounts = stub.created.filter((c) => c.path === '/v1/prices').map((c) => c.params.unit_amount).sort();
-  check('prices are 99, 99, 9900', JSON.stringify(amounts) === JSON.stringify(['99', '99', '9900']),
+  check('prices are 99, 99', JSON.stringify(amounts) === JSON.stringify(['99', '99']),
     amounts.join(','));
 
   const keys = stub.created.filter((c) => c.path === '/v1/prices').map((c) => c.params.lookup_key).sort();
-  check('lookup keys are the three expected',
-    JSON.stringify(keys) === JSON.stringify(['gnome_listing_publish', 'gnome_listing_renewal', 'gnome_sponsor_monthly']),
+  check('lookup keys are the two expected',
+    JSON.stringify(keys) === JSON.stringify(['gnome_listing_publish', 'gnome_listing_renewal']),
     keys.join(','));
   check('emits billing_products SQL', out.includes('insert into public.billing_products'));
   check('SQL targets the test columns, not live',
@@ -181,7 +181,6 @@ await withStub({
   prices: [
     ['gnome_listing_publish', { id: 'price_a', product: 'prod_credit', unit_amount: 99, lookup_key: 'gnome_listing_publish' }],
     ['gnome_listing_renewal', { id: 'price_b', product: 'prod_credit', unit_amount: 99, lookup_key: 'gnome_listing_renewal' }],
-    ['gnome_sponsor_monthly', { id: 'price_c', product: 'prod_farm', unit_amount: 9900, lookup_key: 'gnome_sponsor_monthly' }],
   ],
   coupons: [['FOUNDING3', {
     id: 'FOUNDING3', percent_off: 100, duration: 'repeating', duration_in_months: 3,
@@ -195,7 +194,7 @@ await withStub({
   check('rerun reuses all five objects', (out.match(/= /g) ?? []).length >= 5);
   check('rerun exits clean', code === 0, `exit ${code}`);
   check('rerun still emits SQL with the existing ids',
-    out.includes('price_a') && out.includes('price_c'));
+    out.includes('price_a') && out.includes('price_b'));
 });
 
 // 4. A price that exists at the wrong amount is reported, never silently mutated.

@@ -252,7 +252,7 @@ export default function TermsPage() {
       <h2>16. Ending it</h2>
       <p>
         You can stop using Gnome at any time. You can delete your account from
-        Settings in the Gnome app, or on the web at{' '}
+        Profile → Settings → Delete my account in the Gnome app, or on the web at{' '}
         <a href="/delete-account">gnomefarmersmarket.com/delete-account</a> —
         either way it removes your profile, listings, and uploads, and it
         can&rsquo;t be undone. If you can&rsquo;t sign in at all, email{' '}

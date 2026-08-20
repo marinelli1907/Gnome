@@ -18,8 +18,8 @@ The Gnome Stripe account is **Boone Systems LLC** `acct_1U0DgIAGtpm0Et4C`.
    payments on, and Checkout rejects sessions for products without one (test
    mode uses `txcd_10000000`; pick the right code per product for live):
    - GNOME_GROWER_MONTHLY — $9.99/mo recurring (customer-facing "Pro")
-   - GNOME_FARM_MONTHLY — $29.99/mo recurring (customer-facing "Max")
-   - GNOME_SPONSOR_MONTHLY — $99.00/mo recurring (customer-facing "Farm")
+   - GNOME_FARM_MONTHLY — $29.99/mo recurring (customer-facing "Farm")
+   - GNOME_SPONSOR_MONTHLY — retired Legacy Farm comp rung; keep inactive, do not create a sellable live price
    - GNOME_PICKUP_LOCATION_ADDON — $5.00/mo recurring, quantity-adjustable
    - GNOME_LISTING_PROMOTION — $3.99 one-time
    - GNOME_LISTING_PUBLISH — $0.99 one-time (allowance overage)

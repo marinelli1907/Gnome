@@ -135,7 +135,7 @@ export default function AiTab() {
     setBusy(true);
     try {
       const { data, error: e } = await supabase.functions.invoke('gnome-assistant', {
-        body: { action: 'chat', messages: next },
+        body: { action: 'chat', messages: next, platform: Platform.OS },
       });
       if (e) throw e;
       if (data?.error) throw new Error(data.message ?? data.error);
@@ -173,7 +173,9 @@ export default function AiTab() {
         if (pay > 0) {
           setMessages((m) => [...m, {
             role: 'assistant',
-            content: 'Your plan’s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created — you can publish it from My Market when you’re ready.',
+            content: canBuyDigitalInApp
+              ? 'Your plan’s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created — you can publish it from My Market when you’re ready.'
+              : 'Your plan’s Sell publishes are used up for this period. Nothing was created — upgrade for unlimited Sell publishes, or publish the basket when your allowance resets.',
           }]);
           return;
         }
@@ -202,7 +204,11 @@ export default function AiTab() {
         : p.action === 'restock' ? 'restocked' : 'renewed';
       const parts: string[] = [];
       if (ok) parts.push(`${ok} listing${ok === 1 ? '' : 's'} ${did}.`);
-      if (pay) parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`);
+      if (pay) {
+        parts.push(canBuyDigitalInApp
+          ? `${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`
+          : `${pay} need${pay === 1 ? 's' : ''} renewal help — your plan's included renewals are used up.`);
+      }
       if (!parts.length) parts.push('Nothing needed doing — everything was already in that state.');
       setSettled((s) => ({ ...s, [p.action_id]: true }));
       // The server's per-listing results say exactly which renewals want $0.99; those become
@@ -281,6 +287,10 @@ export default function AiTab() {
 
   const payAndRenew = useCallback(async (item: { id: string; title: string }) => {
     if (paidFlow[item.id] === 'paying' || paidFlow[item.id] === 'done') return;
+    if (!canBuyDigitalInApp) {
+      router.push('/upgrade');
+      return;
+    }
     setError(null);
     setPaidFlow((s) => ({ ...s, [item.id]: 'paying' }));
     const outcome = await purchaseOverage(item.id);
@@ -302,7 +312,7 @@ export default function AiTab() {
       setPaidFlow((s) => { const { [item.id]: _gone, ...rest } = s; return rest; });
       setError('The checkout could not start. Nothing was charged.');
     }
-  }, [paidFlow, finishPaidRenewal]);
+  }, [paidFlow, finishPaidRenewal, router]);
 
   const cancelProposal = useCallback(async (p: Proposal) => {
     if (settled[p.action_id]) return;

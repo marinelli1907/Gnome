@@ -15,10 +15,9 @@ import {
   usePromoteListing,
   usePromotePurchased,
 } from '@/lib/db';
-import { formatPrice } from '@/lib/listingType';
 
-// FEATURED LISTING PROMOTION — one product: 7 days, $3.99, or free with an
-// included plan credit (Pro/grower 3/mo, Max/farm 10/mo). All allowance math is
+// FEATURED LISTING PROMOTION — 7 days, redeemed with an included plan credit or
+// a previously granted credit. All allowance math is
 // server-side (market_promotion_status → effective plan).
 export default function PromoteScreen() {
   const { listingId } = useLocalSearchParams<{ listingId: string }>();
@@ -34,7 +33,6 @@ export default function PromoteScreen() {
   const st = status.data;
   const includedRemaining = st?.included_remaining ?? 0;
   const purchased = st?.purchased_balance ?? 0;
-  const priceCents = st?.price_cents ?? 399;
   const days = st?.duration_days ?? 7;
   const resetsOn = st?.resets_on
     ? new Date(`${st.resets_on}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -112,14 +110,6 @@ export default function PromoteScreen() {
     );
   const usePurchasedCredit = () =>
     promotePurchased.mutate({ listingId: listing.id, marketId: market.data!.id }, { onSuccess: done, onError: onErr });
-  const buySingle = () => {
-    void logEvent('boost_upgrade_prompt_tapped', { userId: userId ?? null, listingId, metadata: {} });
-    Alert.alert(
-      `Buy a promotion · ${formatPrice(priceCents)}`,
-      'Promotion checkout is almost ready. Until then, Pro ($9.99/mo) includes 3 promotions a month and Max includes 10.',
-    );
-  };
-
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}>
       <Text style={styles.heading}>Feature “{listing.title}”</Text>
@@ -152,11 +142,10 @@ export default function PromoteScreen() {
         />
       ) : (
         <>
-          <Button label={`Feature for ${days} days · ${formatPrice(priceCents)}`} onPress={buySingle} />
           <Text style={styles.contextNote}>
             {st && st.included_allowance > 0
-              ? `You’ve used your ${st.included_allowance} included promotion${st.included_allowance === 1 ? '' : 's'} this month${resetsOn ? ` — they’re back ${resetsOn}` : ''}.`
-              : 'Pro includes 3 promotions each month, Max includes 10.'}
+              ? `You’ve used your ${st.included_allowance} included promotion${st.included_allowance === 1 ? '' : 's'} this month${resetsOn ? ` — they’re back ${resetsOn}` : ''}. Extra promotions are not sold in the app.`
+              : 'Promotions are included with Pro and Farm. They are not sold in the app.'}
           </Text>
         </>
       )}

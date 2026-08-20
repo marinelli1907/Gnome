@@ -107,14 +107,15 @@ export default function ComplianceGate({
           <Text style={styles.body}>
             A paid Gnome seller plan is required to sell regulated products.
             You’ll also need any verification required for this category —
-            paying Gnome does not itself make a product legal to sell.
+            paying Gnome does not itself make a product legal to sell. Paid
+            plans are not sold in the app.
           </Text>
           <Pressable
             accessibilityRole="button"
             style={styles.primaryBtn}
             onPress={() => router.push('/upgrade')}
           >
-            <Text style={styles.primaryBtnText}>Upgrade to sell this category</Text>
+            <Text style={styles.primaryBtnText}>What plans include</Text>
           </Pressable>
           {viewReqsBtn}
           {showReqs && requirements}

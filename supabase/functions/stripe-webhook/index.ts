@@ -198,8 +198,9 @@ Deno.serve(async (req: Request) => {
   if (env('STRIPE_PRICE_LOCATION_ADDON')) priceKey.set(env('STRIPE_PRICE_LOCATION_ADDON')!, 'GNOME_PICKUP_LOCATION_ADDON');
   if (env('STRIPE_PRICE_SEED_SUB')) priceKey.set(env('STRIPE_PRICE_SEED_SUB')!, 'GNOME_SEED_DROP_SEASONAL');
   const keyForPrice = (id?: string | null) => (id ? priceKey.get(id) : undefined);
-  // Internal enum values, which are NOT the customer-facing names: 'farm' is
-  // customer-facing "Max" and 'sponsor' is customer-facing "Farm".
+  // Internal enum values, which are NOT the customer-facing names. Since 0126,
+  // 'farm' is customer-facing Farm and 'sponsor' is the retired Legacy Farm
+  // comp rung kept for legacy events.
   const planForKey = (k?: string) => (k === 'GNOME_GROWER_MONTHLY' ? 'grower' : k === 'GNOME_FARM_MONTHLY' ? 'farm' : k === 'GNOME_SPONSOR_MONTHLY' ? 'sponsor' : null) as 'grower' | 'farm' | 'sponsor' | null;
   const bundlePlan = (k?: string) => (k === 'GNOME_GROWER_SEED_BUNDLE' ? 'grower' : k === 'GNOME_FARM_SEED_BUNDLE' ? 'farm' : null) as 'grower' | 'farm' | null;
   const log = (type: string, market: string | null, user: string | null, product: string | null, amount: number | null, effect: string, meta?: unknown) =>

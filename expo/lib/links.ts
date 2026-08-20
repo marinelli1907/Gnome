@@ -3,9 +3,17 @@
 //   /listing/[slug]-[id]      — slug is cosmetic; the site extracts the trailing
 //                               UUID (web/lib/format.ts idFromSlugId), so a
 //                               client-computed slug is always compatible.
+import { Platform } from 'react-native';
 import type { Listing, Market } from '@/types';
 
 export const WEB_BASE = 'https://gnomefarmersmarket.com';
+
+export function nativeWebUrl(path: string): string {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (Platform.OS !== 'android') return `${WEB_BASE}${cleanPath}`;
+  const sep = cleanPath.includes('?') ? '&' : '?';
+  return `${WEB_BASE}${cleanPath}${sep}app_platform=android`;
+}
 
 /** Mirror of web/lib/format.ts slugify — cosmetic only, id stays canonical. */
 export function slugify(input: string): string {

@@ -17,9 +17,13 @@
 // the live gate, resolves the test-vs-live price in one place, and binds the
 // session to the caller's OWN market server-side. The button cannot outlive the
 // switch again.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { useSession } from '../components/auth';
+import {
+  NATIVE_APP_PLATFORM_PARAM,
+  NATIVE_APP_PLATFORM_SESSION_KEY,
+} from '../components/NativeAppVisitMarker';
 
 type Mode = 'test' | 'live';
 
@@ -45,8 +49,25 @@ export default function PricingCTA({
   // Holds a created-but-not-yet-opened checkout URL while the test-mode warning
   // is on screen. Non-null means "we told them, and they have not continued".
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const [androidAppVisit, setAndroidAppVisit] = useState(false);
 
   const cls = `btn ${primary ? 'btn-primary' : 'btn-secondary'}`;
+
+  useEffect(() => {
+    const queryPlatform = new URLSearchParams(window.location.search)
+      .get(NATIVE_APP_PLATFORM_PARAM)?.toLowerCase();
+    const storedPlatform = window.sessionStorage
+      .getItem(NATIVE_APP_PLATFORM_SESSION_KEY)?.toLowerCase();
+    setAndroidAppVisit(queryPlatform === 'android' || storedPlatform === 'android');
+  }, []);
+
+  if (androidAppVisit) {
+    return (
+      <p className="notice-inline" style={{ marginTop: 8 }}>
+        Digital plan checkout is unavailable from Android app-opened pages.
+      </p>
+    );
+  }
 
   if (ready && !session) {
     return <a className={cls} href="/sell">Sign in to upgrade</a>;

@@ -337,6 +337,7 @@ export type ActionDeps = {
   /** One lite-tier extraction call. Returns raw model text. Throws on transport failure. */
   extract: (system: string, message: string) => Promise<string>;
   requestId: string;
+  digitalPurchasesAvailable?: boolean;
 };
 
 const rpcErr = (e: { message: string } | null): string => e?.message ?? '';
@@ -652,7 +653,9 @@ export async function handleMarketAction(
     const { data: ov } = await deps.rpc('my_overage_required', { p_listing: listing.id });
     const ovRow = (Array.isArray(ov) ? ov[0] : ov) as { required?: boolean; reason?: string } | null;
     if (ovRow?.required === true) {
-      payNote = ' Your included renewals are used up, so this one is $0.99.';
+      payNote = deps.digitalPurchasesAvailable === false
+        ? ' Your included renewals are used up; renewals need a paid plan on this device.'
+        : ' Your included renewals are used up, so this one is $0.99.';
       payment = { required: true, already_paid: false, price_cents: 99 };
     } else if (ovRow?.reason === 'ALREADY_AUTHORIZED') {
       payNote = ' You already paid for this one — confirming uses that payment, with no new charge.';
