@@ -16,8 +16,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { Button, Field } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
-
-const LEGAL_BASE = 'https://gnomefarmersmarket.com';
+import { nativeWebUrl } from '@/lib/links';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -368,11 +367,11 @@ export default function SignInScreen() {
 
         <View style={styles.legalRow}>
           <Text style={styles.legalText}>By continuing you agree to our </Text>
-          <Pressable onPress={() => Linking.openURL(`${LEGAL_BASE}/terms`)} accessibilityRole="link">
+          <Pressable onPress={() => Linking.openURL(nativeWebUrl('/terms'))} accessibilityRole="link">
             <Text style={styles.legalLink}>Terms</Text>
           </Pressable>
           <Text style={styles.legalText}> and </Text>
-          <Pressable onPress={() => Linking.openURL(`${LEGAL_BASE}/privacy`)} accessibilityRole="link">
+          <Pressable onPress={() => Linking.openURL(nativeWebUrl('/privacy'))} accessibilityRole="link">
             <Text style={styles.legalLink}>Privacy Policy</Text>
           </Pressable>
           <Text style={styles.legalText}>.</Text>
