@@ -121,7 +121,10 @@ export default function GardenPlannerScreen() {
         mediaType: photo?.mediaType,
       });
       setTurns([...next, { role: 'assistant', content: reply }]);
-      void logEvent('garden_planner_used', { userId: userId ?? undefined, metadata: { q } });
+      void logEvent('garden_planner_used', {
+        userId: userId ?? undefined,
+        metadata: { chars: q.length, has_photo: !!photo },
+      });
     } catch (e: any) {
       setError(e?.message ?? 'The planner hit a snag — try again.');
       setTurns(turns);
@@ -183,6 +186,9 @@ export default function GardenPlannerScreen() {
           placeholderTextColor={Colors.textTertiary}
         />
       </View>
+      <Text style={styles.aiCaveat}>
+        The Gnome planner is AI. It can be wrong - check seed packets and product labels before you act.
+      </Text>
 
       <ScrollView
         ref={scrollRef}
@@ -275,6 +281,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: Colors.backgroundSecondary,
     borderRadius: 10,
+  },
+  aiCaveat: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: Colors.textTertiary,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
   log: { flex: 1 },
   logContent: { padding: 16, gap: 10 },

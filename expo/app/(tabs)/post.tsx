@@ -177,7 +177,7 @@ export default function PostScreen() {
 
   const removeAsset = (uri: string) => setAssets((prev) => prev.filter((a) => a.uri !== uri));
 
-  // ✨ Snap a photo → Claude drafts the listing. Fills only fields the user
+  // Choose a photo → Claude drafts the listing. Fills only fields the user
   // hasn't typed in yet — never clobbers their words. Best-effort: on any
   // failure they just keep filling the form by hand.
   const draftWithAi = async () => {
@@ -347,7 +347,7 @@ export default function PostScreen() {
       if (asDraft) {
         Alert.alert(
           'Saved as draft',
-          'Your listing is saved and not visible to buyers. Once your plan/verification is in order it can go live from My Gnome.',
+          'Your listing is saved and not visible to buyers. Once your plan/verification is in order it can go live from Market.',
         );
       }
       router.push(`/listing/${listing.id}`);
@@ -484,7 +484,7 @@ export default function PostScreen() {
           >
             <Text style={styles.aiBannerEmoji}>✨</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.aiBannerTitle}>Take a photo — Gnome drafts it</Text>
+              <Text style={styles.aiBannerTitle}>Choose a photo — Gnome drafts it</Text>
               <Text style={styles.aiBannerSub}>AI Listing Assistant · included with paid plans</Text>
             </View>
             <Text style={styles.aiBannerArrow}>→</Text>

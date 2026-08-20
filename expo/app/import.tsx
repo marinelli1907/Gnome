@@ -13,22 +13,22 @@
 // never happens here.
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, Platform, Pressable,
+  ActivityIndicator, Alert, FlatList, Image, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { Camera, ImagePlus, X } from 'lucide-react-native';
+import { ImagePlus, X } from 'lucide-react-native';
 import { Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { logEvent } from '@/lib/db';
-import { normalizeImageAsset, pickImages } from '@/lib/images';
+import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
+import { pickImages } from '@/lib/images';
 import {
   COMPLIANCE_NOTE, allowanceSummary, categoryLabel, conflictHeadline, conflictsFor,
   createButtonLabel, duplicateLabel, fieldIssues, importLimitCopy, priceLabel,
@@ -114,18 +114,6 @@ export default function ImportScreen() {
     if (room <= 0) return;
     const picked = await pickImages({ selectionLimit: room });
     if (picked.length) setAssets((prev) => [...prev, ...picked].slice(0, MAX_SOURCES));
-  };
-
-  const addFromCamera = async () => {
-    setError(null);
-    if (assets.length >= MAX_SOURCES) return;
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Permission needed', 'Allow camera access to continue.'); return; }
-    const res = await ImagePicker.launchCameraAsync({ quality: 1, exif: false });
-    if (res.canceled || !res.assets[0]) return;
-    // Same EXIF-stripping re-encode as every other image path.
-    const norm = await normalizeImageAsset(res.assets[0]);
-    setAssets((prev) => [...prev, norm].slice(0, MAX_SOURCES));
   };
 
   const removeAsset = (uri: string) => setAssets((prev) => prev.filter((a) => a.uri !== uri));
@@ -406,16 +394,6 @@ export default function ImportScreen() {
             Upload photos or screenshots
           </Text>
         </Pressable>
-        {Platform.OS === 'ios' && (
-          <Pressable
-            style={[styles.pickBtnSquare, assets.length >= MAX_SOURCES && styles.pickBtnOff]}
-            onPress={() => void addFromCamera()}
-            disabled={assets.length >= MAX_SOURCES}
-            accessibilityLabel="Take a photo"
-          >
-            <Camera size={18} color={assets.length >= MAX_SOURCES ? Colors.textTertiary : Colors.primary} />
-          </Pressable>
-        )}
       </View>
       <Text style={styles.limitNote}>Up to {MAX_SOURCES} images.</Text>
 
@@ -716,7 +694,10 @@ function DoneView({ result, ackedDups, onAckDup, onViewListing, onViewPlans, onR
   bottomInset: number;
 }) {
   const created = result.drafts_created + result.drafts_already_existed;
-  const allowance = useMemo(() => allowanceSummary(result.allowance), [result.allowance]);
+  const allowance = useMemo(
+    () => allowanceSummary(result.allowance, { canBuyExtras: canBuyDigitalInApp }),
+    [result.allowance],
+  );
   const dups = result.duplicates.filter((d) => !ackedDups.includes(d.candidate_index));
   return (
     <ScrollView

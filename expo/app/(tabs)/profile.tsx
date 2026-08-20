@@ -79,7 +79,7 @@ export default function ProfileScreen() {
       </Pressable>
 
       <Pressable style={[styles.link, { marginTop: 10 }]} onPress={() => router.push('/activity')}>
-        <Text style={styles.linkText}>Manage your listings & claims in My Gnome</Text>
+        <Text style={styles.linkText}>Manage your listings & claims in Market</Text>
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>
 

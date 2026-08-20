@@ -1019,7 +1019,7 @@ export type PromotionStatus = {
 };
 
 // One server call answers the whole Promote screen (allowance follows the
-// EFFECTIVE plan — complimentary Grower/Farm get their credits too).
+// EFFECTIVE plan — complimentary Pro/Farm get their credits too).
 export function useMarketPromotionStatus(marketId?: string) {
   return useQuery({
     queryKey: ['promotionStatus', marketId],

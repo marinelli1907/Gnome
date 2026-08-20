@@ -5,6 +5,7 @@
 // active nodes once (≈300 rows), builds an in-memory index, and every drilldown,
 // chip, subtree filter, and alias match derives from that snapshot.
 import { useQuery } from '@tanstack/react-query';
+import { canBuyDigitalInApp } from './digitalPurchase';
 import { supabase, isSupabaseConfigured } from './supabase';
 
 export interface TaxonomyNode {
@@ -292,7 +293,9 @@ const SERVER_ERRORS: Record<ServerErrorCode, { title: string; fallback: string }
     // The 0104 model: a monthly PUBLISH allowance that expiry does not refund. The wording is
     // per-period, never "active listings" — that model is retired.
     title: 'Included listings used up',
-    fallback: 'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more each month.',
+    fallback: canBuyDigitalInApp
+      ? 'You’ve used your included Sell listings for this period. Publish this one for $0.99, or upgrade for more each month.'
+      : 'You’ve used your included Sell listings for this period. Upgrade for unlimited Sell listings, or post again when your allowance resets.',
   },
   WANTED_INTRO_LIMIT_REACHED: {
     // Daily meter on initiating contact with a unique Wanted post. Follow-up messages in existing

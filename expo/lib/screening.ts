@@ -51,7 +51,7 @@ export function alertUnderReview(
     'This listing needs a quick compliance review in your area. It has been saved but is not public yet.';
   Alert.alert(
     UNDER_REVIEW_LABEL,
-    `${reason}\n\nSomeone at Gnome reads it by hand and you’ll be notified either way. Nothing was lost: it sits in My Gnome under “${UNDER_REVIEW_LABEL}” until then.`,
+    `${reason}\n\nSomeone at Gnome reads it by hand and you’ll be notified either way. Nothing was lost: it sits in Market under “${UNDER_REVIEW_LABEL}” until then.`,
     [
       {
         text: 'Seller verification',

@@ -103,11 +103,11 @@ export default function RootLayout() {
               />
               <Stack.Screen
                 name="upgrade"
-                options={{ presentation: 'modal', title: 'Upgrade', ...headerStyle }}
+                options={{ presentation: 'modal', title: 'Your plan', ...headerStyle }}
               />
               <Stack.Screen
                 name="promote/[listingId]"
-                options={{ presentation: 'modal', title: 'Boost listing', ...headerStyle }}
+                options={{ presentation: 'modal', title: 'Feature listing', ...headerStyle }}
               />
               <Stack.Screen
                 name="settings"

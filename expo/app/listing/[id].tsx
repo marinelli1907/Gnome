@@ -400,7 +400,7 @@ export default function ListingDetailScreen() {
           <Text style={styles.footerNote}>
             {isWanted
               ? "This is your Wanted post. We'll notify you when a neighbor offers a match."
-              : 'This is your listing. Manage it in My Gnome.'}
+              : 'This is your listing. Manage it in Market.'}
           </Text>
         ) : !isActive ? (
           <Text style={styles.footerNote}>This listing is no longer available.</Text>

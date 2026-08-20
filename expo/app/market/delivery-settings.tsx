@@ -125,7 +125,8 @@ export default function DeliverySettingsScreen() {
         onSuccess: () => Alert.alert('Saved', 'Buyers now see your delivery offer.'),
         onError: (e: any) => {
           const m = /DELIVERY_PLAN_LIMIT:[^:]*:(.*)/.exec(e?.message ?? '');
-          Alert.alert('Not saved', m ? m[1] : e?.message ?? 'Try again.');
+          const body = m?.[1]?.replace(/Grower & Farm/g, 'Pro and Farm');
+          Alert.alert('Not saved', body ?? e?.message ?? 'Try again.');
         },
       },
     );
@@ -230,10 +231,10 @@ export default function DeliverySettingsScreen() {
               </>
             ) : (
               <View style={styles.upsell}>
-                <Text style={styles.upsellTitle}>Neighbor delivery: up to 15 miles, one flat fee.</Text>
+                <Text style={styles.upsellTitle}>Free delivery: up to 15 miles, one flat fee.</Text>
                 <Text style={styles.upsellBody}>
-                  Upgrade to Pro for distance surcharges, same-day & next-day
-                  cutoffs, and weekly delivery days.
+                  Distance surcharges, same-day and next-day cutoffs, and weekly
+                  delivery days are included with Pro and Farm.
                 </Text>
                 <Button label="See plans" variant="secondary" onPress={() => router.push('/upgrade')}
                   style={{ marginTop: 10, alignSelf: 'flex-start' }} />

@@ -42,11 +42,10 @@ const row = (o) => ({
   publishes_remaining: 3, renewals_remaining: 0, listing_lifetime_days: 7, ...o,
 });
 const PRO = (o) => row({ display_name: 'Pro', period_source: 'subscription', period_end: '2026-09-16T04:00:00Z',
-  publishes_allowed: 20, renewals_allowed: 3, publishes_remaining: 20, renewals_remaining: 3, ...o });
-const MAX = (o) => PRO({ display_name: 'Max', publishes_allowed: 40, renewals_allowed: 10,
-  publishes_remaining: 40, renewals_remaining: 10, ...o });
+  publishes_allowed: null, renewals_allowed: null, publishes_remaining: null, renewals_remaining: null, ...o });
 const FARM = (o) => PRO({ display_name: 'Farm', publishes_allowed: null, renewals_allowed: null,
   publishes_remaining: null, renewals_remaining: null, ...o });
+const LEGACY_FARM = (o) => FARM({ display_name: 'Legacy Farm', ...o });
 
 // ---- 1. PARITY across the full state matrix -------------------------------
 const MATRIX = [
@@ -55,15 +54,9 @@ const MATRIX = [
   ['free exhausted', row({ publishes_used: 3, publishes_actual: 3, publishes_remaining: 0 })],
   ['free paid overage', row({ publishes_used: 3, publishes_actual: 5, publishes_remaining: 0, paid_publishes_period: 2 })],
   ['free paid renewal', row({ renewals_actual: 1, paid_renewals_period: 1 })],
-  ['pro partial', PRO({ publishes_used: 14, publishes_actual: 14, publishes_remaining: 6,
-                        renewals_used: 2, renewals_actual: 2, renewals_remaining: 1 })],
-  ['pro overage', PRO({ publishes_used: 20, publishes_actual: 23, publishes_remaining: 0, paid_publishes_period: 3,
-                        renewals_used: 3, renewals_actual: 5, renewals_remaining: 0, paid_renewals_period: 2 })],
-  ['max partial', MAX({ publishes_used: 27, publishes_actual: 27, publishes_remaining: 13,
-                        renewals_used: 7, renewals_actual: 7, renewals_remaining: 3 })],
-  ['max exhausted', MAX({ publishes_used: 40, publishes_actual: 40, publishes_remaining: 0,
-                          renewals_used: 10, renewals_actual: 10, renewals_remaining: 0 })],
+  ['pro', PRO({ publishes_actual: 14, renewals_actual: 2 })],
   ['farm', FARM({ publishes_actual: 47, renewals_actual: 18 })],
+  ['legacy farm', LEGACY_FARM({ publishes_actual: 3, renewals_actual: 1 })],
 ];
 
 console.log('\nexpo/web allowance parity\n');
@@ -71,8 +64,11 @@ for (const [name, r] of MATRIX) {
   const same =
     JSON.stringify(EXPO.listingsMeter(r)) === JSON.stringify(WEB.listingsMeter(r)) &&
     JSON.stringify(EXPO.renewalsMeter(r)) === JSON.stringify(WEB.renewalsMeter(r)) &&
+    JSON.stringify(EXPO.renewalsMeter(r, { canBuyExtras: false })) === JSON.stringify(WEB.renewalsMeter(r, { canBuyExtras: false })) &&
     EXPO.exhaustedHint(r, 'listings') === WEB.exhaustedHint(r, 'listings') &&
     EXPO.exhaustedHint(r, 'renewals') === WEB.exhaustedHint(r, 'renewals') &&
+    EXPO.exhaustedHint(r, 'listings', { canBuyExtras: false }) === WEB.exhaustedHint(r, 'listings', { canBuyExtras: false }) &&
+    EXPO.exhaustedHint(r, 'renewals', { canBuyExtras: false }) === WEB.exhaustedHint(r, 'renewals', { canBuyExtras: false }) &&
     JSON.stringify(EXPO.upgradeHint(r)) === JSON.stringify(WEB.upgradeHint(r)) &&
     EXPO.resetLabel(r) === WEB.resetLabel(r);
   ck(`parity: ${name}`, same);
@@ -81,8 +77,8 @@ for (const [name, w] of [
   ['wanted free fresh', { display_name: 'Free', allowed: 1, used_today: 0, remaining: 1 }],
   ['wanted free spent', { display_name: 'Free', allowed: 1, used_today: 1, remaining: 0 }],
   ['wanted pro partial', { display_name: 'Pro', allowed: 5, used_today: 3, remaining: 2 }],
-  ['wanted max partial', { display_name: 'Max', allowed: 15, used_today: 11, remaining: 4 }],
   ['wanted farm', { display_name: 'Farm', allowed: null, used_today: 27, remaining: null }],
+  ['wanted legacy farm', { display_name: 'Legacy Farm', allowed: null, used_today: 3, remaining: null }],
 ]) {
   ck(`parity: ${name}`, JSON.stringify(EXPO.wantedMeter(w)) === JSON.stringify(WEB.wantedMeter(w)));
 }
@@ -118,20 +114,15 @@ console.log('\nexpo presentation\n');
   ck('no negative remaining', !lines(m).some((v) => v.includes('-')));
 }
 {
-  const r = PRO({ publishes_used: 20, publishes_actual: 23, publishes_remaining: 0, paid_publishes_period: 3,
-                  renewals_used: 3, renewals_actual: 5, renewals_remaining: 0, paid_renewals_period: 2 });
-  ck('Pro overage listings: 20 included / 23 total',
-    has(EXPO.listingsMeter(r), '20 of 20 included used') && has(EXPO.listingsMeter(r), '23 published total'));
-  ck('Pro overage renewals: 3 included / 5 total',
-    has(EXPO.renewalsMeter(r), '3 of 3 included used') && has(EXPO.renewalsMeter(r), '5 renewed total'));
+  const r = PRO({ publishes_actual: 23, renewals_actual: 5 });
+  ck('Pro shows actual publishes AND Unlimited',
+    has(EXPO.listingsMeter(r), '23 published') && has(EXPO.listingsMeter(r), 'Unlimited'));
+  ck('Pro shows actual renewals AND Unlimited',
+    has(EXPO.renewalsMeter(r), '5 renewed') && has(EXPO.renewalsMeter(r), 'Unlimited'));
   ck('renewal totals never leak into publish totals',
     !lines(EXPO.listingsMeter(r)).some((v) => /renew/i.test(v)));
-  ck('Pro exhausted offers Max', EXPO.upgradeHint(r)?.name === 'Max');
-}
-{
-  const r = MAX({ publishes_used: 40, publishes_actual: 40, publishes_remaining: 0,
-                  renewals_used: 10, renewals_actual: 10, renewals_remaining: 0 });
-  ck('Max exhausted offers Farm', EXPO.upgradeHint(r)?.name === 'Farm');
+  ck('Pro gets no paid overage or upgrade hints',
+    EXPO.exhaustedHint(r, 'listings') === null && EXPO.exhaustedHint(r, 'renewals') === null && EXPO.upgradeHint(r) === null);
 }
 {
   const r = FARM({ publishes_actual: 47, renewals_actual: 18 });
@@ -145,13 +136,21 @@ console.log('\nexpo presentation\n');
 ck('reset date is the server period_end', EXPO.resetLabel({ period_end: '2026-09-16T04:00:00Z' }) === 'Resets Sep 16');
 ck('bad period_end degrades to empty', EXPO.resetLabel({ period_end: 'junk' }) === '');
 {
-  const all = [row({}), PRO({}), MAX({}), FARM({ publishes_actual: 1, renewals_actual: 1 })]
+  const all = [row({}), PRO({}), FARM({ publishes_actual: 1, renewals_actual: 1 }), LEGACY_FARM({ publishes_actual: 1, renewals_actual: 1 })]
     .flatMap((r) => lines(EXPO.listingsMeter(r)).concat(lines(EXPO.renewalsMeter(r))).concat([r.display_name]));
   ck('no internal enum reaches seller copy',
     !all.some((v) => /\b(grower|sponsor)\b/i.test(v)) && !all.some((v) => /^farm$/.test(v)));
 }
-ck('planDisplay: the counter-intuitive pair maps right',
-  EXPO.planDisplay('farm') === 'Max' && EXPO.planDisplay('sponsor') === 'Farm');
+ck('planDisplay: farm is sellable Farm and sponsor is Legacy Farm',
+  EXPO.planDisplay('farm') === 'Farm' && EXPO.planDisplay('sponsor') === 'Legacy Farm');
+{
+  const r = row({ publishes_used: 3, publishes_actual: 3, publishes_remaining: 0 });
+  const rm = EXPO.renewalsMeter(r, { canBuyExtras: false });
+  ck('Android-style copy hides extra-purchase prices',
+    EXPO.exhaustedHint(r, 'listings', { canBuyExtras: false }) === null
+    && has(rm, 'Upgrade for renewals')
+    && !lines(rm).some((v) => v.includes('$0.99')));
+}
 
 const failed = results.filter((r) => !r.ok).length;
 console.log(`\nexpo allowance: ${results.length - failed}/${results.length} passed\n`);
