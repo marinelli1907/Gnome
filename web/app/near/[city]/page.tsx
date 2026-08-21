@@ -3,7 +3,7 @@ import Link from 'next/link';
 import ListingCard from '../../components/ListingCard';
 import MarketCard from '../../components/MarketCard';
 import { CATEGORIES } from '@/lib/categories';
-import { LISTING_TYPES, parseArea, TYPE_LABEL, type ListingType } from '@/lib/format';
+import { LAUNCH_LISTING_TYPES, parseArea, TYPE_LABEL, type ListingType } from '@/lib/format';
 import { getActiveListings, getFeaturedListings, getFeaturedMarkets } from '@/lib/gnome';
 
 export const revalidate = 300;
@@ -11,7 +11,7 @@ export const revalidate = 300;
 type Params = { params: Promise<{ city: string }>; searchParams: Promise<{ type?: string }> };
 // Canonical order, minus plots — those have their own page (/plots) and were
 // never offered as a chip here.
-const TYPES: ListingType[] = LISTING_TYPES.filter((t) => t !== 'plot');
+const TYPES: ListingType[] = LAUNCH_LISTING_TYPES.filter((t) => t !== 'plot');
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { city } = await params;

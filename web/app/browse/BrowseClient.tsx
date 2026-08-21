@@ -17,7 +17,7 @@ import {
 } from '../../lib/taxonomy';
 import type { WebListing } from '../../lib/gnome';
 import { logWeb } from '../../lib/analytics';
-import { LISTING_TYPES, TYPE_LABEL } from '../../lib/format';
+import { LAUNCH_LISTING_TYPES, TYPE_LABEL } from '../../lib/format';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -33,7 +33,7 @@ type GeoListing = WebListing & {
 
 // Canonical display order. Browse has no default type — "All" is the resting
 // state here — but when a type IS shown, it shows in this order.
-const TYPES = LISTING_TYPES;
+const TYPES = LAUNCH_LISTING_TYPES;
 
 const LOC_KEY = 'gnome-manual-location';
 

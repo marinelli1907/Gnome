@@ -142,7 +142,9 @@ export default function PostScreen() {
       // an explicit type still wins, and an unreadable one leaves the user's
       // current choice alone rather than yanking it back to the default.
       const seeded = listingTypeFromParam(params.type);
-      if (seeded) setType(seeded);
+      // Clamp here too — the initial seed was clamped but this sibling was not,
+      // so a later ?type=wanted param change still reached the Wanted flow.
+      if (seeded) setType(clampToLaunch(seeded));
       if (params.fulfilledBy) setType('free');
       if (params.title) setTitle(params.title);
       if (params.category && index) {

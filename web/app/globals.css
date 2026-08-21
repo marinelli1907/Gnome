@@ -173,9 +173,9 @@ img { display: block; }
    (The app's trade uses the BRAND blue #1E88E5, 3.68 under a white label; the
    web uses the interactive cut of the same hue. Flagged for the app lane.) */
 .badge { position: absolute; top: 12px; left: 12px; color: #fff; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 8px; }
-.badge.free { background: var(--garden-green-ink); }   /* white 4.51 */
-.badge.trade { background: var(--trade-blue-ink); }    /* white 4.56 */
-.badge.sale { background: var(--gnome-red-ink); }      /* white 4.51 */
+.badge.free { background: var(--trade-blue-ink); }   /* white 4.51 */
+.badge.trade { background: var(--gnome-red-ink); }    /* white 4.56 */
+.badge.sale { background: var(--garden-green-ink); }      /* white 4.51 */
 .badge.wanted { background: var(--muted); }            /* white 4.83 — retired type */
 .badge.plot { background: var(--gnome-red-ink); }      /* white 4.51 */
 .valuechip { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.94); color: var(--text); font-size: 14px; font-weight: 800; padding: 5px 10px; border-radius: 10px; }
@@ -200,9 +200,9 @@ img { display: block; }
    tags take the DEEP cut. Measured against the composited tint:
      free 6.75 · sale 5.55 · trade 6.02 · wanted 7.05 · plot 5.55 · verified 6.75 */
 .tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
-.tag.type-free { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
-.tag.type-trade { background: rgba(30,136,229,.14); color: var(--trade-blue-deep); }
-.tag.type-sale { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
+.tag.type-free { background: rgba(30,136,229,.14); color: var(--trade-blue-deep); }
+.tag.type-trade { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
+.tag.type-sale { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
 .tag.type-wanted { background: rgba(107,114,128,.14); color: var(--muted-on-tint); }
 .tag.type-plot { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
 /* Harvest Yellow, charcoal label — 9.76. */

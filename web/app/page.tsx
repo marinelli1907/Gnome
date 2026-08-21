@@ -48,7 +48,7 @@ export default async function HomePage() {
             Fresh from the garden <em>next door</em>.
           </h1>
           <p>
-            See what your neighbors are growing, sharing, selling, and looking for
+            See what your neighbors are growing, sharing, selling, and trading
             today — tomatoes, eggs, honey, plants, and the occasional hand-painted gnome.
           </p>
           <HomeLocate />
