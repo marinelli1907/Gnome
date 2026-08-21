@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { LAUNCH_LISTING_TYPES } from '@/lib/listingType';
+import { LAUNCH_LISTING_TYPES, isLaunchListingType } from '@/lib/listingType';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { notifyCounterparty, notifyOfferCreated, notifyMessage } from './notifications';
 import type { ClaimMessage, ListingKind, ListingType } from '@/types';
@@ -661,7 +661,9 @@ export function useProfileStats(id?: string) {
     queryFn: async (): Promise<ProfileStats> => {
       const [profileRes, postsRes, claimsRes] = await Promise.all([
         supabase.from('public_profiles').select('created_at').eq('id', id as string).maybeSingle(),
-        supabase.from('listings').select('id', { count: 'exact', head: true }).eq('owner_id', id as string),
+        supabase.from('listings').select('id', { count: 'exact', head: true })
+          .eq('owner_id', id as string)
+          .neq('listing_type', 'wanted'),
         supabase
           .from('claims')
           .select('id', { count: 'exact', head: true })
@@ -981,6 +983,9 @@ export function useFeaturedListings(filters: BrowseFilters) {
       }
       listings = await dropUnavailableBundles(listings);
 
+      // Launch types only: enforce_promotion never checks listing_type, so a
+      // Wanted post can hold a live promotion and reach the Featured rail.
+      listings = listings.filter((l) => isLaunchListingType(l.listing_type));
       if (filters.listingType !== 'all') {
         listings = listings.filter((l) => l.listing_type === filters.listingType);
       }
@@ -1806,6 +1811,7 @@ export function useFollowedMarkets(uid?: string) {
           .select('id', { count: 'exact', head: true })
           .eq('market_id', m.id)
           .eq('status', 'active')
+          .in('listing_type', LAUNCH_LISTING_TYPES as unknown as string[])
           .gt('expires_at', new Date().toISOString());
         return count ?? 0;
       }));
@@ -1880,6 +1886,7 @@ export function useFollowedListings(uid?: string, marketIds?: string[]) {
         .select(LISTING_SELECT)
         .in('market_id', marketIds as string[])
         .eq('status', 'active')
+        .in('listing_type', LAUNCH_LISTING_TYPES as unknown as string[])
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(30);

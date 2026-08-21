@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { isListingType } from '../../lib/format';
+import { isLaunchListingType } from '../../lib/format';
 import SellClient from './SellClient';
 
 export const metadata: Metadata = {
@@ -17,7 +17,7 @@ export default async function SellPage({
   // An explicit deep link (/sell?type=trade, /sell?type=plot) still wins.
   // Anything else stays undefined so SellClient falls back to the canonical
   // default — resolved in its initial state, not after a repaint.
-  const initialType = isListingType(type) ? type : undefined;
+  const initialType = isLaunchListingType(type) ? type : undefined;
   return (
     <main className="container" style={{ maxWidth: 720 }}>
       <section className="hero" style={{ paddingBottom: 8 }}>

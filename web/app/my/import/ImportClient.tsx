@@ -50,7 +50,7 @@ const UNITS = [
   'bag', 'loaf', 'head', 'ear', 'peck', 'half-peck', 'bushel', 'half-bushel', 'flat', 'stem',
 ] as const;
 
-const IMPORT_TYPES = ['sale', 'free', 'trade', 'wanted'] as const;
+const IMPORT_TYPES = ['sale', 'free', 'trade'] as const;
 
 interface SourceImage { file: File; preview: string }
 

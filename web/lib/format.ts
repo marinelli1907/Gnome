@@ -87,6 +87,11 @@ export const LISTING_TYPES = ['sale', 'free', 'trade', 'wanted', 'plot'] as cons
 export const LAUNCH_LISTING_TYPES = ['sale', 'free', 'trade', 'plot'] as const satisfies
   readonly ListingType[];
 
+/** True for a type a customer may create or filter by today. */
+export function isLaunchListingType(value: unknown): value is ListingType {
+  return typeof value === 'string' && (LAUNCH_LISTING_TYPES as readonly string[]).includes(value);
+}
+
 /**
  * What a post/listing flow opens as when the caller gave no explicit type.
  * This is the value the initial state derives from, so the first paint is

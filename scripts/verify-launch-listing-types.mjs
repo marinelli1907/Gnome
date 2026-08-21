@@ -84,6 +84,28 @@ check(
   /const tierWanted = \(_l\?: PlanLimit\) => null/.test(read('expo/app/upgrade.tsx')),
 );
 
+// --------------------------------------------- app: secondary discovery
+console.log('\napp — secondary discovery surfaces');
+check('Featured rail filters to launch types', /isLaunchListingType\(l\.listing_type\)/.test(db),
+  'enforce_promotion never checks type, so a Wanted post can hold a live promotion');
+check('Following feed filters to launch types',
+  (db.match(/\.in\('listing_type', LAUNCH_LISTING_TYPES/g) || []).length >= 4);
+check("public profile 'posts' count excludes Wanted", /neq\('listing_type', 'wanted'\)/.test(db));
+
+// ------------------------------------------------------------ db migration
+console.log('\ndatabase — migration 0127');
+const m0127raw = read('supabase/migrations/0127_hide_wanted_from_public.sql');
+// Strip -- comments before scanning for destructive statements: the header
+// prose legitimately contains words like "dropped" and "deleted" while
+// explaining that the migration does none of those things.
+const m0127 = m0127raw.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+check('public_listings excludes Wanted', /AND l\.listing_type <> 'wanted'::listing_type/.test(m0127));
+check('active_listing_count excludes Wanted', (m0127.match(/<> 'wanted'::listing_type/g) || []).length === 2);
+check('migration is CREATE OR REPLACE VIEW only',
+  !/\b(drop|delete|alter type|alter table|truncate|update )\b/i.test(m0127),
+  'no destructive statement may appear in 0127');
+check('other market counts left untouched', /'free'::listing_type\) AS listings_shared/.test(m0127));
+
 // -------------------------------------------------------------------- web
 const fmt = read('web/lib/format.ts');
 const webLaunch = fmt.match(/LAUNCH_LISTING_TYPES\s*=\s*\[([^\]]*)\]/s)?.[1] ?? '';

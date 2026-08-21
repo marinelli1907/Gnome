@@ -54,7 +54,7 @@ WHAT TO DECIDE
 PER CANDIDATE — extract only what the material actually supports:
 - product_name (required) and variety when named.
 - category_terms: 2-4 plain search words for the product ("tomato", "roma"). You never assign category IDs.
-- proposed_listing_type: default "sale" for seller material. Override ONLY on clear intent: giving away free → "free"; seeking a trade → "trade"; the author is asking to BUY something → "wanted".
+- proposed_listing_type: default "sale" for seller material. Override ONLY on clear intent: giving away free → "free"; seeking a trade → "trade"; never propose "wanted" — Wanted listings are not offered at launch.
 - price_cents + unit: ONLY when stated in the material (in text or legible on a sign). Convert dollars to integer cents. If the price or unit is not stated, use null / "" and mark its confidence "missing". NEVER estimate a price. Units must be one of: lb, oz, each, bunch, dozen, half-dozen, jar, basket, pint, quart, bag, loaf, head, ear, peck, half-peck, bushel, half-bushel, flat, stem — or "".
 - quantity / availability / pickup / location_text / seller_notes: as stated, "" when absent. "Made to order" is availability, not a quantity — never invent stock counts.
 - description: 1-2 warm, plain sentences grounded in what the material shows. No hype, no emoji, never mention AI.
