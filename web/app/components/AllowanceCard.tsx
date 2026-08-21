@@ -44,6 +44,12 @@ function MeterBlock({ meter, hint }: { meter: Meter; hint: string | null }) {
   );
 }
 
+// Wanted listings are not part of the launch UX, so the Wanted-response meter
+// is not shown — it would advertise an allowance for something a seller cannot
+// post. The RPC call, the row type and the meter component are all left intact
+// so this is a one-line revert when Wanted returns in some form.
+const WANTED_AT_LAUNCH = false;
+
 export default function AllowanceCard() {
   const [row, setRow] = useState<AllowanceRow | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'none'>('loading');
@@ -113,14 +119,14 @@ export default function AllowanceCard() {
         >
           <MeterBlock meter={listings} hint={exhaustedHint(r, 'listings')} />
           <MeterBlock meter={renewals} hint={exhaustedHint(r, 'renewals')} />
-          {wanted && wanted !== 'error' ? (
+          {WANTED_AT_LAUNCH && wanted && wanted !== 'error' ? (
             <MeterBlock
               meter={wantedMeter(wanted)}
               hint={wantedMeter(wanted).exhausted ? 'More Wanted responses tomorrow — or upgrade' : null}
             />
           ) : null}
         </div>
-        {wanted === 'error' ? (
+        {WANTED_AT_LAUNCH && wanted === 'error' ? (
           <p className="authhint" style={{ marginTop: 8 }}>
             Wanted response usage couldn’t load just now — this doesn’t affect your allowance.
           </p>

@@ -24,6 +24,35 @@ export const LISTING_TYPE_ORDER: readonly ListingType[] = [
 ] as const;
 
 /**
+ * What a CUSTOMER may create and filter by at launch.
+ *
+ * `wanted` is deliberately absent: Gnome does not launch with Wanted listings,
+ * because a buyer opening Browse should see what is actually available rather
+ * than scrolling past requests for it. This is a HIDE, not a delete — the enum
+ * value, the DB rows, the labels, the colours and every render path above still
+ * exist, so historical Wanted listings keep working for anyone entitled to see
+ * them (their owner, admin and compliance tooling).
+ *
+ * Deliberately NOT the same array as LISTING_TYPE_ORDER: that one is the
+ * canonical list of DB enum values and backs `isListingType()`. Narrowing it
+ * would make `isListingType('wanted')` false and break validation and rendering
+ * of every historical Wanted row — the exact destructive outcome this split
+ * avoids. Anything that OFFERS or LISTS types derives from this array; anything
+ * that VALIDATES or RENDERS a stored value derives from LISTING_TYPE_ORDER.
+ */
+export const LAUNCH_LISTING_TYPES: readonly ListingType[] = [
+  'sale',
+  'free',
+  'trade',
+  'plot',
+] as const;
+
+/** True for a type a customer may create or filter by today. */
+export function isLaunchListingType(value: unknown): value is ListingType {
+  return typeof value === 'string' && (LAUNCH_LISTING_TYPES as readonly string[]).includes(value);
+}
+
+/**
  * What a listing/post flow starts on when the caller gave no explicit type.
  *
  * Migration 0104 also sets the column DEFAULT to 'sale' at the database level, so the
@@ -58,13 +87,16 @@ export const TYPE_LABEL: Record<ListingType, string> = {
   plot: 'Plot',
 };
 
-// Rork type palette: moss / sky / terracotta / plum, plot keeps the deep green.
+// v5 semantic palette: Sell green, Free blue, Trade red, Plot yellow.
+// `wanted` is neutral slate on purpose — it is not offered at launch, and
+// purple belongs to Gnome AI alone. Plot no longer borrows `primary`, which
+// used to make Plot and Sell the same colour.
 export const TYPE_COLOR: Record<ListingType, string> = {
   sale: Colors.sell,
   free: Colors.free,
-  trade: Colors.sky,
-  wanted: Colors.plum,
-  plot: Colors.primary,
+  trade: Colors.trade,
+  wanted: Colors.textSecondary,
+  plot: Colors.harvestYellow,
 };
 
 /** True for the five DB enum values — anything else (a label, a stale synonym). */
@@ -124,12 +156,15 @@ export function resolveListingType(
   return listingTypeFromParam(value) ?? fallback;
 }
 
+// Browse/search filters — launch types only, so Wanted is not offered as a
+// filter and cannot be used to surface Wanted rows from the UI.
 export const TYPE_FILTERS: { value: 'all' | ListingType; label: string }[] = [
   { value: 'all', label: 'All' },
-  ...LISTING_TYPE_ORDER.map((value) => ({ value, label: TYPE_LABEL[value] })),
+  ...LAUNCH_LISTING_TYPES.map((value) => ({ value, label: TYPE_LABEL[value] })),
 ];
 
-// Create-flow chooser (Sell / Share Free / Trade / Wanted / Offer a Plot).
+// Create-flow chooser. Wanted is absent at launch; TYPE_EMOJI still defines it
+// so historical rows render.
 const TYPE_EMOJI: Record<ListingType, string> = {
   sale: '🏷️',
   free: '🧺',
@@ -139,7 +174,7 @@ const TYPE_EMOJI: Record<ListingType, string> = {
 };
 
 export const TYPE_CHOICES: { value: ListingType; label: string; emoji: string }[] =
-  LISTING_TYPE_ORDER.map((value) => ({
+  LAUNCH_LISTING_TYPES.map((value) => ({
     value,
     label: LISTING_TYPE_LABEL[value],
     emoji: TYPE_EMOJI[value],

@@ -75,6 +75,19 @@ export const LISTING_TYPES = ['sale', 'free', 'trade', 'wanted', 'plot'] as cons
   readonly ListingType[];
 
 /**
+ * What a CUSTOMER may create or filter by at launch. 'wanted' is absent: Gnome
+ * does not launch with Wanted listings.
+ *
+ * Deliberately NOT the same array as LISTING_TYPES — that one is the canonical
+ * enum list and backs isListingType(). Narrowing it would make historical
+ * Wanted rows fail validation and stop rendering. Anything that OFFERS or LISTS
+ * types uses this; anything that VALIDATES or RENDERS a stored value uses
+ * LISTING_TYPES.
+ */
+export const LAUNCH_LISTING_TYPES = ['sale', 'free', 'trade', 'plot'] as const satisfies
+  readonly ListingType[];
+
+/**
  * What a post/listing flow opens as when the caller gave no explicit type.
  * This is the value the initial state derives from, so the first paint is
  * already Sell — never Share Free repainted into Sell.

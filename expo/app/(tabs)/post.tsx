@@ -28,7 +28,12 @@ import {
   parseServerError,
 } from '@/lib/taxonomy';
 import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
-import { DEFAULT_LISTING_TYPE, TYPE_CHOICES, listingTypeFromParam } from '@/lib/listingType';
+import {
+  DEFAULT_LISTING_TYPE,
+  TYPE_CHOICES,
+  isLaunchListingType,
+  listingTypeFromParam,
+} from '@/lib/listingType';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
@@ -61,6 +66,14 @@ const NOTE: Record<ListingType, string> = {
   plot: 'Neighbors request your plot and tell you what to grow. You approve, then arrange payment together — Gnome never handles money.',
 };
 
+/** A deep link, notification payload or AI draft can still carry
+ *  `type=wanted`. The chooser no longer offers Wanted, so honouring that would
+ *  open a flow the user cannot see or leave. Anything outside the launch set
+ *  falls back to Sell. */
+function clampToLaunch(t: ListingType | null): ListingType {
+  return t != null && isLaunchListingType(t) ? t : DEFAULT_LISTING_TYPE;
+}
+
 export default function PostScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -85,7 +98,7 @@ export default function PostScreen() {
   // because that is the only thing it can be; everything else opens on Sell.
   const initialType: ListingType = params.fulfilledBy
     ? 'free'
-    : listingTypeFromParam(params.type) ?? DEFAULT_LISTING_TYPE;
+    : clampToLaunch(listingTypeFromParam(params.type));
 
   const [type, setType] = useState<ListingType>(initialType);
   const [title, setTitle] = useState(params.title ?? '');

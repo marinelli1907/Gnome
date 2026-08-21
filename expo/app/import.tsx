@@ -62,7 +62,7 @@ const LISTING_TYPES: { key: ImportCandidate['proposed_listing_type']; label: str
   { key: 'sale', label: 'Sell' },
   { key: 'free', label: 'Free' },
   { key: 'trade', label: 'Trade' },
-  { key: 'wanted', label: 'Wanted' },
+  // 'wanted' is intentionally absent — Wanted is not offered at launch.
 ];
 
 /** "$12" / "12.50" → integer cents, or null when unreadable. */

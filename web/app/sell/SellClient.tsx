@@ -13,7 +13,7 @@ import {
   LISTING_TYPE_ACTION_LABEL,
   LISTING_TYPE_BLURB,
   LISTING_TYPE_HINT,
-  LISTING_TYPES,
+  LAUNCH_LISTING_TYPES,
   type ListingType,
 } from '../../lib/format';
 import {
@@ -30,7 +30,7 @@ import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice'
 
 // Order, labels and hints all come from the canonical config in lib/format —
 // this file must never carry its own list or its own idea of the default.
-const TYPES: { id: ListingType; label: string; hint: string }[] = LISTING_TYPES.map((id) => ({
+const TYPES: { id: ListingType; label: string; hint: string }[] = LAUNCH_LISTING_TYPES.map((id) => ({
   id,
   label: LISTING_TYPE_ACTION_LABEL[id],
   hint: LISTING_TYPE_HINT[id],

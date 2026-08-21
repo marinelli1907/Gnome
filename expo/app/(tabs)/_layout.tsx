@@ -76,6 +76,11 @@ export default function TabLayout() {
           // D3: 'Gnome AI' was the second-widest label and truncated at
           // Android's Large font setting. 'Ask AI' keeps the meaning.
           title: 'Ask AI',
+          // v5 identity: Gnome AI owns purple. This is the ONLY tab that
+          // overrides the bar's green active tint — every other tab stays on
+          // the default, and inactive stays neutral slate, so the bar reads as
+          // one product rather than six colours.
+          tabBarActiveTintColor: Colors.aiPurple,
           tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
         }}
       />

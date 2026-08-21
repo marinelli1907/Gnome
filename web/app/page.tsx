@@ -83,7 +83,7 @@ export default async function HomePage() {
           <Link href="/browse" className="pillar">
             <span className="pillar-emoji">🧺</span>
             <h3>See what’s fresh near you</h3>
-            <p>Produce, eggs, honey, baked goods, and handmade goods from people nearby — for sale, free to share, trades, and wanted posts.</p>
+            <p>Produce, eggs, honey, baked goods, and handmade goods from people nearby — for sale, free to share, and trades.</p>
             <span className="pillar-cta">Browse nearby →</span>
           </Link>
           <Link href="/garden" className="pillar">

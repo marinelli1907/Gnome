@@ -27,10 +27,11 @@ const tierRenewals = (l?: PlanLimit, canBuyExtras = true) =>
     : l.included_renewals_per_period === 0
       ? 'renewals require a higher plan'
     : `${l.included_renewals_per_period} free renewals/mo`;
-const tierWanted = (l?: PlanLimit) =>
-  l === undefined || l.wanted_intros_per_day === undefined ? null
-    : l.wanted_intros_per_day === null ? 'Unlimited Wanted responses'
-    : `${l.wanted_intros_per_day} Wanted response${l.wanted_intros_per_day === 1 ? '' : 's'}/day`;
+// Wanted is not part of the launch UX, so plan cards must not advertise a
+// Wanted-response allowance (D5: never claim a feature that does not ship).
+// The plan_limits column and this helper are left intact — returning null just
+// drops the line from every tier — so restoring it later is a one-line change.
+const tierWanted = (_l?: PlanLimit) => null;
 const tierQr = (l?: PlanLimit) =>
   l === undefined || l.qr_tools === undefined ? null
     : l.qr_tools ? 'Custom Market QR tools' : 'Market link included · QR tools locked';

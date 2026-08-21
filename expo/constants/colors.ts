@@ -1,29 +1,38 @@
-// Gnome palette v4 — the colorful Gnome identity (docs/design/GNOME_IDENTITY.md).
+// Gnome palette v5 — the semantic identity (docs/design/GNOME_IDENTITY.md).
 //
-// White canvas, charcoal type, and the five gnome hues carrying meaning:
-// red = selling/Market/core brand, green = garden/growing, blue =
-// trade/community, purple = Gnome AI, yellow = rewards/celebration.
+// White canvas, charcoal type, and five hues that each carry ONE meaning:
+//   purple = Gnome AI and brand personality   (AI owns purple; nothing else uses it)
+//   green  = growing, selling, positive/success
+//   blue   = community, Free listings, information
+//   red    = Trade, attention, destructive/error
+//   yellow = rewards, discovery, highlights
 //
-// TWO TOKENS PER HUE, on purpose. The *brand* value is the exact color from
-// the identity spec — for fills, illustration, map pins, and anything that is
-// not text. The *interactive* value is a slightly deeper cut of the same hue
-// that carries a WHITE label at WCAG AA (measured, not assumed: red 4.51:1,
-// blue 4.56:1, green 4.51:1, purple 5.87:1). White text on the brand yellow
-// measures 1.63:1 — effectively invisible — so yellow NEVER takes a white
-// label; pair it with `text` (charcoal, 9.76:1 on this yellow).
+// WHAT CHANGED FROM v4, and why it is a re-point rather than a re-paint: the
+// hues and their measured accessible cuts are unchanged — only the ROLES moved.
+//   Sell  red   -> green   (selling is growing; green is the product's heart)
+//   Free  green -> blue    (Free is a community act)
+//   Trade blue  -> red     (trade is the high-energy exchange)
+// Red is deliberately no longer the global brand colour. `primary` is now the
+// green interactive cut, so the everyday chrome reads agricultural rather than
+// urgent, and purple stays reserved so Gnome AI genuinely owns it.
 //
-// Key names are unchanged from v3 so all ~70 importers re-skin without an
-// edit. Some legacy names (terracotta, moss, sky, plum, marigold) now hold
-// their nearest new-identity hue; prefer the gnome* names in new code.
+// TWO TOKENS PER HUE, on purpose. The *brand* value is for fills, illustration
+// and map pins — anything that is not text. The *interactive* value is a deeper
+// cut of the same hue that carries a WHITE label at WCAG AA (measured, not
+// assumed: green 4.51:1, blue 4.56:1, red 4.51:1, purple 5.87:1). White on the
+// brand yellow measures 1.63:1 — effectively invisible — so yellow NEVER takes
+// a white label; pair it with `text` (charcoal, 9.76:1 on this yellow).
+//
+// Key names are unchanged so all ~70 importers re-skin without an edit.
 const Colors = {
-  // Core brand — Gnome Red. `primary` is the interactive cut (white text ok);
-  // `primaryLight` is the brand red for fills and art.
-  primary: '#E32C27',
-  primaryLight: '#E53935',
-  primaryDark: '#B71C1C',
+  // Global action colour. Green interactive — carries white text at 4.51:1.
+  // (v4 had this as red; see the header note.)
+  primary: '#328736',
+  primaryLight: '#43B649', // Garden Green brand — fills/art, NOT text on white
+  primaryDark: '#215E24',
 
-  secondary: '#43B649', // Garden Green (brand — fills/art, NOT text on white)
-  secondaryLight: '#77C97B',
+  secondary: '#8E44AD', // AI Purple — brand personality, Gnome AI
+  secondaryLight: '#B07CC6',
   accent: '#FFC107', // Harvest Yellow — charcoal text only, never white
   accentLight: '#FFD54F',
 
@@ -36,7 +45,7 @@ const Colors = {
   textSecondary: '#6B7280', // Slate — 4.83:1 on white
   textTertiary: '#9CA3AF',
   textInverse: '#FFFFFF',
-  textOnPrimary: '#FFFFFF', // on `primary` (#E32C27): 4.51:1 ✓
+  textOnPrimary: '#FFFFFF', // on `primary` (#328736): 4.51:1 ✓
 
   border: '#E5E7EB',
   borderLight: '#F1F5F9',
@@ -54,22 +63,24 @@ const Colors = {
   info: '#1878CD',
 
   // Listing-type identity. These double as text labels and badge tints, so
-  // they are the interactive cuts; map pins pair them with distinct glyphs.
-  free: '#328736',  // green — give/grow
-  sell: '#E32C27',  // red — market/sell
-  trade: '#1878CD', // blue — trade/community
+  // they are the interactive cuts. Sell = green, Free = blue, Trade = red.
+  free: '#1878CD',  // blue — community/give
+  sell: '#328736',  // green — grow/sell
+  trade: '#E32C27', // red — exchange
 
   shadow: 'rgba(17, 24, 39, 0.10)',
   overlay: 'rgba(17, 24, 39, 0.5)',
 
   tabBar: '#FFFFFF',
   tabBarBorder: '#E5E7EB',
-  tabBarActive: '#E32C27',
-  tabBarInactive: '#6B7280',
+  // Default active tint. Individual tabs override this with their own semantic
+  // colour in app/(tabs)/_layout.tsx — Ask AI is purple, the rest are green.
+  tabBarActive: '#328736',
+  tabBarInactive: '#6B7280', // neutral slate; inactive is never semantic
 
   cardShadow: 'rgba(17, 24, 39, 0.07)',
 
-  // Gnome AI is the purple-hat gnome's room.
+  // Gnome AI's room. Purple appears here and in the AI tab, nowhere else.
   chatBubbleUser: '#8E44AD',
   chatBubbleAI: '#F1F5F9',
   chatBubbleUserText: '#FFFFFF', // 5.87:1 on AI Purple ✓
@@ -88,6 +99,7 @@ const Colors = {
   tradeBlue: '#1E88E5',
   tradeBlueInteractive: '#1878CD',
   aiPurple: '#8E44AD',
+  aiPurpleInteractive: '#8E44AD', // already 5.87:1 with white
   harvestYellow: '#FFC107',
 
   // Legacy Rork names, re-pointed to their nearest new-identity hue so old

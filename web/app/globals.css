@@ -73,15 +73,26 @@
   /* --- shadows are charcoal now, not forest --- */
   --shadow-rgb: 17, 24, 39;
 
+  /* --- listing-type roles (v5). One hue, one meaning, same as the app's
+         constants/colors.ts. Sell green, Free blue, Trade red. --- */
+  --type-sell: var(--garden-green-ink);
+  --type-free: var(--trade-blue-ink);
+  --type-trade: var(--gnome-red-ink);
+
   /* --- LEGACY NAMES, re-pointed. Same trick as expo/constants/colors.ts: the
          old names keep resolving so ~77 call sites re-skin without an edit,
          but they now hold their nearest new-identity hue. Prefer the hue names
-         above in new code. --- */
-  --green: var(--gnome-red-ink);        /* the site's brand ink is Gnome Red */
-  --green-light: var(--gnome-red);
-  --green-deep: var(--gnome-red-deep);  /* brand ink where a tint/gray is behind */
+         above in new code.
+
+         v5: the site's brand ink moves from Gnome Red to Garden Green, to match
+         the app's `primary`. Red is no longer the global brand colour — it now
+         means Trade, attention and danger only. Purple is reserved for Gnome AI
+         and is deliberately not used for site chrome. --- */
+  --green: var(--garden-green-ink);       /* the site's brand ink is Garden Green */
+  --green-light: var(--garden-green);
+  --green-deep: var(--garden-green-deep); /* brand ink where a tint/gray is behind */
   --sage: var(--garden-green-ink);
-  --tomato: var(--gnome-red-ink);
+  --tomato: var(--gnome-red-ink);         /* red accents: Trade and attention */
   --gold: var(--harvest-yellow);
 }
 
@@ -154,7 +165,8 @@ img { display: block; }
 
 /* Listing-type badges — the hue assignment is expo/lib/listingType.ts
    TYPE_COLOR, so a badge means the same thing in both places:
-   sale=red, free=green, trade=blue, wanted=purple, plot=red.
+   v5: sale=green, free=blue, trade=red, plot=yellow. wanted=slate (retired
+   from launch; purple belongs to Gnome AI alone).
    §1b: the hue never carries the meaning alone — every badge prints its word,
    and plot/sale share a hue precisely because the word is what separates them.
    Every fill is an interactive cut, so the white label measures ≥4.51.
@@ -164,7 +176,7 @@ img { display: block; }
 .badge.free { background: var(--garden-green-ink); }   /* white 4.51 */
 .badge.trade { background: var(--trade-blue-ink); }    /* white 4.56 */
 .badge.sale { background: var(--gnome-red-ink); }      /* white 4.51 */
-.badge.wanted { background: var(--ai-purple-ink); }    /* white 5.87 */
+.badge.wanted { background: var(--muted); }            /* white 4.83 — retired type */
 .badge.plot { background: var(--gnome-red-ink); }      /* white 4.51 */
 .valuechip { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.94); color: var(--text); font-size: 14px; font-weight: 800; padding: 5px 10px; border-radius: 10px; }
 /* Harvest Yellow with a CHARCOAL label — 9.76. White here would be 1.63. */
@@ -191,7 +203,7 @@ img { display: block; }
 .tag.type-free { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
 .tag.type-trade { background: rgba(30,136,229,.14); color: var(--trade-blue-deep); }
 .tag.type-sale { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
-.tag.type-wanted { background: rgba(142,68,173,.14); color: var(--ai-purple-deep); }
+.tag.type-wanted { background: rgba(107,114,128,.14); color: var(--muted-on-tint); }
 .tag.type-plot { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
 /* Harvest Yellow, charcoal label — 9.76. */
 .tag.featured { background: var(--harvest-yellow); color: var(--on-yellow); }

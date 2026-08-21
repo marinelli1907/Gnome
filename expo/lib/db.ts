@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { LAUNCH_LISTING_TYPES } from '@/lib/listingType';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { notifyCounterparty, notifyOfferCreated, notifyMessage } from './notifications';
 import type { ClaimMessage, ListingKind, ListingType } from '@/types';
@@ -192,6 +193,12 @@ export function useListings(filters: BrowseFilters) {
         .from('listings')
         .select(LISTING_SELECT)
         .eq('status', 'active')
+        // Launch types only. Applied UNCONDITIONALLY — not just when the user
+        // picked a filter — so a crafted `listingType` or a stale cached filter
+        // can never surface a Wanted row in Browse, search or the Map (which
+        // reads this same result set). Historical Wanted rows are untouched and
+        // still reachable by their owner via useMyListings and by admin tools.
+        .in('listing_type', LAUNCH_LISTING_TYPES as unknown as string[])
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(200);
@@ -723,6 +730,8 @@ export function useMarketListings(marketId?: string) {
         .select(LISTING_SELECT)
         .eq('market_id', marketId as string)
         .eq('status', 'active')
+        // Launch types only — a public Market page is customer-facing discovery.
+        .in('listing_type', LAUNCH_LISTING_TYPES as unknown as string[])
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false });
       if (error) throw error;

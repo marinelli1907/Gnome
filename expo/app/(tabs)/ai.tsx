@@ -85,13 +85,13 @@ type PublishResult =
   | { outcome: 'ratelimited'; error: ServerError }
   | { outcome: 'failed'; error: ServerError | null; message: string };
 
-const STARTERS = [
-  'What should I sell right now, and why?',
-  'What’s happening in my market?',
-  'Mark my cucumbers sold out',
-  'Change Roma Tomatoes to $5/quart',
-  'How many of my listings are expiring?',
-  'Which imported drafts still need prices?',
+const STARTERS: { prompt: string; hint: string }[] = [
+  { prompt: 'What should I sell right now?', hint: 'Get ideas based on what’s in demand near you.' },
+  { prompt: 'What’s happening around me?', hint: 'See what’s trending in your area and nearby Markets.' },
+  { prompt: 'Help me manage my Market', hint: 'Update listings, check sales, and see what needs attention.' },
+  { prompt: 'What should I charge?', hint: 'Get pricing guidance for what you’re selling.' },
+  { prompt: 'Which listings need my attention?', hint: 'See what’s expiring or needs updating.' },
+  { prompt: 'Help me create a listing', hint: 'I’ll walk you through it step by step.' },
 ];
 
 export default function AiTab() {
@@ -567,15 +567,15 @@ export default function AiTab() {
         >
           {messages.length === 0 && (
             <View style={styles.intro}>
+              <Text style={styles.introLead}>Your garden and Market assistant.</Text>
               <Text style={styles.introText}>
-                Ask me about growing, what’s selling near you — or tell me to update your
-                Market: change a price, mark something sold, renew a listing. Bigger changes
-                always wait for your Confirm. Add photos and I’ll draft a listing for each
-                one — you approve them.
+                Ask what to grow, what’s selling nearby, or get help managing your Market.
+                Gnome can help with listings, prices, sales, and more.
               </Text>
               {STARTERS.map((s) => (
-                <Pressable key={s} style={styles.starter} onPress={() => ask(s)}>
-                  <Text style={styles.starterText}>{s}</Text>
+                <Pressable key={s.prompt} style={styles.starter} onPress={() => ask(s.prompt)}>
+                  <Text style={styles.starterText}>{s.prompt}</Text>
+                  <Text style={styles.starterHint}>{s.hint}</Text>
                 </Pressable>
               ))}
             </View>
@@ -723,7 +723,7 @@ export default function AiTab() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask Gnome anything…"
+            placeholder="What can Gnome help with?"
             placeholderTextColor={Colors.textTertiary}
             editable={!busy}
             onSubmitEditing={() => ask(input)}
@@ -852,13 +852,21 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 6 },
   title: { fontFamily: fonts.bold, fontSize: 20, color: Colors.text },
   thread: { paddingVertical: 10, gap: 10 },
-  intro: { gap: 8, paddingBottom: 6 },
-  introText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.textSecondary, lineHeight: 21 },
+  intro: { gap: 10, paddingBottom: 6 },
+  introLead: { fontFamily: fonts.semibold, fontSize: 17, color: Colors.text, lineHeight: 23 },
+  introText: {
+    fontFamily: fonts.regular, fontSize: 15, color: Colors.textSecondary,
+    lineHeight: 21, marginBottom: 6,
+  },
   starter: {
     backgroundColor: Colors.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
     borderWidth: 1, borderColor: Colors.borderLight,
   },
-  starterText: { fontFamily: fonts.regular, fontSize: 14, color: Colors.text },
+  starterText: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.text },
+  starterHint: {
+    fontFamily: fonts.regular, fontSize: 12, color: Colors.textSecondary,
+    lineHeight: 16, marginTop: 2,
+  },
   bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   mineWrap: { alignSelf: 'flex-end', maxWidth: '88%' },
   theirsWrap: { alignSelf: 'flex-start', maxWidth: '88%', gap: 8 },

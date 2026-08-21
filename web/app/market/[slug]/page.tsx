@@ -3,7 +3,7 @@ import Link from 'next/link';
 import AppLink from '../../components/AppLink';
 import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
-import { areaLabel, LISTING_TYPES, TYPE_LABEL } from '@/lib/format';
+import { areaLabel, LAUNCH_LISTING_TYPES, TYPE_LABEL } from '@/lib/format';
 import { getDropItemIds, getListingsByIds, getMarketBySlug, getMarketDelivery, getMarketDrops, getMarketListings, sortDropsLiveFirst } from '@/lib/gnome';
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -133,7 +133,7 @@ export default async function MarketPage({ params, searchParams }: Params & {
 
       <div className="type-counts">
         {/* Canonical order, minus plots — plot counts were never shown here. */}
-        {LISTING_TYPES.filter((t) => t !== 'plot').map((t) =>
+        {LAUNCH_LISTING_TYPES.filter((t) => t !== 'plot').map((t) =>
           counts[t] ? <span key={t} className={`tag type-${t}`}>{counts[t]} {TYPE_LABEL[t]}</span> : null,
         )}
       </div>
