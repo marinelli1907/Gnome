@@ -103,7 +103,7 @@ Android identity is settled and verified in the merged manifest of a real build:
 | Version | `1.1.0` |
 | versionCode | remote + autoIncrement (last: vc4) |
 | Signing | EAS-managed upload keystore; Play App Signing at upload |
-| Maps key | `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` injects `android.config.googleMaps.apiKey` at build time; key is restricted to the package + upload SHA-1 |
+| Maps key | `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` injects `android.config.googleMaps.apiKey` at build time. **Restricted 2026-08-20** to Android apps / `app.boonesystems.gnome` with BOTH the EAS upload SHA-1 `DA:F1:79:50:…:0C:13` and the Play App Signing SHA-1 `3F:2D:F0:FF:…:02:67`. Until that date this row claimed a restriction that did not exist — Application restrictions were `None` and the table was empty, while the key shipped inside the AAB |
 | Firebase | `android.googleServicesFile: ./google-services.json`, project `gnome-farmers-market-70414` |
 | Blocked perms | `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` |
 
