@@ -16,12 +16,18 @@ childish. It still has to look like a tool a real farm would run its business on
 Exact values as specified. The two right-hand columns are measured, not asserted
 — WCAG 2.1 contrast against a white background and against black.
 
+> **v5 (2026-08-20) — the roles moved, the hues did not.** Sell is green, Free
+> is blue, Trade is red, and red is no longer the global brand colour. Purple is
+> now used by Gnome AI *and nothing else in chrome*, so the AI genuinely owns it.
+> The table below is updated; the measured contrast values are unchanged because
+> the hexes are unchanged.
+
 | Token | Hex | on white | on black | Use for |
 |---|---|---|---|---|
-| Gnome Red | `#E53935` | 4.23:1 | 4.97:1 | Sell / Market / core brand |
-| Garden Green | `#43B649` | 2.62:1 | 8.03:1 | Garden / growing / Free |
-| Trade Blue | `#1E88E5` | 3.68:1 | 5.71:1 | Trade / community / messages |
-| AI Purple | `#8E44AD` | 5.87:1 | 3.58:1 | Gnome AI |
+| Garden Green | `#43B649` | 2.62:1 | 8.03:1 | **Sell / growing / success / global brand** |
+| Trade Blue | `#1E88E5` | 3.68:1 | 5.71:1 | **Free / community / information** |
+| Gnome Red | `#E53935` | 4.23:1 | 4.97:1 | **Trade / attention / danger** |
+| AI Purple | `#8E44AD` | 5.87:1 | 3.58:1 | Gnome AI — and nothing else |
 | Harvest Yellow | `#FFC107` | 1.63:1 | 12.88:1 | Rewards / discovery / celebration |
 | Charcoal | `#222222` | 15.91:1 | — | Primary text |
 | Slate | `#6B7280` | 4.83:1 | 4.34:1 | Secondary text |
@@ -63,7 +69,8 @@ Required, not advisory. Red/green as the sole carrier of meaning fails for the
 pairing for Sell vs Free.
 
 - Every listing-type marker pairs its color with a **distinct icon and text
-  label** (Sell / Free / Trade / Wanted / Plot).
+  label** (Sell / Free / Trade / Plot). Wanted is not offered at launch — see
+  §6 — but keeps its label and colour so historical rows still render.
 - Every status chip pairs color with its **word**: Active, Pending, Sold, Expired.
 - Map pins must differ in **glyph**, not only in hue.
 
@@ -77,11 +84,11 @@ members of one household, not five stock illustrations.
 
 | Gnome | Owns | Appears in |
 |---|---|---|
-| **Red** | Market & Sell — core brand | Logo, onboarding, Sell, listing-live success, brand moments |
-| **Green** | Garden & Grow | Garden Planner, Free listings, plant empty states, "listing is live" |
-| **Purple** | Gnome AI | Gnome AI tab and card, AI empty/help states |
-| **Blue** | Trade & Community | Trade, messages, neighbor/community surfaces |
-| **Yellow** | Rewards & Discovery | Milestones, seller achievements, featured, celebration |
+| **Green** | Sell, growing, success — and the global brand | Browse, Post, primary actions, Sell listings, "listing is live" |
+| **Blue** | Free & community | Free listings, community and location surfaces |
+| **Red** | Trade & attention | Trade listings, destructive/danger actions |
+| **Purple** | Gnome AI | The Ask AI tab and the AI screen. Nothing else in chrome. |
+| **Yellow** | Rewards & Discovery | Plot listings, milestones, featured, celebration |
 
 **Where they appear** — deliberately, not everywhere: onboarding, empty states,
 success states, Gnome AI, seller milestones, occasional feature cards, selected
@@ -170,3 +177,32 @@ is a re-skin plus a pricing simplification, not a redesign. If a color or asset
 change risks a working flow, the flow wins — and **nothing here may reopen B1**:
 the Map tab renders real tiles and pins, and a mistake there does not degrade the
 map, it destroys the React instance and whites out the whole app.
+
+
+---
+
+## 6. Wanted is not a launch listing type (2026-08-20)
+
+Gnome launches with **Sell, Free, Trade** (and Plot). Wanted listings are hidden
+from the customer-facing product, because a buyer opening Browse should see what
+is actually available rather than scrolling past requests for it.
+
+**This is a hide, not a delete, and the distinction is load-bearing.** The
+obvious implementation — dropping `'wanted'` from the canonical type list — would
+also narrow `isListingType()`, and every historical Wanted row would fail
+validation and stop rendering for the person who posted it. So there are two
+arrays, and which one a call site uses is the whole design:
+
+| Array | Used by | Contains `wanted` |
+|---|---|---|
+| `LISTING_TYPE_ORDER` (app) / `LISTING_TYPES` (web) | validation, labels, rendering a stored value | **yes** |
+| `LAUNCH_LISTING_TYPES` (both) | what is OFFERED and what is LISTED | no |
+
+No enum, column, table or row was changed. No migration was written. The
+exclusion lives in the client query builders, applied unconditionally so a
+crafted or stale filter cannot surface a Wanted row. Owners still see their own
+Wanted posts; admin and compliance tooling is untouched.
+
+`scripts/verify-launch-listing-types.mjs` asserts both directions — that Wanted
+stays out of customer-facing surfaces, and that nobody "cleans up" by narrowing
+the canonical list.
