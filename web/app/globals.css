@@ -177,7 +177,7 @@ img { display: block; }
 .badge.trade { background: var(--gnome-red-ink); }    /* white 4.56 */
 .badge.sale { background: var(--garden-green-ink); }      /* white 4.51 */
 .badge.wanted { background: var(--muted); }            /* white 4.83 — retired type */
-.badge.plot { background: var(--gnome-red-ink); }      /* white 4.51 */
+.badge.plot { background: var(--harvest-yellow); color: var(--on-yellow); }  /* charcoal 9.76 — yellow never takes white (1.63) */
 .valuechip { position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.94); color: var(--text); font-size: 14px; font-weight: 800; padding: 5px 10px; border-radius: 10px; }
 /* Harvest Yellow with a CHARCOAL label — 9.76. White here would be 1.63. */
 .promoted { position: absolute; top: 42px; left: 12px; background: var(--harvest-yellow); color: var(--on-yellow); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px; }
@@ -204,7 +204,7 @@ img { display: block; }
 .tag.type-trade { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
 .tag.type-sale { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
 .tag.type-wanted { background: rgba(107,114,128,.14); color: var(--muted-on-tint); }
-.tag.type-plot { background: rgba(229,57,53,.12); color: var(--gnome-red-deep); }
+.tag.type-plot { background: rgba(255,193,7,.20); color: var(--text); }
 /* Harvest Yellow, charcoal label — 9.76. */
 .tag.featured { background: var(--harvest-yellow); color: var(--on-yellow); }
 .tag.verified { background: rgba(67,182,73,.16); color: var(--garden-green-deep); }
