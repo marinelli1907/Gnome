@@ -24,6 +24,7 @@ import { EmptyState, ErrorState, Button } from '@/components/ui';
 import { FeedSkeleton } from '@/components/Skeleton';
 import { fonts } from '@/constants/theme';
 import { TYPE_FILTERS } from '@/lib/listingType';
+import { TYPE_BADGE_BG, TYPE_BADGE_FG } from '@/components/listingSemantics';
 import type { ListingType } from '@/types';
 import Colors from '@/constants/colors';
 import { useListings, logEvent } from '@/lib/db';
@@ -176,9 +177,22 @@ export default function BrowseScreen() {
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               hitSlop={6}
-              style={[styles.chip, active && styles.chipActive]}
+              style={[
+                styles.chip,
+                active && styles.chipActive,
+                active && opt.value !== 'all' && {
+                  backgroundColor: TYPE_BADGE_BG[opt.value],
+                  borderColor: TYPE_BADGE_BG[opt.value],
+                },
+              ]}
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+              <Text
+                style={[
+                  styles.chipText,
+                  active && styles.chipTextActive,
+                  active && opt.value !== 'all' && { color: TYPE_BADGE_FG[opt.value] },
+                ]}
+              >
                 {opt.label}
               </Text>
             </Pressable>
@@ -267,7 +281,7 @@ export default function BrowseScreen() {
           accessibilityRole="button"
           accessibilityLabel={`Distance filter: ${radiusLabel(radius)}. Tap to change.`}
           hitSlop={6}
-          style={[styles.chip, styles.chipActive]}
+          style={[styles.chip, styles.chipActive, styles.chipDistance]}
         >
           <Text style={[styles.chipText, styles.chipTextActive]}>
             📍 {radiusLabel(radius)}
@@ -489,7 +503,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.inputBorder,
     justifyContent: 'center',
   },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipActive: { backgroundColor: Colors.text, borderColor: Colors.text },
+  // Distance is a location control — Map's blue, not the brand. White on this
+  // cut measures 4.56:1.
+  chipDistance: { backgroundColor: Colors.tradeBlueInteractive, borderColor: Colors.tradeBlueInteractive },
   chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
   chipTextActive: { color: Colors.textInverse },
   activeRow: {

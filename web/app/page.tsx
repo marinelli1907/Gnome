@@ -54,7 +54,7 @@ export default async function HomePage() {
           <HomeLocate />
           <div className="row">
             <Link className="btn btn-primary" href="/browse">Browse near you</Link>
-            <Link className="btn btn-secondary" href="/sell">Sell what you grow</Link>
+            <Link className="btn btn-secondary is-sell" href="/sell">Sell what you grow</Link>
           </div>
           <ul className="hero-points">
             <li>Free for neighbors</li>
@@ -66,7 +66,7 @@ export default async function HomePage() {
           <Sun className="hero-sun" />
           <div className="hero-cards">
             {HERO_CARDS.map((c, i) => (
-              <div key={c.title} className={`hero-card hc-${i}`}>
+              <div key={c.title} className={`hero-card hc-${i} hct-${c.tone}`}>
                 <div className="hero-card-emoji">{c.emoji}</div>
                 <div className="hero-card-title">{c.title}</div>
                 <span className={`tag type-${c.tone}`}>{c.tag}</span>
@@ -84,19 +84,19 @@ export default async function HomePage() {
             <span className="pillar-emoji">🧺</span>
             <h3>See what’s fresh near you</h3>
             <p>Produce, eggs, honey, baked goods, and handmade goods from people nearby — for sale, free to share, and trades.</p>
-            <span className="pillar-cta">Browse nearby →</span>
+            <span className="pillar-cta is-grow">Browse nearby →</span>
           </Link>
           <Link href="/garden" className="pillar">
             <span className="pillar-emoji">🌱</span>
             <h3>Grow with Gnome</h3>
             <p>The Garden Planner tells you what to plant; the Seed Drop is coming soon; no yard? Reserve a plot nearby.</p>
-            <span className="pillar-cta">Start growing →</span>
+            <span className="pillar-cta is-grow">Start growing →</span>
           </Link>
           <Link href="/my" className="pillar">
             <span className="pillar-emoji">🏡</span>
             <h3>Your garden deserves a storefront</h3>
             <p>Post what you grow, manage availability, chat with neighbors, and build repeat local customers.</p>
-            <span className="pillar-cta">Open My Market →</span>
+            <span className="pillar-cta is-market">Open My Market →</span>
           </Link>
           <Link href="/pricing" className="pillar">
             <span className="pillar-emoji">🌿</span>

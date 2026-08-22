@@ -127,7 +127,10 @@ img { display: block; }
 /* Buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 22px; border-radius: 14px; font-weight: 700; font-size: 15px; border: 1.5px solid var(--brand); cursor: pointer; }
 .btn-primary { background: var(--brand); color: #fff; }
+/* white on #328736 measures 4.51 */
+.btn-primary.is-sell { background: var(--type-sell); border-color: var(--type-sell); }
 .btn-secondary { background: transparent; color: var(--brand); }
+.btn-secondary.is-sell { color: var(--type-sell); border-color: var(--type-sell); }
 .btn-sm { height: 40px; padding: 0 16px; font-size: 14px; border-radius: 12px; }
 
 /* Hero */
@@ -251,7 +254,7 @@ img { display: block; }
 .contact-links a { color: var(--brand); font-weight: 600; font-size: 14px; }
 
 /* ---------- Homepage v2 ---------- */
-.kicker { display: inline-block; font-size: 13px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--on-yellow); background: rgba(255,193,7,.28); border-radius: 999px; padding: 6px 12px; margin-bottom: 14px; }
+.kicker { display: inline-block; font-size: 13px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--on-orange); background: rgba(244,112,10,.20); border-radius: 999px; padding: 6px 12px; margin-bottom: 14px; }
 
 .hero2 { display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; padding: 64px 28px 40px; }
 .hero2-copy h1 { font-size: 52px; line-height: 1.05; letter-spacing: -1px; color: var(--text); margin: 0 0 16px; }
@@ -530,8 +533,11 @@ body {
 }
 
 /* Seed-packet cards: double border + dashed inner rule + stamp corner. */
+/* Each hero card wears the border of the listing type it is showing, so the
+   four cards read as four kinds of listing rather than four copies of the
+   brand. The card face stays white; only the frame carries the hue. */
 .hero-card {
-  border: 2px solid var(--brand);
+  border: 2px solid var(--border-strong);
   border-radius: 14px;
   box-shadow: 4px 5px 0 rgba(var(--shadow-rgb),.16);
   position: relative;
@@ -550,6 +556,9 @@ body {
   font-size: 8px; font-weight: 800; letter-spacing: .08em;
   color: rgba(183,28,28,.60);
 }
+.hct-sale  { border-color: var(--type-sell); }
+.hct-free  { border-color: var(--type-free); }
+.hct-trade { border-color: var(--type-trade); }
 .hero-card-emoji { font-size: 44px; }
 
 /* Category tiles: sticker hover + playful tilt on alternates. */
@@ -596,7 +605,7 @@ body {
 .chip:hover { background: rgba(229,57,53,.07); transform: translateY(-1px); }
 
 /* Kicker: gold stamp look. */
-.kicker { background: rgba(255,193,7,.28); color: var(--on-yellow); }  /* charcoal on a yellow wash: 13.75 */
+.kicker { background: rgba(244,112,10,.20); color: var(--on-orange); }  /* charcoal on an orange wash: 12.84 */
 
 @media (max-width: 860px) {
   .hero2-copy h1 { font-size: 42px; }
@@ -670,6 +679,13 @@ body {
 .pillar-emoji { font-size: 30px; }
 .pillar-cta { color: var(--brand); font-weight: 800; font-size: 14px; }
 .pillar:hover .pillar-cta { text-decoration: underline; }
+/* Each section CTA takes the hue of what it leads TO, so the colour carries
+   information rather than decoration. All measured on the white card:
+   grow 4.51, market 5.18, and the default brand purple 5.87. The three CTAs
+   inside .grow-card are NOT modified — they sit on the deep green band and
+   keep the yellow that measures 4.78 there. */
+.pillar-cta.is-grow   { color: var(--type-sell); }
+.pillar-cta.is-market { color: var(--market-orange-ink); }
 
 /* Grow band — a full-bleed forest section for visual rhythm */
 /* "Grow with Gnome" belongs to the green gnome (§2). */
@@ -747,7 +763,9 @@ body {
 
 /* Market storefront themes — subtle preset accents on the default banner */
 .banner.theme-garden { background: linear-gradient(120deg, var(--garden-green-deepest), var(--garden-green-ink) 60%, var(--garden-green)); }
-.banner.theme-harvest { background: linear-gradient(120deg, var(--gnome-red-deepest), var(--gnome-red) 55%, var(--harvest-yellow)); }
+/* Harvest ramps through the hue it is named for: deep orange -> orange ->
+   yellow. It previously jumped red straight to yellow, skipping orange. */
+.banner.theme-harvest { background: linear-gradient(120deg, var(--market-orange-deep), var(--market-orange) 55%, var(--harvest-yellow)); }
 .banner.theme-herb { background: linear-gradient(120deg, var(--garden-green-deep), var(--garden-green) 60%, #A7E3AB); }
 .banner.theme-farm_stand { background: linear-gradient(120deg, var(--gnome-red-deep), var(--gnome-red) 60%, var(--harvest-yellow)); }
 .banner.theme-minimal { background: linear-gradient(120deg, var(--border), var(--bg-2)); }

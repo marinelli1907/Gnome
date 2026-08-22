@@ -8,6 +8,7 @@ import ListingCard from '@/components/ListingCard';
 import { Button, EmptyState, ErrorState } from '@/components/ui';
 import { Skeleton } from '@/components/Skeleton';
 import { TYPE_FILTERS } from '@/lib/listingType';
+import { TYPE_BADGE_BG, TYPE_BADGE_FG } from '@/components/listingSemantics';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useListings } from '@/lib/db';
@@ -57,8 +58,27 @@ export default function MapScreen() {
         {TYPE_FILTERS.map((o) => {
           const active = typeFilter === o.value;
           return (
-            <Pressable key={o.value} onPress={() => setTypeFilter(o.value)} style={[styles.chip, active && styles.chipActive]}>
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
+            <Pressable
+              key={o.value}
+              onPress={() => setTypeFilter(o.value)}
+              style={[
+                styles.chip,
+                active && styles.chipActive,
+                active && o.value !== 'all' && {
+                  backgroundColor: TYPE_BADGE_BG[o.value],
+                  borderColor: TYPE_BADGE_BG[o.value],
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  active && styles.chipTextActive,
+                  active && o.value !== 'all' && { color: TYPE_BADGE_FG[o.value] },
+                ]}
+              >
+                {o.label}
+              </Text>
             </Pressable>
           );
         })}
@@ -67,7 +87,7 @@ export default function MapScreen() {
         {RADIUS_OPTIONS.map((o) => {
           const active = radius === o.value;
           return (
-            <Pressable key={String(o.value)} onPress={() => setRadius(o.value)} style={[styles.chip, active && styles.chipActive]}>
+            <Pressable key={String(o.value)} onPress={() => setRadius(o.value)} style={[styles.chip, active && styles.chipActive, active && styles.chipRadius]}>
               <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
             </Pressable>
           );
@@ -139,7 +159,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  // "All" selects no type, so it stays charcoal rather than spending a hue.
+  chipActive: { backgroundColor: Colors.text, borderColor: Colors.text },
+  // Radius is a location control — Map blue, white label at 4.56:1.
+  chipRadius: { backgroundColor: Colors.tradeBlueInteractive, borderColor: Colors.tradeBlueInteractive },
   chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
   chipTextActive: { color: Colors.textInverse },
   locBanner: {
