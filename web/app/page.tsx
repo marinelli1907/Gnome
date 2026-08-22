@@ -18,7 +18,7 @@ const AREAS = [
 const STEPS = [
   { n: '🍅', t: 'Find what’s fresh nearby', d: 'Browse produce, eggs, honey, plants and handmade goods from neighbors and small growers around you.' },
   { n: '🌱', t: 'Grow your own, with help', d: 'The AI Garden Planner knows your zone and the calendar; the Seed Drop is coming soon. No land? Reserve a plot in a neighbor’s garden.' },
-  { n: '🤝', t: 'Share or sell the extra', d: 'Claim a free share, offer a trade, or request to buy — pickup is arranged neighbor to neighbor, no fees between you.' },
+  { n: '🤝', t: 'Share or sell the extra', d: 'Claim a free share, offer a trade, or buy what you need — pickup is arranged neighbor to neighbor, no fees between you.' },
   { n: '🏡', t: 'Build your neighborhood market', d: 'Every grower gets a storefront with real trust stats. Repeat buyers, plot reservations, a stronger local food network.' },
 ];
 

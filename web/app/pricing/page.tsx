@@ -99,15 +99,14 @@ const TIERS = [
     name: 'Free',
     price: 'Free',
     cadence: 'forever',
-    blurb: 'For browsing, sharing occasionally, and posting wanted asks.',
+    blurb: 'For browsing, sharing occasionally, and selling a few things.',
     features: [
       '@PUBLISHES',
       '@RENEWALS',
       'Extra Sell listing: $0.99',
-      '@WANTED',
       '@QR',
       '@LOCATIONS',
-      'Share Free, Trade & Wanted posts — always free, never counted',
+      'Share Free & Trade posts — always free, never counted',
       'Your own Market page',
       'Local delivery — up to 15 miles, one flat fee',
       'AI listing drafts — 5/day',
@@ -125,7 +124,6 @@ const TIERS = [
     features: [
       '@PUBLISHES',
       '@RENEWALS',
-      '@WANTED',
       '@QR',
       '@LOCATIONS',
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
@@ -144,7 +142,6 @@ const TIERS = [
     features: [
       '@PUBLISHES',
       '@RENEWALS',
-      '@WANTED',
       '@QR',
       '@LOCATIONS',
       '10 listing promotions every month',
@@ -166,21 +163,18 @@ export default async function PricingPage() {
     Free: {
       '@PUBLISHES': '3 Sell listings included per month',
       '@RENEWALS': 'Renewals $0.99 each — none included',
-      '@WANTED': '1 Wanted response per day',
       '@QR': 'Free public Market link — QR tools on paid plans',
       '@LOCATIONS': '1 pickup location',
     },
     Pro: {
       '@PUBLISHES': 'Unlimited Sell listings',
       '@RENEWALS': 'Unlimited free renewals',
-      '@WANTED': '5 Wanted responses per day',
       '@QR': 'Premium QR tools for your Market',
       '@LOCATIONS': '2 pickup locations — add more for $5/mo each',
     },
     Farm: {
       '@PUBLISHES': 'Unlimited Sell listings',
       '@RENEWALS': 'Unlimited free renewals',
-      '@WANTED': 'Unlimited Wanted responses',
       '@QR': 'Premium QR tools for your Market',
       '@LOCATIONS': '10 pickup locations',
     },
@@ -193,7 +187,6 @@ export default async function PricingPage() {
       features: t.features.map((f) => {
         if (f === '@PUBLISHES') return publishesLine(row, fb[f]);
         if (f === '@RENEWALS') return renewalsLine(row, fb[f]);
-        if (f === '@WANTED') return wantedLine(row, fb[f]);
         if (f === '@QR') return qrLine(row, fb[f]);
         if (f === '@LOCATIONS') return locationsLine(row, fb[f]);
         return f;
@@ -237,7 +230,7 @@ export default async function PricingPage() {
       <p className="pricing-fine">
         Every Sell listing runs for 7 days on every plan — including Farm — then
         can be renewed to stay up. Only Sell listings use your monthly allowance:
-        Share Free, Trade, and Wanted posts never count, on any plan. Beyond your
+        Share Free and Trade posts never count, on any plan. Beyond your
         included allowance, an extra Sell listing or renewal is $0.99. Unlimited
         allowances are subject to anti-abuse limits.
       </p>
