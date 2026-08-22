@@ -1,11 +1,18 @@
-// Gnome palette v5 — the semantic identity (docs/design/GNOME_IDENTITY.md).
+// Gnome palette v6 — the multicolour identity (docs/design/GNOME_IDENTITY.md).
 //
 // White canvas, charcoal type, and five hues that each carry ONE meaning:
-//   purple = Gnome AI and brand personality   (AI owns purple; nothing else uses it)
-//   green  = growing, selling, positive/success
-//   blue   = community, Free listings, information
+//   purple = Gnome brand + Gnome AI      (the strongest recognisable accent)
+//   green  = Sell, growing, success
+//   blue   = Free, community, Map/navigation
 //   red    = Trade, attention, destructive/error
+//   orange = Market, harvest, Post/create
 //   yellow = rewards, discovery, highlights
+//
+// v6 makes purple the BRAND colour and gives orange a real job. Before this,
+// the app read as white+green — one hue doing brand, action and Sell at once.
+// Now each does one thing, and white still occupies most of every screen: the
+// colour lives in badges, selected states, icons and section accents, never in
+// backgrounds. No gradients, no multi-colour buttons.
 //
 // WHAT CHANGED FROM v4, and why it is a re-point rather than a re-paint: the
 // hues and their measured accessible cuts are unchanged — only the ROLES moved.
@@ -25,14 +32,17 @@
 //
 // Key names are unchanged so all ~70 importers re-skin without an edit.
 const Colors = {
-  // Global action colour. Green interactive — carries white text at 4.51:1.
-  // (v4 had this as red; see the header note.)
-  primary: '#328736',
-  primaryLight: '#43B649', // Garden Green brand — fills/art, NOT text on white
-  primaryDark: '#215E24',
+  // v6: PURPLE is the Gnome brand colour. It carries brand moments, Gnome AI
+  // and brand-level actions — 5.87:1 with white, so it needs no deeper cut.
+  // Green did NOT disappear; it moved to where it means something (Sell, grow,
+  // success). Deliberately not every button: Post and Market are orange, the
+  // listing types keep their own hues.
+  primary: '#8E44AD',
+  primaryLight: '#A569BD',
+  primaryDark: '#6C3382',
 
-  secondary: '#8E44AD', // AI Purple — brand personality, Gnome AI
-  secondaryLight: '#B07CC6',
+  secondary: '#43B649', // Garden Green brand — grow/sell fills and art
+  secondaryLight: '#77C97B',
   accent: '#FFC107', // Harvest Yellow — charcoal text only, never white
   accentLight: '#FFD54F',
 
@@ -45,7 +55,7 @@ const Colors = {
   textSecondary: '#6B7280', // Slate — 4.83:1 on white
   textTertiary: '#9CA3AF',
   textInverse: '#FFFFFF',
-  textOnPrimary: '#FFFFFF', // on `primary` (#328736): 4.51:1 ✓
+  textOnPrimary: '#FFFFFF', // on `primary` (#8E44AD): 5.87:1 ✓
 
   border: '#E5E7EB',
   borderLight: '#F1F5F9',
@@ -73,9 +83,11 @@ const Colors = {
 
   tabBar: '#FFFFFF',
   tabBarBorder: '#E5E7EB',
-  // Default active tint. Individual tabs override this with their own semantic
-  // colour in app/(tabs)/_layout.tsx — Ask AI is purple, the rest are green.
-  tabBarActive: '#328736',
+  // Default active tint (brand purple). Every tab overrides it with its own
+  // semantic colour in app/(tabs)/_layout.tsx: Browse green, Map blue, Post
+  // orange, Ask AI purple, Market orange, Profile purple. Inactive stays
+  // neutral slate so the bar reads as one product, not six.
+  tabBarActive: '#8E44AD',
   tabBarInactive: '#6B7280', // neutral slate; inactive is never semantic
 
   cardShadow: 'rgba(17, 24, 39, 0.07)',
@@ -92,6 +104,13 @@ const Colors = {
   urgentOrange: '#F59E0B', // fills/icons only — 2.15:1 as text on white
 
   // The five gnome hues, by their real names — use these in new code.
+  // Market / harvest / warmth. The brand cut is a fill and NEVER takes a white
+  // label (2.93:1 — measured); pair it with `text`. The interactive cut is the
+  // one that carries white, at 5.18:1.
+  marketOrange: '#F4700A',
+  marketOrangeInteractive: '#C2410C',
+  onOrange: '#222222', // charcoal on brand orange — 5.43:1
+
   gnomeRed: '#E53935',
   gnomeRedInteractive: '#E32C27',
   gardenGreen: '#43B649',

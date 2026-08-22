@@ -87,7 +87,7 @@ export const TYPE_LABEL: Record<ListingType, string> = {
   plot: 'Plot',
 };
 
-// v5 semantic palette: Sell green, Free blue, Trade red, Plot yellow.
+// v6 semantic palette: Sell green, Free blue, Trade red, Plot yellow.
 // `wanted` is neutral slate on purpose — it is not offered at launch, and
 // purple belongs to Gnome AI alone. Plot no longer borrows `primary`, which
 // used to make Plot and Sell the same colour.
@@ -97,6 +97,21 @@ export const TYPE_COLOR: Record<ListingType, string> = {
   trade: Colors.trade,
   wanted: Colors.textSecondary,
   plot: Colors.harvestYellow,
+};
+
+// Label colours for TEXT SITTING ON A LIGHT WASH OF ITS OWN HUE — the pattern
+// the type chooser and the type badges use. The bright cuts above are for
+// borders, fills and pins; on their own ~8% wash they measure 4.10 (Sell),
+// 4.11 (Free), 4.00 (Trade) and 1.56 (Plot) — all under AA body, Plot
+// invisibly so. These are the same hues cut deep enough to clear it:
+// 7.10, 5.90, 5.83 and 6.64:1 respectively, and >= 6.5:1 on plain white.
+// Use TYPE_COLOR for the shape, TYPE_TEXT_COLOR for the words.
+export const TYPE_TEXT_COLOR: Record<ListingType, string> = {
+  sale: '#215E24',
+  free: '#0F5FA6',
+  trade: '#B71C1C',
+  wanted: Colors.textSecondary,
+  plot: '#7A5200',
 };
 
 /** True for the five DB enum values — anything else (a label, a stale synonym). */

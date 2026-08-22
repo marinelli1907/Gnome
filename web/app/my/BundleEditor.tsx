@@ -191,7 +191,7 @@ export default function BundleEditor({ marketId }: { marketId: string }) {
             {listings.map((l) => (
               <label key={l.id} style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="checkbox" checked={!!picked[l.id]}
-                  style={{ width: 18, height: 18, padding: 0, flex: 'none', accentColor: 'var(--green)' }}
+                  style={{ width: 18, height: 18, padding: 0, flex: 'none', accentColor: 'var(--brand)' }}
                   onChange={(e) => setPicked((p) => ({ ...p, [l.id]: e.target.checked }))} />
                 {l.title}
                 {l.price_cents != null && (

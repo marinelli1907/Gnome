@@ -228,7 +228,7 @@ export default function MarketDropsEditor({ marketId, marketSlug }: { marketId: 
                 {/* The global `input { width:100% }` rule would stretch a bare
                     checkbox across the row (the launch-audit cosmetic) — pin it. */}
                 <input type="checkbox" checked={!!picked[l.id]}
-                  style={{ width: 18, height: 18, padding: 0, flex: 'none', accentColor: 'var(--green)' }}
+                  style={{ width: 18, height: 18, padding: 0, flex: 'none', accentColor: 'var(--brand)' }}
                   onChange={(e) => setPicked((p) => ({ ...p, [l.id]: e.target.checked }))} />
                 {l.title}
                 {l.price_cents != null && (

@@ -52,6 +52,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          tabBarActiveTintColor: Colors.gardenGreenInteractive, // Browse — grow/sell
           title: 'Browse',
           tabBarIcon: ({ color, size }) => <Sprout color={color} size={size} />,
         }}
@@ -59,6 +60,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="map"
         options={{
+          tabBarActiveTintColor: Colors.tradeBlueInteractive, // Map — navigation/discovery
           title: 'Map',
           tabBarIcon: ({ color, size }) => <MapIcon color={color} size={size} />,
         }}
@@ -66,6 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="post"
         options={{
+          tabBarActiveTintColor: Colors.marketOrangeInteractive, // Post — create/harvest
           title: 'Post',
           tabBarIcon: ({ color, size }) => <PlusCircle color={color} size={size} />,
         }}
@@ -76,10 +79,6 @@ export default function TabLayout() {
           // D3: 'Gnome AI' was the second-widest label and truncated at
           // Android's Large font setting. 'Ask AI' keeps the meaning.
           title: 'Ask AI',
-          // v5 identity: Gnome AI owns purple. This is the ONLY tab that
-          // overrides the bar's green active tint — every other tab stays on
-          // the default, and inactive stays neutral slate, so the bar reads as
-          // one product rather than six colours.
           tabBarActiveTintColor: Colors.aiPurple,
           tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
         }}
@@ -92,6 +91,10 @@ export default function TabLayout() {
           // is untouched. "My Gnome" was the widest label in the bar and
           // ellipsized at the default font size on a 360dp phone; "Market" is
           // narrower and says what the screen actually is.
+          // Orange, same as Post: both tabs mean "your Market", and the
+          // screens behind them are already the Market hue. Sharing a colour
+          // because they share a meaning beats splitting them for variety.
+          tabBarActiveTintColor: Colors.marketOrangeInteractive,
           title: 'Market',
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
@@ -99,6 +102,11 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
+          // Deliberately NOT a brand hue. Profile is the one tab that is about
+          // the person rather than the product, so it stays restrained —
+          // charcoal reads as clearly selected against the slate inactive
+          // without spending a semantic colour on it.
+          tabBarActiveTintColor: Colors.text,
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
         }}

@@ -31,6 +31,8 @@ import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText 
 import {
   DEFAULT_LISTING_TYPE,
   TYPE_CHOICES,
+  TYPE_COLOR,
+  TYPE_TEXT_COLOR,
   isLaunchListingType,
   listingTypeFromParam,
 } from '@/lib/listingType';
@@ -431,10 +433,14 @@ export default function PostScreen() {
                 key={c.value}
                 disabled={locked}
                 onPress={() => setType(c.value)}
-                style={[styles.typeBtn, active && styles.typeBtnActive, locked && styles.typeBtnDisabled]}
+                style={[
+                  styles.typeBtn,
+                  active && { borderColor: TYPE_COLOR[c.value], backgroundColor: TYPE_COLOR[c.value] + '14' },
+                  locked && styles.typeBtnDisabled,
+                ]}
               >
                 <Text style={styles.typeEmoji}>{c.emoji}</Text>
-                <Text style={[styles.typeText, active && styles.typeTextActive]}>{c.label}</Text>
+                <Text style={[styles.typeText, active && { color: TYPE_TEXT_COLOR[c.value] }]}>{c.label}</Text>
               </Pressable>
             );
           })}
@@ -471,7 +477,7 @@ export default function PostScreen() {
           ))}
           {assets.length < MAX_PHOTOS && (
             <Pressable style={styles.addPhoto} onPress={onAddPhotos}>
-              <Camera size={24} color={Colors.primary} />
+              <Camera size={24} color={Colors.marketOrangeInteractive} />
               <Text style={styles.addPhotoText}>{isWanted ? 'Add photo (optional)' : 'Add photo'}</Text>
             </Pressable>
           )}
@@ -646,7 +652,7 @@ export default function PostScreen() {
               >
                 {selectedNode && index ? breadcrumb(index, selectedNode) : 'Choose a category…'}
               </Text>
-              <ChevronRight size={18} color={selectedNode ? Colors.primary : Colors.textTertiary} />
+              <ChevronRight size={18} color={selectedNode ? Colors.marketOrangeInteractive : Colors.textTertiary} />
             </Pressable>
 
             {selectedNode && eligibility.data ? (
@@ -709,7 +715,7 @@ const styles = StyleSheet.create({
   aiBannerArrow: { fontSize: 16, color: Colors.aiPurple, fontFamily: fonts.bold },
   importHint: { marginTop: -6, marginBottom: 14, paddingHorizontal: 2 },
   importHintText: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 18 },
-  importHintLink: { fontFamily: fonts.semibold, color: Colors.primary },
+  importHintLink: { fontFamily: fonts.semibold, color: Colors.marketOrangeInteractive },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
   container: { padding: 20, paddingBottom: 40 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
@@ -724,13 +730,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
   },
-  typeBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' },
   typeBtnDisabled: { opacity: 0.4 },
   typeEmoji: { fontSize: 22, fontFamily: fonts.regular },
   typeText: { fontSize: 14, color: Colors.textSecondary, fontFamily: fonts.semibold },
-  // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
-  // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
-  typeTextActive: { color: Colors.primaryDark },
   marketLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -742,7 +744,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   marketText: { flex: 1, fontSize: 13, color: Colors.text, fontFamily: fonts.semibold },
-  marketEdit: { fontSize: 13, color: Colors.primary, fontFamily: fonts.bold },
+  marketEdit: { fontSize: 13, color: Colors.marketOrangeInteractive, fontFamily: fonts.bold },
   banner: { backgroundColor: Colors.secondary + '22', borderRadius: 12, padding: 12, marginBottom: 16 },
   bannerText: { fontSize: 13, color: Colors.text, lineHeight: 19, fontFamily: fonts.regular },
   heading: { fontSize: 25, fontFamily: 'Fraunces_700Bold', color: Colors.text, marginBottom: 16 },
@@ -765,14 +767,14 @@ const styles = StyleSheet.create({
     height: 84,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: Colors.marketOrangeInteractive,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
     paddingHorizontal: 4,
   },
-  addPhotoText: { fontSize: 10, color: Colors.primary, textAlign: 'center', fontFamily: fonts.semibold },
+  addPhotoText: { fontSize: 10, color: Colors.marketOrangeInteractive, textAlign: 'center', fontFamily: fonts.semibold },
   // The two AI entry points are the purple gnome's, not the market gnome's.
   // This also fixes a contrast miss: brand red on a 6% red wash was 4.11:1,
   // AI Purple on a 6% purple wash measures 5.37:1.
@@ -793,11 +795,11 @@ const styles = StyleSheet.create({
   aiBtnText: { fontSize: 14, color: Colors.aiPurple, fontFamily: fonts.bold },
   typeFields: { gap: 0 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  optChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: Colors.primary + '14', borderWidth: 1, borderColor: Colors.primary },
-  optChipText: { fontSize: 13.5, color: Colors.primaryDark, fontFamily: fonts.semibold },
+  optChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, backgroundColor: Colors.marketOrange + '14', borderWidth: 1, borderColor: Colors.marketOrangeInteractive },
+  optChipText: { fontSize: 13.5, color: Colors.marketOrangeInteractive, fontFamily: fonts.semibold },
   optRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   optInput: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: Colors.text, fontFamily: fonts.regular },
-  optAdd: { backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  optAdd: { backgroundColor: Colors.marketOrangeInteractive, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
   optAddText: { color: Colors.textInverse, fontFamily: fonts.bold, fontSize: 13.5 },
   optToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   optToggleLabel: { fontSize: 14, color: Colors.text, fontFamily: fonts.regular },
@@ -811,8 +813,8 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '0D',
+    borderColor: Colors.marketOrangeInteractive,
+    backgroundColor: Colors.marketOrange + '0D',
     paddingHorizontal: 14,
     marginBottom: 16,
     gap: 8,

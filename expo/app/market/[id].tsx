@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
     borderRadius: 14, padding: 12, gap: 4, borderWidth: 1, borderColor: Colors.borderLight,
   },
   dropTitle: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.text },
-  dropBadge: { fontFamily: fonts.semibold, fontSize: 11, color: Colors.primary },
+  dropBadge: { fontFamily: fonts.semibold, fontSize: 11, color: Colors.marketOrangeInteractive },
   dropMeta: { fontFamily: fonts.regular, fontSize: 13, color: Colors.textSecondary },
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
@@ -378,13 +378,13 @@ const styles = StyleSheet.create({
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
   // Brand red #E53935 is 4.23:1 on white and this is 14px body text; the
   // interactive cut #E32C27 measures 4.51:1.
-  tagline: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.primary, textAlign: 'center', fontStyle: 'italic', marginTop: 2 },
+  tagline: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.marketOrangeInteractive, textAlign: 'center', fontStyle: 'italic', marginTop: 2 },
   distanceLabel: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary, textAlign: 'center', marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
   repWrap: { alignSelf: 'stretch', marginTop: 16 },
   actionsRow: { flexDirection: 'row', gap: 14, alignItems: 'center' },
   reportBtn: { marginTop: 16, padding: 8 },
   reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
-  shareText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.primary },
+  shareText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.marketOrangeInteractive },
   cardWrap: { paddingHorizontal: 16 },
 });

@@ -117,16 +117,48 @@ check('create flow offers launch types only', /LAUNCH_LISTING_TYPES\.map/.test(r
 check('public Market type counts exclude Wanted', /LAUNCH_LISTING_TYPES\.filter/.test(read('web/app/market/[slug]/page.tsx')));
 check('homepage copy does not advertise Wanted', !/wanted posts/i.test(read('web/app/page.tsx')));
 
-// --------------------------------------------------------------- palette v5
+// --------------------------------------------------------------- palette v6
 console.log('\npalette — semantic roles');
 const colors = read('expo/constants/colors.ts');
 check('Sell is green',  /sell:\s*'#328736'/.test(colors));
 check('Free is blue',   /free:\s*'#1878CD'/.test(colors));
 check('Trade is red',   /trade:\s*'#E32C27'/.test(colors));
-check('primary is no longer red', !/primary:\s*'#E32C27'/.test(colors), 'red must not be the global brand colour');
+check('primary is the brand purple', /primary:\s*'#8E44AD'/.test(colors),
+  'v6 makes purple the brand; green stays but means Sell/success');
+check('Market orange exists as a real token', /marketOrange:\s*'#F4700A'/.test(colors));
+check('and has an interactive cut that carries white', /marketOrangeInteractive:\s*'#C2410C'/.test(colors));
+
+// Orange must be USED, not merely defined — an unused token is not an identity.
+const orangeUsers = ['app/(tabs)/activity.tsx', 'app/(tabs)/post.tsx', 'app/market/[id].tsx']
+  .filter((f) => /Colors\.marketOrange/.test(read(`expo/${f}`)));
+check('orange actually appears on Market/Post surfaces', orangeUsers.length === 3,
+  `only used in: ${orangeUsers.join(', ') || 'nothing'}`);
+
 const layout = read('expo/app/(tabs)/_layout.tsx');
-check('Ask AI is the only tab overriding the active tint', ([...layout.matchAll(/tabBarActiveTintColor/g)].length === 2));
-check('and it overrides to purple', /tabBarActiveTintColor:\s*Colors\.aiPurple/.test(layout));
+// v6: every tab carries its own selected colour, so the bar itself is the
+// clearest statement of the five-hue identity.
+const tabTints = [...layout.matchAll(/tabBarActiveTintColor:\s*Colors\.([A-Za-z]+)/g)].map((m) => m[1]);
+check('every tab declares its own selected colour', tabTints.length >= 7,
+  `found ${tabTints.length} (1 default + 6 tabs): ${tabTints.join(', ')}`);
+check('the tab bar spans at least four distinct hues',
+  new Set(tabTints.filter((t) => t !== 'tabBarActive')).size >= 4,
+  `distinct: ${[...new Set(tabTints)].join(', ')}`);
+check('Ask AI is purple', /tabBarActiveTintColor:\s*Colors\.aiPurple,\n\s*tabBarIcon: \(\{ color, size \}\) => <Sparkles/.test(layout));
+
+// Text on a light wash of its own hue needs the deep cut, not the bright one.
+const lt = read('expo/lib/listingType.ts');
+check('deep label cuts exist for text-on-wash', /TYPE_TEXT_COLOR/.test(lt),
+  'the bright cuts measure 4.0-4.1:1 on their own 8% wash — under AA');
+check('the type chooser uses them', /TYPE_TEXT_COLOR\[c\.value\]/.test(read('expo/app/(tabs)/post.tsx')));
+
+// ------------------------------------------------------------- web palette
+console.log('\nweb — palette');
+const css = read('web/app/globals.css');
+check('brand ink is purple', /--brand:\s*var\(--ai-purple-ink\)/.test(css));
+check('no --green alias survives', !/var\(--green\)/.test(css),
+  'an alias named --green holding a non-green is how v5 silently kept shipping v4');
+check('Market orange is defined', /--market-orange-ink:\s*#C2410C/.test(css));
+check('and used on Market surfaces', (css.match(/var\(--market-orange-ink\)/g) || []).length >= 4);
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`);
 process.exit(failures === 0 ? 0 : 1);

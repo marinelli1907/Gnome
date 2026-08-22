@@ -113,7 +113,7 @@ export default function MyGnomeScreen() {
       <ScrollView
         contentContainerStyle={styles.body}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.marketOrangeInteractive} />
         }
       >
         {tab === 'claims' && <ClaimsToReview uid={userId} />}
@@ -143,7 +143,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  segActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  // Market is orange. White on this cut measures 5.18:1.
+  segActive: { backgroundColor: Colors.marketOrangeInteractive, borderColor: Colors.marketOrangeInteractive },
   segText: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.textSecondary },
   segTextActive: { color: Colors.textInverse },
   badge: {
