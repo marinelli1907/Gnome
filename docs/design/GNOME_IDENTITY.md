@@ -16,18 +16,34 @@ childish. It still has to look like a tool a real farm would run its business on
 Exact values as specified. The two right-hand columns are measured, not asserted
 — WCAG 2.1 contrast against a white background and against black.
 
-> **v5 (2026-08-20) — the roles moved, the hues did not.** Sell is green, Free
-> is blue, Trade is red, and red is no longer the global brand colour. Purple is
-> now used by Gnome AI *and nothing else in chrome*, so the AI genuinely owns it.
-> The table below is updated; the measured contrast values are unchanged because
-> the hexes are unchanged.
+> **v6 (2026-08-22) — five hues, one job each, and orange joins.** Purple is
+> now the Gnome brand colour as well as the AI's, because v5 left one token
+> (`primary`) carrying brand + every CTA + Sell at once, and the app read as a
+> generic white-and-green farmers-market app. **Market Orange is new**: before
+> v6 the only orange in the codebase was `urgentOrange`, scoped to urgency, so
+> "Gnome is multicolour" was not something the product could actually show.
+>
+> Roles now: purple = brand + AI, green = Sell/grow/success, blue = Free +
+> Map/location, red = Trade/attention/danger, orange = Market/harvest/Post,
+> yellow = rewards/discovery/Plot. Colour is never the only signal — every type
+> still ships with its word.
+>
+> **Colour encodes what a control does.** A filter chip that selects "Free" is
+> blue; a distance control is Map blue whether it is the pill or the sheet it
+> opens; a CTA that opens your Market is orange. "All" selects no type, so it is
+> charcoal rather than spending a hue on it.
+>
+> v5's earlier note said the hexes never change. That held for the original
+> five; orange is genuinely new, and its two cuts are measured below.
 
 | Token | Hex | on white | on black | Use for |
 |---|---|---|---|---|
-| Garden Green | `#43B649` | 2.62:1 | 8.03:1 | **Sell / growing / success / global brand** |
+| Garden Green | `#43B649` | 2.62:1 | 8.03:1 | **Sell / growing / success** (no longer the global brand) |
 | Trade Blue | `#1E88E5` | 3.68:1 | 5.71:1 | **Free / community / information** |
 | Gnome Red | `#E53935` | 4.23:1 | 4.97:1 | **Trade / attention / danger** |
-| AI Purple | `#8E44AD` | 5.87:1 | 3.58:1 | Gnome AI — and nothing else |
+| AI Purple | `#8E44AD` | 5.87:1 | 3.58:1 | **Gnome brand + Gnome AI** |
+| Market Orange | `#F4700A` | 2.93:1 | 7.17:1 | **Market / harvest / warmth** — fills only, NEVER a white label |
+| Market Orange (interactive) | `#C2410C` | 5.18:1 | 4.06:1 | Market text and buttons; carries white at 5.18:1 |
 | Harvest Yellow | `#FFC107` | 1.63:1 | 12.88:1 | Rewards / discovery / celebration |
 | Charcoal | `#222222` | 15.91:1 | — | Primary text |
 | Slate | `#6B7280` | 4.83:1 | 4.34:1 | Secondary text |
