@@ -95,7 +95,7 @@ export default function UpgradeScreen() {
       <Text style={styles.sub}>
         What your Market can do today, and what each seller plan includes. Plans are not sold in
         the app — nothing on this screen charges you. All Sell listings run for 7 days; Share Free,
-        Trade and Wanted posts never touch your Sell allowance.
+        Trade and Plot posts never touch your Sell allowance.
       </Text>
 
       {/* Your resolved entitlements — the same numbers the backend enforces. */}

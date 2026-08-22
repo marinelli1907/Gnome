@@ -172,7 +172,7 @@ export default function PostScreen() {
         <EmptyState
           emoji="🔑"
           title="Sign in to post"
-          subtitle="You need an account to share, trade, sell, or request. Browsing stays free."
+          subtitle="You need an account to sell, share, or trade. Browsing stays free."
         >
           <Button label="Sign in / Sign up" onPress={() => router.push('/sign-in')} style={{ marginTop: 12 }} />
         </EmptyState>
