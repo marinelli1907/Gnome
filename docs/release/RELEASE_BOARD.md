@@ -1,8 +1,7 @@
 # Gnome 1.1.0 — release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-28 against release commit `acd25b0` plus the reviewed
-deferred-referrals removal now in the working tree.
+Updated 2026-08-28 against release commit `668ccf3`.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -20,15 +19,15 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | **B3** Deletion URL + contact | **CLOSED** | — | — |
 | **B4** Purchase posture | **CLOSED — D1 VERIFIED** | — | Android has no digital purchase UI or Stripe link-out |
 | **§4.3b** Gemini data safety | **OWNER ACTION** | **Daniel** | See `GEMINI_DATA_SAFETY_DECISION.md`: paid Gemini key, or declare Shared = Yes |
-| Website ↔ app parity | **FIXED LOCALLY / DEPLOY PENDING** | Codex | Deploy the actual release-app screenshot and deferred-referrals removal, then probe live |
+| Website ↔ app parity | **DEPLOYED / VERIFIED** | — | Live homepage uses the actual release-app capture; removed referral routes return 404 |
 | `/pricing` test-mode redirect | **DEPLOYED / VERIFIED** (`9945b24`) | — | Live `/pricing` re-probed 2026-08-20 |
 | **App icon + feature graphic** | **READY / MECHANICALLY VERIFIED** | — | Google assets are in `artifacts/store/google/` |
 | **D1 copy leaks** | **CLOSED / REGRESSION TESTED** | — | Android price and checkout surfaces are gated |
 | Reviewer notes (Play + iOS) | **READY** | — | Notes match the release behavior and payment posture |
 | iOS native subscriptions | **SANDBOX PASS** | — | Pro/Farm verification and restore were proven; live payments remain disabled |
 | Deferred rewards/referrals | **REMOVED FROM CUSTOMER SURFACES** | — | Static release guard prevents routes or links from returning |
-| Store assets | **GOOGLE READY / APPLE SCREENSHOTS PENDING** | Codex | Capture final iOS screenshots from the release UI |
-| **Final iOS artifact** | **REBUILD REQUIRED** | Codex | Build after the deferred-referrals removal commit; build 19 is signed but superseded |
+| Store assets | **GOOGLE + APPLE READY** | — | Apple release screenshots are opaque 1320×2868 JPEGs in `artifacts/store/apple/` |
+| **Final iOS artifact** | **BLOCKED BY EAS HOSTED QUOTA** | Daniel / Codex | Build 20 could not start; quota resets 2026-09-01, or Daniel approves an EAS plan upgrade. Build 19 is signed but superseded |
 | **Final AAB** | **BLOCKED BY EAS HOSTED QUOTA** | Daniel / Codex | Hosted quota resets 2026-09-01, or Daniel approves an EAS plan upgrade |
 | **Play upload key** | **ROTATION PREPARED / RESET NOT SUBMITTED** | Daniel / Codex | Submit the prepared public-certificate reset in Play Console; never use the replacement private key locally |
 | **Production migrations** | **OWNER ACTION — 5 REVIEWED FILES PENDING** | Daniel | Apply only the ordered files in `PRODUCTION_MIGRATION_HANDOFF.md`; Codex then verifies read-only |
@@ -37,7 +36,9 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 Current verification: Expo typecheck and lint pass, all 51 Node/static tests
 pass, the Next.js production build passes, Expo Doctor is 18/18, Edge function
 typechecks have zero failures, the clean-room billing/entitlement suites pass,
-and production still reports `payments_live_enabled = false`.
+the release-mode iOS simulator app builds and launches, its Map renders tiles,
+pins, and attribution without known fatal log signatures, and production still
+reports `payments_live_enabled = false`.
 
 The detailed sections below preserve historical evidence. Where a dated detail
 conflicts with the current board above, the current board is authoritative.
