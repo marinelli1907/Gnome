@@ -144,7 +144,7 @@ Verify before upload — all three, on the artifact itself:
 3. The AAB's merged manifest contains `com.google.android.geo.API_KEY` and
    `ExpoFirebaseMessagingService` (unzip the AAB or install the paired APK)
 
-Local tooling status as of 2026-08-20:
+Local tooling status as of 2026-08-28:
 
 - `cd expo && npx expo-doctor` passes all 18 checks after lockfile-only Expo SDK
   54 patch updates.
@@ -152,9 +152,9 @@ Local tooling status as of 2026-08-20:
   advisories whose automated fix requires a forced Expo 57 upgrade. That is not
   a launch-RC fix because the customer app is pinned to SDK 54 and the admin app
   is the separate SDK 57 surface.
-- EAS CLI is installed and authenticated, and the remote Android versionCode is
-  currently 4. The final AAB should still be cut only from the reviewed commit,
-  not from this dirty working tree.
+- EAS CLI is installed and authenticated. Remote versions are Android
+  versionCode 19 and iOS buildNumber 20. The final artifacts should still be
+  cut only from the reviewed release commit, never from unrelated owner work.
 
 ---
 
