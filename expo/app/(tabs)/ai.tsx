@@ -12,21 +12,22 @@
 // commonly regulated, so eggs/dairy/meat/canned goods always get a human look.
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable,
+  ActionSheetIOS, ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
+import type { ImagePickerAsset } from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ImagePlus, Send, Sparkles } from 'lucide-react-native';
+import { Camera, ImagePlus, Send, Sparkles, X } from 'lucide-react-native';
 import { Button } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { fetchListingScreening } from '@/lib/db';
-import { pickImages, uploadListingImages } from '@/lib/images';
+import { pickImages, takePhoto, uploadListingImages } from '@/lib/images';
 import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 import { purchaseOverage } from '@/lib/billing';
@@ -60,11 +61,26 @@ type PaymentAsk = {
 
 type Msg = {
   role: 'user' | 'assistant'; content: string;
+  imageUri?: string | null;
   proposal?: Proposal | null;
   options?: DisambigOption[] | null;
   paymentAsk?: PaymentAsk | null;
   /** the user message that produced this reply — reused when a disambiguation chip is tapped */
   sourceText?: string;
+};
+
+type ChatAttachment = {
+  uri: string;
+  base64: string;
+  mediaType: 'image/jpeg';
+};
+type ZordyUsage = {
+  plan: string;
+  plan_display: string;
+  daily_limit: number;
+  used: number;
+  remaining: number;
+  resets_on: string;
 };
 type Draft = {
   id: string; title: string | null; description: string | null;
@@ -86,13 +102,63 @@ type PublishResult =
   | { outcome: 'failed'; error: ServerError | null; message: string };
 
 const STARTERS: { prompt: string; hint: string }[] = [
-  { prompt: 'What should I sell right now?', hint: 'Get ideas based on what’s in demand near you.' },
-  { prompt: 'What’s happening around me?', hint: 'See what’s trending in your area and nearby Markets.' },
-  { prompt: 'Help me manage my Market', hint: 'Update listings, check sales, and see what needs attention.' },
-  { prompt: 'What should I charge?', hint: 'Get pricing guidance for what you’re selling.' },
-  { prompt: 'Which listings need my attention?', hint: 'See what’s expiring or needs updating.' },
-  { prompt: 'Help me create a listing', hint: 'I’ll walk you through it step by step.' },
+  { prompt: "What's wrong with my plant?", hint: '' },
+  { prompt: 'Help me create a listing', hint: '' },
+  { prompt: "What's happening in my Market?", hint: '' },
+  { prompt: 'What should I sell right now?', hint: '' },
+  { prompt: 'Help me promote my Market', hint: '' },
+  { prompt: 'How do I use Gnome?', hint: '' },
 ];
+
+const AI_AUTH_TITLE = 'Sign in to use Zordy';
+const AI_AUTH_MESSAGE = 'Create an account or sign in to ask Zordy questions, analyze photos, and manage your Market.';
+const AI_RETRY_MESSAGE = 'Zordy couldn’t answer right now. Please try again in a moment.';
+
+function isAiAuthFailure(err: unknown) {
+  const e = err as { message?: unknown; name?: unknown; code?: unknown; status?: unknown; context?: { status?: unknown; error?: unknown } };
+  const status = Number(e?.status ?? e?.context?.status ?? 0);
+  const text = [
+    e?.message,
+    e?.name,
+    e?.code,
+    e?.context?.error,
+  ].map((v) => String(v ?? '')).join(' ');
+  return status === 401 || /UNAUTHENTICATED|JWT|auth|sign in/i.test(text);
+}
+
+function compactAllowance(u: ZordyUsage | null | undefined) {
+  if (!u) return null;
+  return `${u.remaining} of ${u.daily_limit} Zordy request${u.daily_limit === 1 ? '' : 's'} left today`;
+}
+
+function limitCta(u: ZordyUsage | null | undefined) {
+  if (!u || u.plan === 'free') return 'Upgrade to Pro';
+  return u.plan === 'grower' ? 'See Farm' : null;
+}
+
+function cleanAssistantReply(raw: unknown): string {
+  const text = String(raw ?? '')
+    .replace(/^NO\s+MARKDOWN(?:\/ASTERISKS)?\s*:?\s*/i, '')
+    .replace(/^NO\s+ASTERISKS\s*:?\s*/i, '')
+    .replace(/^STYLE\s*:?\s*/i, '')
+    .replace(/^PLAIN\s+TEXT\s+ONLY\s*:?\s*/i, '')
+    .replace(/\*\*([^*\n][^*]*?)\*\*/g, '$1')
+    .replace(/\*([^*\n][^*]*?)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text || AI_RETRY_MESSAGE;
+}
+
+async function functionErrorBody(err: unknown): Promise<{ error?: string; message?: string; usage?: ZordyUsage } | null> {
+  try {
+    const res = (err as { context?: Response })?.context;
+    return res?.json ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function AiTab() {
   const insets = useSafeAreaInsets();
@@ -108,6 +174,9 @@ export default function AiTab() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
+  const [showAuthGate, setShowAuthGate] = useState(false);
+  const [limitReached, setLimitReached] = useState<{ message: string; usage?: ZordyUsage | null } | null>(null);
   // A bulk publish is a sequence of real writes; a second tap mid-run would
   // publish the same drafts twice.
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -126,25 +195,118 @@ export default function AiTab() {
     },
   });
 
-  const ask = useCallback(async (text: string) => {
-    if (!text.trim() || busy) return;
+  const zordyUsage = useQuery({
+    queryKey: ['zordy-usage', userId],
+    enabled: isSupabaseConfigured && !!userId,
+    queryFn: async (): Promise<ZordyUsage | null> => {
+      const { data, error: e } = await supabase.rpc('my_zordy_usage');
+      if (e) throw e;
+      return (Array.isArray(data) ? data[0] : data) as ZordyUsage | null;
+    },
+  });
+
+  const attachAsset = useCallback((asset: ImagePickerAsset | null) => {
+    if (!asset) return;
+    if (!asset.base64) {
+      setError('That photo did not come through cleanly. Try another image.');
+      return;
+    }
+    setAttachment({ uri: asset.uri, base64: asset.base64, mediaType: 'image/jpeg' });
+  }, []);
+
+  const chooseAttachment = useCallback(async (source: 'camera' | 'library') => {
     setError(null);
-    const next: Msg[] = [...messages, { role: 'user', content: text.trim() }];
+    try {
+      if (source === 'camera') {
+        attachAsset(await takePhoto());
+      } else {
+        const [asset] = await pickImages({ selectionLimit: 1 });
+        attachAsset(asset ?? null);
+      }
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      setError(
+        /CAMERA_RESTRICTED/.test(msg)
+          ? 'Camera access is restricted on this device.'
+          : /CAMERA_DENIED/.test(msg)
+            ? 'Camera permission is needed to take a photo. You can still choose one from your library.'
+            : 'Couldn’t open photos right now. Try again in a moment.',
+      );
+    }
+  }, [attachAsset]);
+
+  const showAttachmentMenu = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['TAKE PHOTO', 'CHOOSE FROM LIBRARY', 'CANCEL'],
+          cancelButtonIndex: 2,
+        },
+        (index) => {
+          if (index === 0) void chooseAttachment('camera');
+          if (index === 1) void chooseAttachment('library');
+        },
+      );
+      return;
+    }
+    Alert.alert('Add photo', undefined, [
+      { text: 'TAKE PHOTO', onPress: () => void chooseAttachment('camera') },
+      { text: 'CHOOSE FROM LIBRARY', onPress: () => void chooseAttachment('library') },
+      { text: 'CANCEL', style: 'cancel' },
+    ]);
+  }, [chooseAttachment]);
+
+  const requireAiSignIn = useCallback(() => {
+    setError(null);
+    setShowAuthGate(true);
+  }, []);
+
+  const openSignIn = useCallback(() => {
+    router.push('/sign-in');
+  }, [router]);
+
+  const ask = useCallback(async (text: string, image: ChatAttachment | null = null) => {
+    const clean = text.trim();
+    if ((!clean && !image) || busy) return;
+    if (!userId) {
+      requireAiSignIn();
+      return;
+    }
+    setError(null);
+    setLimitReached(null);
+    setShowAuthGate(false);
+    const displayText = clean || 'Photo attached';
+    const next: Msg[] = [...messages, {
+      role: 'user',
+      content: displayText,
+      imageUri: image?.uri ?? null,
+    }];
     setMessages(next);
     setInput('');
+    if (image) setAttachment(null);
     setBusy(true);
     try {
+      const serverMessages = next.map(({ role, content }) => ({ role, content }));
+      if (image) serverMessages[serverMessages.length - 1] = { role: 'user', content: clean };
       const { data, error: e } = await supabase.functions.invoke('gnome-assistant', {
-        body: { action: 'chat', messages: next, platform: Platform.OS },
+        body: {
+          action: 'chat',
+          messages: serverMessages,
+          platform: Platform.OS,
+          ...(image ? {
+            image: { image_base64: image.base64, media_type: image.mediaType },
+          } : {}),
+        },
       });
       if (e) throw e;
       if (data?.error) throw new Error(data.message ?? data.error);
+      if (data?.usage) void qc.setQueryData(['zordy-usage', userId], data.usage);
       setMessages((m) => [...m, {
         role: 'assistant',
-        content: String(data.reply ?? ''),
+        content: cleanAssistantReply(data.reply),
         proposal: data.proposal ?? null,
         options: data.disambiguation?.options ?? null,
-        sourceText: text.trim(),
+        sourceText: clean,
       }]);
       // A management action may have changed listings the rest of the app shows.
       if (data.action_result?.ok) {
@@ -152,11 +314,21 @@ export default function AiTab() {
         void qc.invalidateQueries({ queryKey: ['listing-drafts', userId] });
       }
     } catch (err: any) {
-      setError(err?.message ?? 'The gnome tripped over a root — try again.');
+      if (isAiAuthFailure(err)) {
+        requireAiSignIn();
+      } else {
+        const body = await functionErrorBody(err);
+        if (body?.error === 'DAILY_LIMIT') {
+          setLimitReached({ message: body.message ?? 'You’ve used today’s Zordy requests.', usage: body.usage ?? null });
+          if (body.usage) void qc.setQueryData(['zordy-usage', userId], body.usage);
+        } else {
+          setError(body?.message && !/ASSISTANT_FAILED|EDGE/i.test(body.message) ? body.message : AI_RETRY_MESSAGE);
+        }
+      }
     } finally {
       setBusy(false);
     }
-  }, [busy, messages, qc, userId]);
+  }, [busy, messages, qc, requireAiSignIn, userId]);
 
   // action_id -> settled, so a card's buttons disappear once it is decided.
   const [settled, setSettled] = useState<Record<string, boolean>>({});
@@ -325,6 +497,11 @@ export default function AiTab() {
   // image, then analyzed in memory server-side.
   const addPhotos = useCallback(async () => {
     setError(null);
+    setLimitReached(null);
+    if (!userId) {
+      requireAiSignIn();
+      return;
+    }
     try {
       const assets = await pickImages({ selectionLimit: 10 });
       if (!assets.length) return;
@@ -345,6 +522,7 @@ export default function AiTab() {
       });
       if (e) throw e;
       if (data?.error) throw new Error(data.message ?? data.error);
+      if (data?.usage) void qc.setQueryData(['zordy-usage', userId], data.usage);
 
       const made = (data.drafts ?? []).length;
       const skipped = (data.skipped ?? []).length;
@@ -362,17 +540,23 @@ export default function AiTab() {
       }]);
     } catch (err: any) {
       const msg = String(err?.message ?? '');
+      const body = await functionErrorBody(err);
       setRetryCount(0);
+      if (body?.error === 'DAILY_LIMIT') {
+        setLimitReached({ message: body.message ?? 'You’ve used today’s Zordy requests.', usage: body.usage ?? null });
+        if (body.usage) void qc.setQueryData(['zordy-usage', userId], body.usage);
+        return;
+      }
       setError(
         /PLAN_REQUIRED/.test(msg) ? 'Drafting listings from photos is included with paid plans.'
         : /NO_MARKET/.test(msg) ? 'Post once from the Post tab to create your Market first.'
-        : /DAILY_LIMIT/.test(msg) ? 'You’ve hit today’s AI limit — it resets tomorrow.'
+        : /DAILY_LIMIT/.test(msg) ? 'You’ve used today’s Zordy requests — they reset tomorrow.'
         : 'Couldn’t analyze those photos — try again in a moment.',
       );
     } finally {
       setAnalyzing(0);
     }
-  }, [qc, userId]);
+  }, [qc, requireAiSignIn, userId]);
 
   // Publishes one draft and reports what came back. It deliberately shows
   // nothing itself: one draft and twenty drafts owe the seller the same facts
@@ -436,6 +620,13 @@ export default function AiTab() {
           } }]),
         ],
       );
+      return;
+    }
+    if (r.error?.code === 'ACCOUNT_NOT_READY') {
+      Alert.alert(r.error.title, r.error.message, [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Finish setup', onPress: () => router.push('/account-ready' as never) },
+      ]);
       return;
     }
     Alert.alert(
@@ -554,8 +745,17 @@ export default function AiTab() {
     >
       <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
         <View style={styles.header}>
-          <Sparkles size={18} color={Colors.aiPurple} />
-          <Text style={styles.title}>Gnome AI</Text>
+          <Image source={require('../../assets/images/zordy-avatar.png')} style={styles.aiAvatar} />
+          <View style={styles.aiTitleRow}>
+            <Sparkles size={18} color={Colors.aiPurple} />
+            <View style={styles.titleStack}>
+              <Text style={styles.title}>Zordy</Text>
+              <Text style={styles.subtitle}>Your garden &amp; Market assistant</Text>
+            </View>
+          </View>
+          {!!userId && compactAllowance(zordyUsage.data) && (
+            <Text style={styles.allowance}>{compactAllowance(zordyUsage.data)}</Text>
+          )}
         </View>
 
         <ScrollView
@@ -569,13 +769,14 @@ export default function AiTab() {
             <View style={styles.intro}>
               <Text style={styles.introLead}>Your garden and Market assistant.</Text>
               <Text style={styles.introText}>
-                Ask what to grow, what’s selling nearby, or get help managing your Market.
-                Gnome can help with listings, prices, sales, and more.
+                Ask about plants, snap a photo, create listings, manage your Market,
+                promote what you sell, or get help using Gnome.
               </Text>
+              <Text style={styles.quickActions}>Quick actions:</Text>
               {STARTERS.map((s) => (
                 <Pressable key={s.prompt} style={styles.starter} onPress={() => ask(s.prompt)}>
                   <Text style={styles.starterText}>{s.prompt}</Text>
-                  <Text style={styles.starterHint}>{s.hint}</Text>
+                  {!!s.hint && <Text style={styles.starterHint}>{s.hint}</Text>}
                 </Pressable>
               ))}
             </View>
@@ -584,6 +785,9 @@ export default function AiTab() {
           {messages.map((m, i) => (
             <View key={i} style={m.role === 'user' ? styles.mineWrap : styles.theirsWrap}>
               <View style={[styles.bubble, m.role === 'user' ? styles.mine : styles.theirs]}>
+                {!!m.imageUri && (
+                  <Image source={{ uri: m.imageUri }} style={styles.messagePhoto} />
+                )}
                 <Text style={m.role === 'user' ? styles.mineText : styles.theirsText}>{m.content}</Text>
               </View>
               {!!m.options?.length && (
@@ -657,13 +861,34 @@ export default function AiTab() {
               <ActivityIndicator color={Colors.textSecondary} />
               {analyzing > 0 && (
                 <Text style={styles.thinking}>
-                  Looking at {analyzing} photo{analyzing === 1 ? '' : 's'}…
+                  Zordy is looking at {analyzing} photo{analyzing === 1 ? '' : 's'}…
                 </Text>
               )}
             </View>
           )}
 
           {error && <Text style={styles.error}>{error}</Text>}
+
+          {limitReached && (
+            <View style={styles.limitCard}>
+              <Text style={styles.authGateTitle}>{limitReached.message}</Text>
+              {limitCta(limitReached.usage ?? zordyUsage.data) && (
+                <Button
+                  label={limitCta(limitReached.usage ?? zordyUsage.data)!}
+                  onPress={() => router.push('/upgrade')}
+                  style={styles.authGateButton}
+                />
+              )}
+            </View>
+          )}
+
+          {showAuthGate && !userId && (
+            <View style={styles.authGate}>
+              <Text style={styles.authGateTitle}>{AI_AUTH_TITLE}</Text>
+              <Text style={styles.authGateText}>{AI_AUTH_MESSAGE}</Text>
+              <Button label="Sign in / Sign up" onPress={openSignIn} style={styles.authGateButton} />
+            </View>
+          )}
 
           {retryCount > 0 && (
             <Pressable style={styles.retry} onPress={() => { setRetryCount(0); void addPhotos(); }}>
@@ -711,11 +936,34 @@ export default function AiTab() {
         </ScrollView>
 
         <View style={[styles.composer, { paddingBottom: 8 }]}>
+          {!!attachment && (
+            <View style={styles.attachmentPreview}>
+              <Image source={{ uri: attachment.uri }} style={styles.attachmentImage} />
+              <View style={styles.attachmentActions}>
+                <Pressable
+                  onPress={showAttachmentMenu}
+                  hitSlop={8}
+                  style={styles.attachmentIcon}
+                  accessibilityLabel="Replace attached photo"
+                >
+                  <Camera size={17} color={Colors.aiPurple} />
+                </Pressable>
+                <Pressable
+                  onPress={() => setAttachment(null)}
+                  hitSlop={8}
+                  style={styles.attachmentIcon}
+                  accessibilityLabel="Remove attached photo"
+                >
+                  <X size={17} color={Colors.error} />
+                </Pressable>
+              </View>
+            </View>
+          )}
           <Pressable
-            onPress={addPhotos}
+            onPress={showAttachmentMenu}
             disabled={analyzing > 0}
             style={styles.photoBtn}
-            accessibilityLabel="Add photos to draft listings"
+            accessibilityLabel="Attach a photo"
           >
             <ImagePlus size={22} color={analyzing > 0 ? Colors.textTertiary : Colors.aiPurple} />
           </Pressable>
@@ -723,17 +971,17 @@ export default function AiTab() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="What can Gnome help with?"
+            placeholder="Ask Zordy..."
             placeholderTextColor={Colors.textTertiary}
             editable={!busy}
-            onSubmitEditing={() => ask(input)}
+            onSubmitEditing={() => ask(input, attachment)}
             returnKeyType="send"
             multiline
           />
           <Pressable
-            onPress={() => ask(input)}
-            disabled={busy || !input.trim()}
-            style={[styles.sendBtn, (busy || !input.trim()) && styles.sendBtnOff]}
+            onPress={() => ask(input, attachment)}
+            disabled={busy || (!input.trim() && !attachment)}
+            style={[styles.sendBtn, (busy || (!input.trim() && !attachment)) && styles.sendBtnOff]}
             accessibilityLabel="Send"
           >
             <Send size={18} color={Colors.textOnPrimary} />
@@ -849,8 +1097,16 @@ function DraftEditor(props: {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: 14 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 6 },
+  header: { gap: 8, paddingBottom: 10 },
+  aiAvatar: {
+    width: 58, height: 58, borderRadius: 29, borderWidth: 2, borderColor: Colors.aiPurple,
+    backgroundColor: Colors.surface,
+  },
+  aiTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  titleStack: { gap: 1 },
   title: { fontFamily: fonts.bold, fontSize: 20, color: Colors.text },
+  subtitle: { fontFamily: fonts.regular, fontSize: 13, color: Colors.textSecondary },
+  allowance: { fontFamily: fonts.semibold, fontSize: 12, color: Colors.aiPurple },
   thread: { paddingVertical: 10, gap: 10 },
   intro: { gap: 10, paddingBottom: 6 },
   introLead: { fontFamily: fonts.semibold, fontSize: 17, color: Colors.text, lineHeight: 23 },
@@ -863,6 +1119,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.borderLight,
   },
   starterText: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.text },
+  quickActions: { fontFamily: fonts.semibold, fontSize: 13, color: Colors.aiPurple },
   starterHint: {
     fontFamily: fonts.regular, fontSize: 12, color: Colors.textSecondary,
     lineHeight: 16, marginTop: 2,
@@ -888,17 +1145,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.aiPurple,
   },
-  // White on AI Purple #8E44AD measures 5.87:1.
+  // White on AI Purple #6B2FB9 measures 7.69:1.
   mine: { alignSelf: 'flex-end', backgroundColor: Colors.chatBubbleUser },
   theirsText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.chatBubbleAIText, lineHeight: 22 },
   mineText: { fontFamily: fonts.regular, fontSize: 15, color: Colors.chatBubbleUserText, lineHeight: 22 },
+  messagePhoto: {
+    width: 180, height: 132, borderRadius: 10, marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
   thinking: { fontFamily: fonts.regular, fontSize: 14, color: Colors.textSecondary },
   error: { fontFamily: fonts.regular, fontSize: 14, color: Colors.error, paddingHorizontal: 4 },
+  authGate: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14, gap: 6,
+    borderWidth: 1, borderColor: Colors.aiPurple,
+  },
+  limitCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14, gap: 6,
+    borderWidth: 1, borderColor: Colors.aiPurple,
+  },
+  authGateTitle: { fontFamily: fonts.semibold, fontSize: 15, color: Colors.text },
+  authGateText: { fontFamily: fonts.regular, fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
+  authGateButton: { alignSelf: 'flex-start', marginTop: 8 },
   retry: {
     alignSelf: 'flex-start', backgroundColor: Colors.surface, borderRadius: 14,
     paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: Colors.aiPurple,
   },
-  // AI Purple on white: 5.87:1.
+  // AI Purple on white: 7.69:1.
   retryText: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.aiPurple },
 
   draftsWrap: { gap: 10, marginTop: 6 },
@@ -932,6 +1204,18 @@ const styles = StyleSheet.create({
   linkMuted: { fontFamily: fonts.semibold, fontSize: 14, color: Colors.textTertiary },
 
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingTop: 6 },
+  attachmentPreview: {
+    width: 64, height: 64, borderRadius: 14, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.aiPurple, backgroundColor: Colors.backgroundSecondary,
+  },
+  attachmentImage: { width: '100%', height: '100%' },
+  attachmentActions: {
+    position: 'absolute', top: 4, right: 4, gap: 4,
+  },
+  attachmentIcon: {
+    width: 25, height: 25, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.borderLight,
+  },
   photoBtn: {
     width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.borderLight,
@@ -945,7 +1229,7 @@ const styles = StyleSheet.create({
   },
   sendBtn: {
     width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
-    // White glyph on AI Purple #8E44AD: 5.87:1 (icons need 3:1).
+    // White glyph on AI Purple #6B2FB9: 7.69:1 (icons need 3:1).
     backgroundColor: Colors.aiPurple,
   },
   sendBtnOff: { opacity: 0.4 },

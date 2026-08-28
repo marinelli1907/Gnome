@@ -2,23 +2,23 @@
 
 // The gnome in the corner — Gnome's site-wide AI assistant.
 // Launcher is always present (small, calm, never auto-opens); the panel
-// mounts on first open. All model calls go through the ask-gnome edge
-// function (JWT-gated, per-day caps, server-held API key). Logged-out
+// mounts on first open. All model calls go through the gnome-assistant edge
+// function (JWT-gated, multimodal, per-day caps, server-held API key). Logged-out
 // visitors get the sign-in card inside the panel. The MODEL stays
 // read-only; management requests ("change Roma Tomatoes to $5/quart")
 // are routed server-side to owner-scoped RPCs, and renewal-class or bulk
 // work comes back as a proposal that executes only when the seller
 // clicks Confirm here (ai_confirm_action under their own JWT).
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
-import { GnomeMascot } from './art';
 import { SignInCard, useSession } from './auth';
 
 interface Turn {
   role: 'user' | 'assistant';
   content: string;
+  imagePreview?: string | null;
   /** Server-bound market-management payloads riding on an assistant reply. A proposal
    * executes ONLY when the seller clicks Confirm — that click calls ai_confirm_action
    * with their own JWT; the model cannot make that call. */
@@ -38,6 +38,66 @@ interface Proposal {
   payment?: { required: boolean; already_paid: boolean; price_cents: number };
 }
 interface DisambigOption { id: string; title: string; detail: string }
+
+interface ChatAttachment {
+  name: string;
+  preview: string;
+  base64: string;
+  mediaType: 'image/jpeg';
+}
+interface ZordyUsage {
+  plan: string;
+  plan_display: string;
+  daily_limit: number;
+  used: number;
+  remaining: number;
+  resets_on: string;
+}
+
+const MAX_WEB_CHAT_IMAGE_B64 = 8_000_000;
+
+function friendlyAssistantError(error: unknown, body?: { error?: unknown; message?: unknown }) {
+  const code = typeof body?.error === 'string' ? body.error : '';
+  const message = typeof body?.message === 'string' ? body.message : '';
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  if (/JWT|auth|sign.?in|unauth|401|403/i.test(`${code} ${message} ${raw}`)) {
+    return 'Sign in to use Zordy.';
+  }
+  if (code === 'IMAGE_TOO_LARGE' || /image.*too large/i.test(message)) {
+    return 'That photo is too large. Try a smaller image.';
+  }
+  if (code === 'DAILY_LIMIT') {
+    return message || 'You’ve used today’s Zordy requests. They reset tomorrow.';
+  }
+  if (code === 'AI_BUSY' || /network|fetch|timeout|503|busy/i.test(`${code} ${message} ${raw}`)) {
+    return 'Zordy is busy. Try again in a moment.';
+  }
+  return 'Zordy couldn’t answer just now. Try again in a moment.';
+}
+
+async function fileToChatImage(file: File): Promise<ChatAttachment> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please choose a photo file.');
+  }
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not prepare that photo.');
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+  const preview = canvas.toDataURL('image/jpeg', 0.84);
+  const base64 = preview.split(',')[1] ?? '';
+  if (base64.length > MAX_WEB_CHAT_IMAGE_B64) {
+    throw new Error('That photo is too large. Try a smaller image.');
+  }
+  return { name: file.name || 'photo.jpg', preview, base64, mediaType: 'image/jpeg' };
+}
 
 /** A confirm came back payment_needed: these exact listings' renewals want $0.99.
  * The card reuses the EXISTING overage checkout (billing-checkout → Stripe-hosted
@@ -69,7 +129,7 @@ const ACTIONS: { match: (p: string) => boolean; chips: string[] }[] = [
   },
   {
     match: (p) => p.startsWith('/pricing'),
-    chips: ['Which plan fits me?', 'Does Gnome take a percentage?', 'What does Pro include?'],
+    chips: ['Which plan fits me?', 'How many Zordy requests do I get?', 'Does Gnome take a percentage?', 'What does Pro include?'],
   },
   {
     match: (p) => p.startsWith('/my') || p.startsWith('/sell'),
@@ -77,7 +137,7 @@ const ACTIONS: { match: (p: string) => boolean; chips: string[] }[] = [
   },
   {
     match: () => true,
-    chips: ['What is Gnome?', 'Find local food', 'Help me start growing', 'How do I sell here?'],
+    chips: ["What's wrong with my plant?", 'Help me create a listing', "What's happening in my Market?", 'Help me promote my Market', 'How do I use Gnome?'],
   },
 ];
 
@@ -89,11 +149,24 @@ export default function GnomeAssistant() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
+  const [usage, setUsage] = useState<ZordyUsage | null>(null);
+  // paidFlow[listingId]: 'paying' | 'waiting' | 'processing' | 'done'
+  const [paidFlow, setPaidFlow] = useState<Record<string, string>>({});
   // action_id -> settled, so a proposal's buttons disappear once it is decided.
   const [settled, setSettled] = useState<Record<string, boolean>>({});
   const logRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const chips = ACTIONS.find((a) => a.match(pathname))!.chips;
+
+  useEffect(() => {
+    if (!session) { setUsage(null); return; }
+    void supabaseBrowser().rpc('my_zordy_usage').then(({ data }) => {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) setUsage(row as ZordyUsage);
+    });
+  }, [session]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,31 +176,64 @@ export default function GnomeAssistant() {
   }, [open]);
 
   useEffect(() => {
+    const openFromHash = () => {
+      if (window.location.hash === '#gnome-ai') setOpen(true);
+    };
+    openFromHash();
+    window.addEventListener('hashchange', openFromHash);
+    return () => window.removeEventListener('hashchange', openFromHash);
+  }, []);
+
+  useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [turns, busy]);
 
   // The admin console keeps its corner clear; everywhere else the gnome waits.
   if (pathname.startsWith('/admin')) return null;
 
-  async function send(text: string) {
+  async function send(text: string, image = attachment) {
     const q = text.trim();
-    if (!q || busy) return;
+    if ((!q && !image) || busy) return;
+    if (!ready) {
+      setNote('One moment — Zordy is checking your session.');
+      return;
+    }
+    if (ready && !session) {
+      setNote('Sign in to use Zordy');
+      return;
+    }
     setNote(null);
-    const next: Turn[] = [...turns, { role: 'user', content: q }];
+    const next: Turn[] = [...turns, {
+      role: 'user',
+      content: q || 'Photo attached',
+      imagePreview: image?.preview ?? null,
+    }];
     setTurns(next);
     setInput('');
+    if (image) setAttachment(null);
     setBusy(true);
-    logWeb('gnome_message');
+    logWeb('gnome_message', { has_image: !!image });
     try {
-      const { data, error } = await supabaseBrowser().functions.invoke('ask-gnome', {
-        body: { messages: next, page: pathname },
+      const serverMessages = next.map(({ role, content }, i) => ({
+        role,
+        content: image && i === next.length - 1 ? q : content,
+      }));
+      const { data, error } = await supabaseBrowser().functions.invoke('gnome-assistant', {
+        body: {
+          action: 'chat',
+          messages: serverMessages,
+          page: pathname,
+          platform: 'web',
+          ...(image ? { image: { image_base64: image.base64, media_type: image.mediaType } } : {}),
+        },
       });
       if (error) {
         const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
-        throw new Error(body?.error ?? 'The gnome tripped over a root — try again in a moment.');
+        throw new Error(friendlyAssistantError(error, body ?? undefined));
       }
       const reply = typeof data?.reply === 'string' ? data.reply : null;
-      if (!reply) throw new Error(data?.error ?? 'The gnome tripped over a root — try again in a moment.');
+      if (!reply) throw new Error(friendlyAssistantError(null, data));
+      if (data?.usage) setUsage(data.usage as ZordyUsage);
       setTurns([...next, {
         role: 'assistant', content: reply,
         proposal: data.proposal ?? null,
@@ -135,10 +241,24 @@ export default function GnomeAssistant() {
         sourceText: q,
       }]);
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Something went sideways — try again shortly.');
+      setNote(e instanceof Error ? e.message : 'Zordy couldn’t answer just now. Try again in a moment.');
+      if (image) setAttachment(image);
       setTurns(next); // keep the user's message; they can retry
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onPhotoChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (!file || busy) return;
+    setNote(null);
+    try {
+      setAttachment(await fileToChatImage(file));
+      logWeb('gnome_photo_attached');
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : 'That photo could not be prepared.');
     }
   }
 
@@ -214,8 +334,6 @@ export default function GnomeAssistant() {
 
   // ---- the $0.99 leg: existing overage checkout in a new tab, poll for the webhook,
   // then execute the EXACT paid renewal via a fresh server-bound proposal + confirm.
-  // paidFlow[listingId]: 'paying' | 'waiting' | 'processing' | 'done'
-  const [paidFlow, setPaidFlow] = useState<Record<string, string>>({});
 
   async function finishPaidRenewal(item: { id: string; title: string }) {
     const sb = supabaseBrowser();
@@ -311,23 +429,34 @@ export default function GnomeAssistant() {
     <>
       <button
         className="gnome-launcher"
-        aria-label={open ? 'Close the Gnome assistant' : 'Ask Gnome — your garden assistant'}
+        aria-label={open ? 'Close Zordy' : 'Ask Zordy — your garden and Market assistant'}
         aria-expanded={open}
         onClick={() => {
           setOpen(!open);
           if (!open) logWeb('gnome_opened', { page: pathname });
         }}
       >
-        <GnomeMascot size={44} />
+        <span className="gnome-ai-mark" aria-hidden>
+          <span className="zordy-portrait" />
+          <span className="gnome-ai-spark">✦</span>
+        </span>
       </button>
 
       {open && (
-        <div className="gnome-panel" role="dialog" aria-label="Gnome assistant chat">
+        <div className="gnome-panel" role="dialog" aria-label="Zordy assistant chat">
           <div className="gp-head">
-            <GnomeMascot size={30} />
+            <span className="gp-avatar" aria-hidden>
+              <span className="zordy-portrait" />
+              <span>✦</span>
+            </span>
             <div>
-              <strong>Gnome</strong>
-              <span className="gp-sub">your garden &amp; market helper</span>
+              <strong>Zordy</strong>
+              <span className="gp-sub">Your garden &amp; Market assistant</span>
+              {usage && (
+                <span className="gp-sub gp-usage">
+                  {usage.remaining} of {usage.daily_limit} Zordy requests left today
+                </span>
+              )}
             </div>
             <button className="gp-close" aria-label="Close chat" onClick={() => setOpen(false)}>✕</button>
           </div>
@@ -335,13 +464,16 @@ export default function GnomeAssistant() {
           <div className="gp-log" ref={logRef}>
             {turns.length === 0 && (
               <div className="bubble assistant">
-                Hey, I’m Gnome. What are we working on? I can help with growing,
-                finding local food, selling, plans — or just how this place works.
+                Hey, I’m Zordy. What are we working on? I can help with growing,
+                plant photos, listings, your Market, promotion, plans — or just how this place works.
               </div>
             )}
             {turns.map((t, i) => (
               <div key={i}>
-                <div className={`bubble ${t.role === 'user' ? 'user' : 'assistant'}`}>{t.content}</div>
+                <div className={`bubble ${t.role === 'user' ? 'user' : 'assistant'}`}>
+                  {t.imagePreview && <img className="bubble-photo" src={t.imagePreview} alt="Uploaded preview" />}
+                  {t.content}
+                </div>
                 {!!t.options?.length && (
                   <div className="gp-chips" style={{ marginTop: 6 }}>
                     {t.options.map((o) => (
@@ -359,7 +491,7 @@ export default function GnomeAssistant() {
                 {!!t.proposal && !settled[t.proposal.action_id] && (
                   <div className="gp-proposal" style={{
                     margin: '6px 0 0', padding: '10px 12px', borderRadius: 12,
-                    border: '1px solid var(--ai-purple, #8E44AD)', display: 'grid', gap: 6,
+                    border: '1px solid var(--ai-purple, #6B2FB9)', display: 'grid', gap: 6,
                   }}>
                     <strong style={{ fontSize: 14 }}>{t.proposal.summary}</strong>
                     {t.proposal.count > 1 && (
@@ -380,7 +512,7 @@ export default function GnomeAssistant() {
                   paidFlow[item.id] === 'done' ? null : (
                     <div key={item.id} className="gp-proposal" style={{
                       margin: '6px 0 0', padding: '10px 12px', borderRadius: 12,
-                      border: '1px solid var(--ai-purple, #8E44AD)', display: 'grid', gap: 6,
+                      border: '1px solid var(--ai-purple, #6B2FB9)', display: 'grid', gap: 6,
                     }}>
                       <strong style={{ fontSize: 14 }}>{t.paymentAsk!.verb} {item.title}</strong>
                       <span style={{ fontSize: 13, opacity: 0.75 }}>Another 7 days · $0.99 one time</span>
@@ -412,44 +544,58 @@ export default function GnomeAssistant() {
           {ready && !session ? (
             <div className="gp-auth">
               <SignInCard
-                title="Sign in to chat with Gnome"
-                blurb="One code by email — then the gnome is all yours. Free during beta."
+                title="Sign in to use Zordy"
+                blurb="Create an account or sign in to ask Zordy questions, analyze photos, and manage your Market."
               />
             </div>
-          ) : (
-            <>
-              {turns.length === 0 && (
-                <div className="gp-chips">
-                  {chips.map((c) => (
-                    <button
-                      key={c}
-                      className="chip"
-                      onClick={() => { logWeb('gnome_quick_action', { chip: c }); void send(c); }}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="gp-composer">
-                <input
-                  value={input}
-                  placeholder="Ask about growing, selling, plans…"
-                  maxLength={1500}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void send(input); }}
-                />
-                <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void send(input)}>
-                  Send
+          ) : null}
+          {turns.length === 0 && (
+            <div className="gp-chips">
+              {chips.map((c) => (
+                <button
+                  key={c}
+                  className="chip"
+                  onClick={() => { logWeb('gnome_quick_action', { chip: c }); void send(c); }}
+                >
+                  {c}
                 </button>
-              </div>
-              <p className="gp-fine">
-                Gnome can answer questions and, when you ask plainly, update your own
-                listings — bigger changes always wait for your Confirm. It never touches
-                billing. Garden advice depends on your real conditions.
-              </p>
-            </>
+              ))}
+            </div>
           )}
+          <div className="gp-composer">
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPhotoChange} />
+            <button
+              type="button"
+              className="gp-photo-btn"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              aria-label="Upload a photo for Zordy"
+            >
+              + Photo
+            </button>
+            <input
+              value={input}
+              placeholder={attachment ? 'Ask Zordy about this photo...' : 'Ask Zordy anything...'}
+              maxLength={1500}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void send(input); }}
+            />
+            <button className="btn btn-primary btn-sm" disabled={busy || (!input.trim() && !attachment)} onClick={() => void send(input)}>
+              Send
+            </button>
+          </div>
+          {attachment && (
+            <div className="gp-attachment">
+              <img src={attachment.preview} alt="Selected photo preview" />
+              <span>{attachment.name}</span>
+              <button type="button" onClick={() => setAttachment(null)}>Remove</button>
+            </div>
+          )}
+          <p className="gp-fine">
+            Gnome can answer questions and, when you ask plainly, update your own
+            listings — bigger changes always wait for your Confirm. It never touches
+            billing. Garden advice depends on your real conditions.
+          </p>
         </div>
       )}
     </>

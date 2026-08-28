@@ -700,4 +700,9 @@ returns text[] language sql immutable as $$
   end;
 $$;
 
+-- Folded production migration 20260811130433_promotions_admin_read.
+drop policy if exists promotions_admin_read on public.listing_promotions;
+create policy promotions_admin_read on public.listing_promotions
+  for select using (public.admin_has_perm('promotions.view'));
+
 notify pgrst, 'reload schema';

@@ -45,6 +45,7 @@ import { pickImages, uploadListingImages } from '@/lib/images';
 import { purchaseOverage } from '@/lib/billing';
 import { canBuyDigitalInApp, OVERAGE_UNAVAILABLE_TITLE, OVERAGE_UNAVAILABLE_BODY } from '@/lib/digitalPurchase';
 import { getCurrentCoords } from '@/lib/location';
+import { todayIsoDate, validateHarvestDateInput } from '@/lib/harvestDate';
 import type { ListingType } from '@/types';
 
 const MAX_PHOTOS = 5;
@@ -90,6 +91,7 @@ export default function PostScreen() {
     title?: string;
     quantity?: string;
     description?: string;
+    harvestDate?: string;
     fulfilledBy?: string;
     n?: string;
   }>();
@@ -105,6 +107,7 @@ export default function PostScreen() {
   const [type, setType] = useState<ListingType>(initialType);
   const [title, setTitle] = useState(params.title ?? '');
   const [quantity, setQuantity] = useState(params.quantity ?? '');
+  const [harvestDate, setHarvestDate] = useState(params.harvestDate ?? todayIsoDate());
   // AI Listing Assistant prefill (params come from the AI sheet on Sell)
   const aiPrefill = params as unknown as {
     aiTitle?: string; aiDescription?: string; aiPrice?: string; aiUnit?: string; aiNode?: string;
@@ -129,6 +132,7 @@ export default function PostScreen() {
   const index = taxonomy.data;
   const selectedNode = index && taxNodeId ? index.byId.get(taxNodeId) ?? null : null;
   const isPlot = type === 'plot';
+  const needsHarvestDate = type === 'sale' || type === 'free' || type === 'trade';
 
   // Server-side verdict for the chosen node (drafts/plots skip the check).
   const eligibility = usePublishEligibility(isPlot ? null : taxNodeId, userId ?? undefined);
@@ -157,6 +161,7 @@ export default function PostScreen() {
       // id, so it doesn't need the legacy-category mapping and wins over it.
       if (typeof params.taxNode === 'string' && params.taxNode) setTaxNodeId(params.taxNode);
       if (params.quantity) setQuantity(params.quantity);
+      if (params.harvestDate) setHarvestDate(params.harvestDate);
       if (aiPrefill.aiTitle) setTitle(aiPrefill.aiTitle);
       if (aiPrefill.aiDescription) setDescription(aiPrefill.aiDescription);
       if (aiPrefill.aiPrice) setPrice(aiPrefill.aiPrice);
@@ -238,6 +243,7 @@ export default function PostScreen() {
     // briefly divergent and this is the agreed reading.
     setTitle('');
     setQuantity('');
+    setHarvestDate(todayIsoDate());
     setDescription('');
     setTaxNodeId(null);
     setAssets([]);
@@ -260,8 +266,66 @@ export default function PostScreen() {
     setOptionDraft('');
   };
 
+  const eligibilityChecking = !isPlot && !!selectedNode && eligibility.isLoading;
   const blocked = !isPlot && !!selectedNode && eligibility.data ? !eligibility.data.allowed : false;
   const prohibited = blocked && eligibility.data?.reason === 'PROHIBITED';
+  const verificationBlocked = blocked && !prohibited;
+
+  const showVerificationBlock = () => {
+    const verdict = eligibility.data;
+    if (!verdict) {
+      Alert.alert('Checking requirements', 'Gnome is still checking whether this category can be listed.');
+      return;
+    }
+    if (verdict.jurisdiction_source === 'default') {
+      Alert.alert(
+        'Set your selling location',
+        'Requirements for this category depend on your state. Add your city and state first so Gnome can check the right rules.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Edit profile', onPress: () => router.push('/profile/edit') },
+        ],
+      );
+      return;
+    }
+    if (verdict.reason === 'PLAN_REQUIRED') {
+      Alert.alert(
+        'Paid seller plan required',
+        verdict.message ?? 'A paid Gnome seller plan is required before this product can be listed.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'See plans', onPress: () => router.push('/upgrade') },
+        ],
+      );
+      return;
+    }
+    if (verdict.reason === 'CREDENTIAL_PENDING') {
+      Alert.alert(
+        'Verification pending',
+        'Gnome is reviewing your documentation for this category. You can list this product once it is approved.',
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Check status', onPress: () => router.push('/compliance') },
+        ],
+      );
+      return;
+    }
+    if (verdict.reason === 'REVIEW_REQUIRED') {
+      Alert.alert(
+        'Not available yet',
+        verdict.message ?? 'This category is not currently available for publishing while Gnome reviews applicable requirements.',
+      );
+      return;
+    }
+    Alert.alert(
+      'Verify first',
+      verdict.message ?? 'This product requires seller verification before it can be listed.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Upload verification', onPress: () => router.push(`/compliance/upload?scope=${selectedNode?.id}`) },
+      ],
+    );
+  };
 
   // $0.99 overage: server-priced, server-authorized. On 'paid' the SAME submit runs again with
   // the form state untouched — that is the draft-preservation guarantee. 'pending' means the
@@ -291,8 +355,16 @@ export default function PostScreen() {
       setPickerOpen(true);
       return;
     }
+    if (eligibilityChecking) {
+      Alert.alert('Checking requirements', 'Wait a moment while Gnome checks this category.');
+      return;
+    }
     if (prohibited) {
       Alert.alert('Not allowed on Gnome', eligibility.data?.message ?? 'This product cannot be listed.');
+      return;
+    }
+    if (verificationBlocked) {
+      showVerificationBlock();
       return;
     }
     let priceCents: number | null = null;
@@ -322,11 +394,17 @@ export default function PostScreen() {
       Alert.alert('What would you like?', 'Tell neighbors what you’d trade for.');
       return;
     }
-
-    // Blocked by compliance → the primary action becomes "Save draft": the
-    // listing is stored as `paused`, invisible to buyers, and auto-publishes
-    // when approval/renewal makes the seller eligible again.
-    const asDraft = blocked;
+    if (needsHarvestDate && !harvestDate.trim()) {
+      Alert.alert('Add picked date', 'Every fresh listing needs the day it was picked.');
+      return;
+    }
+    const harvest = needsHarvestDate
+      ? validateHarvestDateInput(harvestDate)
+      : { value: null as string | null };
+    if (harvest.error) {
+      Alert.alert('Check picked date', harvest.error);
+      return;
+    }
 
     setBusy(true);
     try {
@@ -338,8 +416,9 @@ export default function PostScreen() {
         description: description.trim(),
         category: !isPlot && selectedNode && index ? legacyCategoryFor(index, selectedNode) : 'other',
         taxonomyNodeId: isPlot ? null : selectedNode?.id ?? null,
-        status: asDraft ? 'paused' : 'active',
+        status: 'active',
         quantity: quantity.trim(),
+        harvestDate: harvest.value,
         photos,
         coords,
         priceCents,
@@ -361,12 +440,6 @@ export default function PostScreen() {
         alertUnderReview(listing, { onClose: () => router.push(`/listing/${listing.id}`) });
         return;
       }
-      if (asDraft) {
-        Alert.alert(
-          'Saved as draft',
-          'Your listing is saved and not visible to buyers. Once your plan/verification is in order it can go live from Market.',
-        );
-      }
       router.push(`/listing/${listing.id}`);
     } catch (e: any) {
       const msg = e?.message ?? '';
@@ -374,7 +447,12 @@ export default function PostScreen() {
       // the shared handler owns them — a raw prefix can never reach a seller.
       if (alertListingWriteError(msg)) return;
       const err = parseServerError(msg);
-      if (err?.code === 'COMPLIANCE_BLOCKED') {
+      if (err?.code === 'ACCOUNT_NOT_READY') {
+        Alert.alert(err.title, err.message, [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Finish setup', onPress: () => router.push('/account-ready' as never) },
+        ]);
+      } else if (err?.code === 'COMPLIANCE_BLOCKED') {
         // The server gate is the authority — render its verdict even if the
         // client somehow thought this was publishable.
         Alert.alert(err.title, err.message);
@@ -538,6 +616,18 @@ export default function PostScreen() {
           onChangeText={setQuantity}
           placeholder={isWanted ? 'A handful for pesto' : isPlot ? '4×8 ft raised bed' : 'About 2 lbs / a full basket'}
         />
+        {needsHarvestDate ? (
+          <>
+            <Field
+              label="Picked / harvest date"
+              value={harvestDate}
+              onChangeText={setHarvestDate}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+            />
+            <Text style={styles.hint}>Use the day it was picked. Leave today if it was just harvested.</Text>
+          </>
+        ) : null}
 
         {/* Type-specific */}
         {type === 'sale' && (
@@ -680,13 +770,15 @@ export default function PostScreen() {
           label={
             prohibited
               ? 'Not available'
-              : blocked
-                ? 'Save draft'
+              : eligibilityChecking
+                ? 'Checking…'
+              : verificationBlocked
+                ? 'Verify first'
                 : isWanted ? 'Post want' : type === 'sale' ? 'List for sale' : type === 'trade' ? 'Post trade' : type === 'plot' ? 'Offer plot' : 'Post listing'
           }
-          onPress={submit}
+          onPress={verificationBlocked ? showVerificationBlock : submit}
           loading={busy}
-          disabled={prohibited}
+          disabled={prohibited || eligibilityChecking}
         />
       </ScrollView>
       {index ? (

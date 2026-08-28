@@ -26,9 +26,9 @@ export type CallResult = {
   provider: Provider; model: string;
 };
 
-// Current stable free-tier models (verified ai.google.dev 2026-08-11):
-//   gemini-3.6-flash      — latest Flash-class: agentic, multimodal, structured output
-//   gemini-3.5-flash-lite — current Flash-Lite-class: fastest, highest free RPM
+// Current configured free-tier models. Boardroom keeps a known-working
+// Flash-Lite fallback in-process so production agent rows can safely point at
+// newer Gemini models without dead-ending a turn.
 export const MODELS = {
   hq: 'gemini-3.6-flash',       // HQ / compliance / security / finance / vision
   lite: 'gemini-3.5-flash-lite',// routine specialist agents + site assistant
@@ -91,10 +91,11 @@ export function resolveChain(
   };
   push(preferred);
   push(fallback);
-  // Always make sure a configured gemini default anchors the chain.
-  if (!chain.some((c) => c.provider === 'gemini')) {
-    push({ provider: 'gemini', model: MODELS.lite });
-  }
+  // Always make sure a stable configured Gemini fallback anchors the chain.
+  // Some production agent rows may point at newer/preview Gemini models; a
+  // transient 503 or MAX_TOKENS response should fall back to the stable free
+  // tier, not end the Boardroom turn.
+  push({ provider: 'gemini', model: MODELS.lite });
   return chain;
 }
 
@@ -102,6 +103,13 @@ type CallOpts = {
   system: string; turns: Turn[]; maxTokens: number;
   json?: boolean; // ask the model for a pure-JSON body (validated by caller)
 };
+
+function geminiThinkingConfig(model: string) {
+  const m = model.toLowerCase();
+  if (m.includes('gemini-3')) return { thinkingConfig: { thinkingLevel: 'LOW' } };
+  if (m.includes('gemini-2.5')) return { thinkingConfig: { thinkingBudget: 0 } };
+  return {};
+}
 
 async function callGemini(key: string, model: string, o: CallOpts): Promise<CallResult> {
   const contents = o.turns.map((t) => ({
@@ -120,6 +128,7 @@ async function callGemini(key: string, model: string, o: CallOpts): Promise<Call
         contents,
         generationConfig: {
           maxOutputTokens: o.maxTokens,
+          ...geminiThinkingConfig(model),
           ...(o.json ? { responseMimeType: 'application/json' } : {}),
         },
       }),
@@ -130,8 +139,15 @@ async function callGemini(key: string, model: string, o: CallOpts): Promise<Call
     throw new ProviderError('gemini', res.status,
       `gemini ${res.status}: ${JSON.stringify(b).slice(0, 200)}`, res.status === 429);
   }
-  const text = (b.candidates?.[0]?.content?.parts ?? [])
+  const candidate = b.candidates?.[0] ?? {};
+  const text = (candidate.content?.parts ?? [])
     .map((p: { text?: string }) => p.text ?? '').join('').trim();
+  if (candidate.finishReason === 'MAX_TOKENS' && o.maxTokens < 1800) {
+    return callGemini(key, model, { ...o, maxTokens: Math.min(1800, o.maxTokens * 3) });
+  }
+  if (candidate.finishReason === 'MAX_TOKENS') {
+    throw new ProviderError('gemini', 0, `gemini ${model} hit max output tokens`);
+  }
   const u = b.usageMetadata ?? {};
   return {
     text, provider: 'gemini', model,

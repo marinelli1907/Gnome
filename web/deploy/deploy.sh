@@ -30,9 +30,9 @@ cp -R .next/static "$STAGE/.next/static"
 [ -d public ] && cp -R public "$STAGE/public"
 cp deploy/ecosystem.config.cjs "$STAGE"/
 
-echo "▸ Shipping to $VPS_HOST:$VPS_DIR…"
+echo "▸ Shipping to ${VPS_HOST}:${VPS_DIR}…"
 ssh "$VPS_HOST" "mkdir -p '$VPS_DIR'"
-rsync -az --delete "$STAGE"/ "$VPS_HOST:$VPS_DIR"/
+rsync -az --delete "$STAGE"/ "${VPS_HOST}:${VPS_DIR}"/
 
 echo "▸ Reloading PM2…"
 ssh "$VPS_HOST" "cd '$VPS_DIR' && pm2 startOrReload ecosystem.config.cjs && pm2 save"

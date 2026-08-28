@@ -71,17 +71,17 @@ export default function TaxonomyPicker({
     onClose();
   };
 
-  const rows: Array<
+  const rows: (
     | { kind: 'general'; node: TaxonomyNode }
     | { kind: 'node'; node: TaxonomyNode }
-  > = useMemo(() => {
-    const out: Array<{ kind: 'general' | 'node'; node: TaxonomyNode }> = [];
+  )[] = useMemo(() => {
+    const out: { kind: 'general' | 'node'; node: TaxonomyNode }[] = [];
     if (parent) {
       // Selecting the level itself: "All Tomatoes" (filter) / "General Tomatoes" (sell).
       out.push({ kind: 'general', node: parent });
     }
     for (const n of level) out.push({ kind: 'node', node: n });
-    return out as any;
+    return out;
   }, [parent, level]);
 
   return (
@@ -139,7 +139,6 @@ export default function TaxonomyPicker({
             const isGeneral = item.kind === 'general';
             const kids = isGeneral ? [] : index.childrenOf(node.id);
             const hasKids = kids.length > 0;
-            const isSelected = selectedId === node.id && !hasKids;
             const label = isGeneral
               ? mode === 'sell'
                 ? `General ${node.name}`

@@ -8,9 +8,9 @@
 // AI_PAID_FALLBACK_DISCLOSED=true.
 // The model returns STRUCTURED JSON only; every field is validated here and
 // taxonomy candidates are matched against the real tree — the AI cannot
-// invent nodes. Every call is logged to ai_usage_log; the per-user daily cap
-// (ai_settings.listing_daily_limit) is reserved ATOMICALLY via ai_reserve_slot
-// before any provider spend, and ai_settings.reads_enabled=false halts it.
+// invent nodes. Every call is logged to ai_usage_log; the shared Zordy daily
+// allowance is reserved atomically before provider spend, and
+// ai_settings.reads_enabled=false halts it.
 // Images are analyzed in memory and never stored. The description prompt aims
 // for a warm, neighborly voice.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -40,11 +40,26 @@ Look at the photo and reply with ONLY a JSON object (no markdown) shaped exactly
 multiple_items lists OTHER distinct sellable products visible (empty array if just one).
 If you cannot identify anything sellable, use confidence 0 and empty fields.`;
 
+async function reserveZordy(admin: any, userId: string): Promise<boolean> {
+  const { data, error } = await admin.rpc('zordy_reserve_request', { p_user: userId });
+  if (error) {
+    console.error('zordy_reserve_request error:', error);
+    return false;
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return row?.allowed === true;
+}
+
+async function releaseZordy(admin: any, userId: string): Promise<void> {
+  await admin.rpc('zordy_release_request', { p_user: userId }).then(() => {}, () => {});
+}
+
 Deno.serve(async (req: Request) => {
   const t0 = Date.now();
   // Hoisted so the failure-path usage row keeps full attribution.
   let uid: string | undefined; let marketId: string | undefined;
   let effPlan: string | undefined; let provider = ''; let model = '';
+  let reservedUser: string | undefined;
   try {
     const { image_base64, media_type } = await req.json();
     if (!image_base64 || String(image_base64).length > 8_000_000) {
@@ -73,18 +88,10 @@ Deno.serve(async (req: Request) => {
     // Emergency stop for read-side provider spend (ai_settings.reads_enabled).
     // writes_paused stays the AI-action gate; this one halts paid API calls.
     const { data: settings } = await admin.from('ai_settings')
-      .select('listing_daily_limit, reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
+      .select('reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
     if (settings?.reads_enabled === false) {
       return json({ error: 'AI_PAUSED', message: 'AI features are temporarily paused by the Gnome team.' }, 503);
     }
-
-    // Daily cap — atomic reservation BEFORE the provider call (no
-    // check-then-act race; failed calls also consume their slot).
-    const cap = settings?.listing_daily_limit ?? 20;
-    const { data: reserved } = await admin.rpc('ai_reserve_slot', {
-      p_uid: uid, p_feature: 'listing_assistant', p_cap: cap,
-    });
-    if (!reserved) return json({ error: 'DAILY_LIMIT', message: 'Daily AI listing limit reached — try again tomorrow.' }, 429);
 
     // Provider call — Gemini free tier first; paid providers only when the
     // server-side allow_paid_fallback flag is on. Clients never pick models.
@@ -97,6 +104,9 @@ Deno.serve(async (req: Request) => {
     if (!chain.length) {
       return json({ error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet — create your listing manually.' }, 503);
     }
+    const reserved = await reserveZordy(admin, uid);
+    if (!reserved) return json({ error: 'DAILY_LIMIT', message: 'You’ve used today’s Zordy requests — they reset tomorrow.' }, 429);
+    reservedUser = uid;
     const mt = media_type || 'image/jpeg';
     let raw = '';
     let inputTokens = 0; let outputTokens = 0;
@@ -113,7 +123,9 @@ Deno.serve(async (req: Request) => {
       raw = r.text; inputTokens = r.inTok; outputTokens = r.outTok;
     } catch (e) {
       if (e instanceof RateLimitedError) {
-        return json({ error: 'AI_BUSY', message: 'Gnome AI is temporarily busy. Try again shortly.' }, 503);
+        if (reservedUser) await releaseZordy(admin, reservedUser);
+        reservedUser = undefined;
+        return json({ error: 'AI_BUSY', message: 'Zordy is temporarily busy. Try again shortly.' }, 503);
       }
       throw e;
     }
@@ -175,6 +187,9 @@ Deno.serve(async (req: Request) => {
 
     return json({ draft, taxonomy_candidates: scored });
   } catch (e) {
+    if (reservedUser) {
+      try { await releaseZordy(createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!), reservedUser); } catch { /* best-effort */ }
+    }
     try {
       const admin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       await admin2.from('ai_usage_log').insert({

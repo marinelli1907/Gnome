@@ -29,14 +29,10 @@ command -v deno >/dev/null 2>&1 || {
 # which is the same as having no check. Each needs its own fix; none is a blocker for the billing
 # work, and none should be "fixed" by changing runtime behavior:
 #
-#   billing-admin     stripe.accounts.retrieve() with no arguments. Valid at runtime — it retrieves
-#                     the account behind the key — but stripe@22's types require 1-3. Type-only.
-#   boardroom         TS2345, a SupabaseClient generic mismatch.
-#   gnome-assistant   TS2307, a missing module that is NOT providers.ts.
 #
 # Delete a name from this list the moment its function is fixed, or the baseline rots into a
 # permanent excuse.
-KNOWN_FAILING="billing-admin boardroom gnome-assistant"
+KNOWN_FAILING=""
 
 # deno colourises even when piped; the escapes end up embedded in the summary line otherwise.
 strip_ansi() { sed $'s/\033\\[[0-9;]*[a-zA-Z]//g'; }

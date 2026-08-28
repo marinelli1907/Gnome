@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,8 +20,13 @@ import { categoryFor } from '@/constants/categories';
 import { formatPrice } from '@/lib/listingType';
 import { useAuth } from '@/providers/AuthProvider';
 import { useClaimListing, useListing } from '@/lib/db';
+import { METHOD_LABEL, money, useMarketPaymentMethods, usePickupSlots, type PaymentMethodKind } from '@/lib/marketops';
+import { quantityEstimateLabel } from '@/lib/quantityEstimate';
+import { pickedDateLabel } from '@/lib/harvestDate';
 import { parseServerError } from '@/lib/taxonomy';
 import type { ClaimType, ListingType } from '@/types';
+
+const FALLBACK_PAYMENT_METHODS: PaymentMethodKind[] = ['cash'];
 
 export default function RequestScreen() {
   const { listingId } = useLocalSearchParams<{ listingId: string }>();
@@ -28,10 +34,15 @@ export default function RequestScreen() {
   const router = useRouter();
   const { userId } = useAuth();
   const { data: listing, isLoading, error } = useListing(listingId);
+  const payMethods = useMarketPaymentMethods(listing?.market_id ?? undefined);
+  const pickupSlots = usePickupSlots(listing?.market_id ?? undefined, 7);
   const claim = useClaimListing(userId ?? undefined);
 
   const [tradeOffer, setTradeOffer] = useState('');
   const [note, setNote] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodKind>('cash');
+  const [pickupSlot, setPickupSlot] = useState<{ slot_start: string; slot_end: string } | null>(null);
   // Structured choice for Wanted/Plot listings that define options.
   const [picked, setPicked] = useState<{ label: string; node_id?: string | null } | null>(null);
   const [pickedCustom, setPickedCustom] = useState(false);
@@ -76,11 +87,40 @@ export default function RequestScreen() {
 
   const type: ListingType = listing.listing_type ?? (listing.kind === 'wanted' ? 'wanted' : 'free');
   const cat = categoryFor(listing.category);
+  const available = listing.inventory_count;
+  const unitPrice = listing.price_cents ?? null;
+  const estimatedTotal = unitPrice != null ? unitPrice * quantity : null;
+  const quantityEstimate = type === 'sale'
+    ? quantityEstimateLabel({
+        unit: listing.unit,
+        quantityText: listing.quantity,
+        title: listing.title,
+        count: quantity,
+      })
+    : null;
+  const pickedLabel = pickedDateLabel(listing.harvest_date);
+  const enabledPaymentMethods = (payMethods.data ?? [])
+    .filter((m) => m.enabled)
+    .map((m) => m.method);
+  const paymentChoices = enabledPaymentMethods.length > 0 ? enabledPaymentMethods : FALLBACK_PAYMENT_METHODS;
+  const chosenPayment = paymentChoices.includes(paymentMethod) ? paymentMethod : paymentChoices[0];
+  const marketArea = [
+    listing.owner?.city,
+    listing.owner?.state,
+  ].filter(Boolean).join(', ');
+  const firstSlots = pickupSlots.data?.slice(0, 4) ?? [];
+
+  const stepQuantity = (delta: number) => {
+    setQuantity((q) => {
+      const cap = available ?? 99;
+      return Math.max(1, Math.min(cap, q + delta));
+    });
+  };
 
   const config: Record<ListingType, { heading: string; cta: string; claimType: ClaimType }> = {
     free: { heading: `Claim "${listing.title}"`, cta: 'Send claim', claimType: 'claim' },
     trade: { heading: `Offer a trade for "${listing.title}"`, cta: 'Send trade offer', claimType: 'trade_offer' },
-    sale: { heading: `Request to buy "${listing.title}"`, cta: 'Send buy request', claimType: 'purchase_request' },
+    sale: { heading: `Reserve ${listing.title}`, cta: 'Request reservation', claimType: 'purchase_request' },
     wanted: { heading: `You have "${listing.title}"`, cta: 'Send', claimType: 'wanted_response' },
     plot: { heading: `Reserve "${listing.title}"`, cta: 'Send reservation request', claimType: 'plot_reservation' },
   };
@@ -93,6 +133,14 @@ export default function RequestScreen() {
   const submit = () => {
     if (type === 'trade' && !tradeOffer.trim()) {
       Alert.alert('What will you trade?', 'Tell the grower what you’re offering.');
+      return;
+    }
+    if (type === 'sale' && available != null && quantity > available) {
+      Alert.alert('Check the quantity', `Only ${available} available.`);
+      return;
+    }
+    if (type === 'sale' && firstSlots.length > 0 && !pickupSlot) {
+      Alert.alert('Pick a pickup time', 'Choose one of the seller’s available pickup windows.');
       return;
     }
     // Structured selection rules.
@@ -124,14 +172,24 @@ export default function RequestScreen() {
         tradeOfferText: type === 'trade' ? tradeOffer.trim() : null,
         // Plot reservations require a non-empty note (DB constraint): fall back
         // to the chosen crop label when the free-text detail is blank.
-        buyerNote: note.trim() || (type === 'plot' ? picked?.label ?? null : null),
+        buyerNote:
+          type === 'sale'
+            ? [
+                `Payment preference: ${METHOD_LABEL[chosenPayment]}`,
+                note.trim() ? `Note: ${note.trim()}` : null,
+              ].filter(Boolean).join('\n')
+            : note.trim() || (type === 'plot' ? picked?.label ?? null : null),
         selectedOptionLabel: picked?.label ?? null,
         selectedTaxonomyNodeId: picked?.node_id ?? null,
         isCustomOption: pickedCustom,
         agreedPriceCents:
-          type === 'sale' ? listing.price_cents ?? null
+          type === 'sale' ? estimatedTotal
           : type === 'plot' ? listing.price_cents ?? 0
           : null,
+        quantityRequested: type === 'sale' ? quantity : null,
+        paymentMethod: type === 'sale' ? chosenPayment : null,
+        pickupStart: type === 'sale' ? pickupSlot?.slot_start ?? null : null,
+        pickupEnd: type === 'sale' ? pickupSlot?.slot_end ?? null : null,
         paymentStatus: type === 'sale' || type === 'plot' ? 'external' : 'none',
       },
       {
@@ -150,6 +208,13 @@ export default function RequestScreen() {
             Alert.alert(parsed.title, parsed.message, [
               { text: 'Not now', style: 'cancel' },
               { text: 'See plans', onPress: () => router.push('/upgrade') },
+            ]);
+            return;
+          }
+          if (parsed?.code === 'ACCOUNT_NOT_READY') {
+            Alert.alert(parsed.title, parsed.message, [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Finish setup', onPress: () => router.push('/account-ready' as never) },
             ]);
             return;
           }
@@ -177,7 +242,91 @@ export default function RequestScreen() {
           {listing.market?.name ? ` · 🏡 ${listing.market.name}` : ''}
         </Text>
 
-        {(type === 'sale' || type === 'plot') && (
+        {type === 'sale' && (
+          <View style={styles.reserveCard}>
+            <Text style={styles.reserveTitle}>{listing.price_cents != null ? formatPrice(listing.price_cents, listing.unit) : 'Price set by seller'}</Text>
+            <Text style={styles.reserveSub}>
+              {available != null ? `${available} available` : 'Availability confirmed by seller'}
+              {listing.market?.name ? ` · ${listing.market.name}` : ''}
+            </Text>
+            {marketArea ? <Text style={styles.reserveArea}>{marketArea}</Text> : null}
+            {pickedLabel ? <Text style={styles.reserveArea}>🧺 {pickedLabel}</Text> : null}
+
+            <Text style={styles.fieldLabel}>Quantity</Text>
+            <View style={styles.quantityRow}>
+              <Pressable
+                onPress={() => stepQuantity(-1)}
+                disabled={quantity <= 1}
+                accessibilityRole="button"
+                accessibilityLabel="Decrease quantity"
+                style={[styles.qtyBtn, quantity <= 1 && styles.qtyBtnDisabled]}
+              >
+                <Text style={styles.qtyBtnText}>−</Text>
+              </Pressable>
+              <TextInput
+                style={styles.qtyInput}
+                value={String(quantity)}
+                onChangeText={(t) => {
+                  const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                  const cap = available ?? 99;
+                  setQuantity(Number.isFinite(n) ? Math.max(1, Math.min(cap, n)) : 1);
+                }}
+                keyboardType="number-pad"
+                accessibilityLabel="Quantity"
+              />
+              <Pressable
+                onPress={() => stepQuantity(1)}
+                disabled={available != null && quantity >= available}
+                accessibilityRole="button"
+                accessibilityLabel="Increase quantity"
+                style={[styles.qtyBtn, available != null && quantity >= available && styles.qtyBtnDisabled]}
+              >
+                <Text style={styles.qtyBtnText}>+</Text>
+              </Pressable>
+            </View>
+            {quantityEstimate ? <Text style={styles.quantityEstimate}>{quantityEstimate}</Text> : null}
+
+            {unitPrice != null ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>{quantity} × {money(unitPrice)}</Text>
+                <Text style={styles.totalValue}>Estimated total: {money(estimatedTotal ?? 0)}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+
+        {type === 'sale' && (
+          <View style={styles.pickupBox}>
+            <Text style={styles.fieldLabel}>Pickup</Text>
+            <Text style={styles.pickupTitle}>{listing.market?.name ?? 'Seller Market'}</Text>
+            {pickupSlots.isLoading ? (
+              <Text style={styles.pickupHint}>Checking pickup windows…</Text>
+            ) : firstSlots.length > 0 ? (
+              <View style={styles.slotWrap}>
+                {firstSlots.map((slot) => {
+                  const active = pickupSlot?.slot_start === slot.slot_start;
+                  return (
+                    <Pressable
+                      key={slot.slot_start}
+                      onPress={() => setPickupSlot(slot)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      style={[styles.slotChip, active && styles.slotChipOn]}
+                    >
+                      <Text style={[styles.slotText, active && styles.slotTextOn]}>
+                        {fmtShortWindow(slot.slot_start, slot.slot_end)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.pickupHint}>Pickup by appointment. The seller will confirm or suggest a time after approval.</Text>
+            )}
+          </View>
+        )}
+
+        {(type === 'plot') && (
           <View style={styles.priceBox}>
             <Text style={styles.priceLabel}>{type === 'plot' ? 'Reservation price' : 'Price'}</Text>
             <Text style={styles.price}>
@@ -187,6 +336,31 @@ export default function RequestScreen() {
               {type === 'plot'
                 ? 'The grower approves your request first. Payment and pickup are arranged together — Gnome never handles money.'
                 : 'Payment is arranged in person — Gnome never handles money.'}
+            </Text>
+          </View>
+        )}
+
+        {type === 'sale' && (
+          <View style={styles.paymentBox}>
+            <Text style={styles.fieldLabel}>How do you plan to pay?</Text>
+            <View style={styles.chips}>
+              {paymentChoices.map((method) => {
+                const active = chosenPayment === method;
+                return (
+                  <Pressable
+                    key={method}
+                    onPress={() => setPaymentMethod(method)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={[styles.chip, active && styles.paymentChipOn]}
+                  >
+                    <Text style={[styles.chipText, active && styles.paymentChipTextOn]}>{METHOD_LABEL[method]}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.paymentNote}>
+              Payment is handled directly between you and the seller. Gnome does not process or hold your money.
             </Text>
           </View>
         )}
@@ -245,7 +419,7 @@ export default function RequestScreen() {
               ? hasOptions ? 'Additional details (optional)' : 'What do you have? (optional)'
               : type === 'plot'
                 ? hasOptions ? 'Additional details (optional)' : 'What should they grow?'
-                : 'Add a note for the grower (optional)'
+                : 'Anything the seller should know?'
           }
           value={note}
           onChangeText={setNote}
@@ -254,7 +428,7 @@ export default function RequestScreen() {
               ? 'Describe what you have…'
               : type === 'plot'
                 ? 'Type what you’d like them to grow…'
-                : 'When could I pick up? Anything else to know?'
+                : 'Could I pick up after 6? Can you leave these on the porch?'
           }
           multiline
           numberOfLines={3}
@@ -284,6 +458,79 @@ const styles = StyleSheet.create({
   priceLabel: { fontSize: 12, color: Colors.textSecondary, textTransform: 'uppercase', fontFamily: fonts.bold },
   price: { fontSize: 26, color: Colors.sell, marginTop: 2, fontFamily: fonts.bold },
   priceNote: { fontSize: 12, color: Colors.textTertiary, marginTop: 6, lineHeight: 17, fontFamily: fonts.regular },
+  reserveCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    gap: 8,
+  },
+  reserveTitle: { fontSize: 21, color: Colors.gardenGreenInteractive, fontFamily: fonts.bold },
+  reserveSub: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.semibold },
+  reserveArea: { fontSize: 12.5, color: Colors.textTertiary, fontFamily: fonts.regular },
+  quantityRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  quantityEstimate: { fontSize: 12.5, color: Colors.textSecondary, fontFamily: fonts.regular, lineHeight: 18 },
+  qtyBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.gardenGreenInteractive,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyBtnDisabled: { opacity: 0.35 },
+  qtyBtnText: { color: Colors.textInverse, fontSize: 22, lineHeight: 24, fontFamily: fonts.bold },
+  qtyInput: {
+    width: 72,
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.inputBorder,
+    backgroundColor: Colors.surfaceElevated,
+    textAlign: 'center',
+    fontSize: 18,
+    color: Colors.text,
+    fontFamily: fonts.bold,
+  },
+  totalRow: { marginTop: 4, gap: 2 },
+  totalLabel: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.regular },
+  totalValue: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold },
+  pickupBox: {
+    backgroundColor: Colors.marketOrangeInteractive + '10',
+    borderWidth: 1,
+    borderColor: Colors.marketOrangeInteractive + '35',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  pickupTitle: { fontSize: 15, color: Colors.text, fontFamily: fonts.bold, marginBottom: 4 },
+  pickupHint: { fontSize: 12.5, color: Colors.textSecondary, fontFamily: fonts.regular, lineHeight: 18 },
+  slotWrap: { gap: 8, marginTop: 4 },
+  slotChip: {
+    minHeight: 42,
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.marketOrangeInteractive + '35',
+  },
+  slotChipOn: { backgroundColor: Colors.marketOrangeInteractive, borderColor: Colors.marketOrangeInteractive },
+  slotText: { fontSize: 12.5, color: Colors.text, fontFamily: fonts.semibold },
+  slotTextOn: { color: Colors.textInverse },
+  paymentBox: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  paymentChipOn: { backgroundColor: Colors.gardenGreenInteractive, borderColor: Colors.gardenGreenInteractive },
+  paymentChipTextOn: { color: Colors.textInverse },
+  paymentNote: { marginTop: 10, fontSize: 11.5, color: Colors.textTertiary, fontFamily: fonts.regular, lineHeight: 16 },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
   optionsBlock: { marginBottom: 14 },
   fieldLabel: { fontSize: 14, color: Colors.text, fontFamily: fonts.semibold, marginBottom: 8 },
@@ -295,3 +542,11 @@ const styles = StyleSheet.create({
   // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
   chipTextOn: { color: Colors.primaryDark },
 });
+
+function fmtShortWindow(startIso: string, endIso: string): string {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  const day = s.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const time = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${day} · ${time(s)}–${time(e)}`;
+}

@@ -242,6 +242,7 @@ export type ServerErrorCode =
   | 'PROHIBITED_CATEGORY'
   | 'RATE_LIMITED'
   | 'COMPLIANCE_BLOCKED'
+  | 'ACCOUNT_NOT_READY'
   | 'PLAN_LIMIT_REACHED'
   | 'PUBLISH_ALLOWANCE_EXHAUSTED'
   | 'WANTED_INTRO_LIMIT_REACHED'
@@ -282,6 +283,10 @@ const SERVER_ERRORS: Record<ServerErrorCode, { title: string; fallback: string }
   COMPLIANCE_BLOCKED: {
     title: 'Verification required',
     fallback: 'This category needs verification before publishing. You can save a draft instead.',
+  },
+  ACCOUNT_NOT_READY: {
+    title: 'One quick account update',
+    fallback: 'Verify your email and mobile phone, confirm you are 18+, and accept the current marketplace rules before continuing.',
   },
   PLAN_LIMIT_REACHED: {
     // Transitional: raised by the pre-0104 active-listing gate, which is what production runs
@@ -355,6 +360,15 @@ const SERVER_ERROR_RE = new RegExp(
   `\\b(${Object.keys(SERVER_ERRORS).join('|')})\\b:?[ \\t]*([\\s\\S]*)`,
 );
 
+const READINESS_LABELS: Record<string, string> = {
+  verified_email: 'verified email',
+  verified_phone: 'verified mobile phone',
+  age_18: '18+ confirmation',
+  terms: 'current Terms',
+  privacy: 'current Privacy Policy',
+  marketplace_rules: 'Marketplace Rules',
+};
+
 export interface ServerError {
   code: ServerErrorCode;
   /** Ours. */
@@ -390,6 +404,12 @@ export function parseServerError(raw: string | undefined | null): ServerError | 
       title = reason === 'PLAN_REQUIRED' ? 'Paid plan required' : spec.title;
       body = nested[2].trim();
     }
+  }
+  if (code === 'ACCOUNT_NOT_READY') {
+    const missing = body.split(':').pop()?.split(',').map((s) => READINESS_LABELS[s.trim()] ?? '').filter(Boolean) ?? [];
+    body = missing.length
+      ? `Complete these account steps before continuing: ${missing.join(', ')}.`
+      : '';
   }
   return { code, title, message: body || spec.fallback, reason };
 }

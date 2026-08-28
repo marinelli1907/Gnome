@@ -3,8 +3,14 @@ import Link from 'next/link';
 import AppLink from '../../components/AppLink';
 import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
+import ReferralCapture from '../../components/ReferralCapture';
+import VisitRequestButton from './VisitRequestButton';
 import { areaLabel, LAUNCH_LISTING_TYPES, TYPE_LABEL } from '@/lib/format';
-import { getDropItemIds, getListingsByIds, getMarketBySlug, getMarketDelivery, getMarketDrops, getMarketListings, sortDropsLiveFirst } from '@/lib/gnome';
+import {
+  getDropItemIds, getListingsByIds, getMarketBySlug, getMarketDelivery, getMarketDrops,
+  getMarketListings, getMarketPickupHours, getMarketStorefrontStats, getMarketVisitSlots,
+  sortDropsLiveFirst,
+} from '@/lib/gnome';
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 // A Market Drop's window, rendered in the Drop's own timezone — labelled, so a
@@ -24,6 +30,7 @@ const clock = (t: string) => {
   const hh = h % 12 === 0 ? 12 : h % 12;
   return m ? `${hh}:${String(m).padStart(2, '0')} ${ampm}` : `${hh} ${ampm}`;
 };
+const minuteClock = (minutes: number) => clock(`${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`);
 
 // 60s, not 300 — the LIVE NOW / Coming up chip shouldn't lag a Drop by minutes.
 export const revalidate = 60;
@@ -51,7 +58,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function MarketPage({ params, searchParams }: Params & {
-  searchParams?: Promise<{ drop?: string }>;
+  searchParams?: Promise<{ drop?: string; ref?: string; source?: string; source_market?: string }>;
 }) {
   const { slug } = await params;
   const m = await getMarketBySlug(slug);
@@ -62,14 +69,19 @@ export default async function MarketPage({ params, searchParams }: Params & {
       </main>
     );
   }
-  const [listings, delivery, dropsRaw] = await Promise.all([
+  const [listings, delivery, dropsRaw, storefront] = await Promise.all([
     getMarketListings(m.id, 60),
     getMarketDelivery(m.id),
     getMarketDrops(m.id),
+    getMarketStorefrontStats(m.id),
   ]);
+  const [pickupHours, visitSlots] = storefront?.scheduling_enabled
+    ? await Promise.all([getMarketPickupHours(m.id), getMarketVisitSlots(m.id, 14)])
+    : [[], []];
   const drops = sortDropsLiveFirst(dropsRaw);
   // A shared Drop link (?drop=<id>) pins that Drop open with its own item grid.
-  const requestedDrop = (await searchParams)?.drop ?? null;
+  const query = await searchParams;
+  const requestedDrop = query?.drop ?? null;
   const openDrop = requestedDrop ? drops.find((d) => d.id === requestedDrop) ?? null : null;
   // The view only carries upcoming/live/freshly-ended Drops, so a stale link
   // (cancelled, or ended more than a day ago) resolves to nothing.
@@ -86,6 +98,7 @@ export default async function MarketPage({ params, searchParams }: Params & {
 
   return (
     <main className="container market-head">
+      {query?.ref ? <ReferralCapture code={query.ref} source={query.source === 'market_qr' ? 'MARKET_QR' : 'WEB_LINK'} marketId={query.source_market} /> : null}
       {m.banner_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img className="banner" src={m.banner_url} alt={m.name} />
@@ -107,7 +120,11 @@ export default async function MarketPage({ params, searchParams }: Params & {
           <div className="meta-line" style={{ margin: '4px 0' }}>
             {m.market_type ? <span className="tag type-free">{MARKET_TYPE_LABEL[m.market_type] ?? m.market_type}</span> : null}
             {m.verified ? <span className="tag verified" style={{ marginLeft: 6 }}>✓ Verified</span> : null}
-            <span style={{ marginLeft: 8 }}>{where} · {m.active_listing_count} active</span>
+            {m.featured_until ? <span className="tag" style={{ marginLeft: 6 }}>Featured Market</span> : null}
+            <span style={{ marginLeft: 8 }}>
+              {where} · {m.active_listing_count} active
+              {storefront ? ` · ${storefront.follower_count} ${storefront.follower_count === 1 ? 'follower' : 'followers'}` : ''}
+            </span>
           </div>
         </div>
         <FollowButton marketId={m.id} />
@@ -115,6 +132,36 @@ export default async function MarketPage({ params, searchParams }: Params & {
 
       {m.tagline ? <p className="market-tagline">“{m.tagline}”</p> : null}
       {m.description ? <p className="desc" style={{ maxWidth: 720 }}>{m.description}</p> : null}
+
+      {storefront?.scheduling_enabled ? (
+        <section className="market-hours" aria-labelledby="market-hours-title">
+          <div className="market-hours-copy">
+            <h2 id="market-hours-title">Stand hours</h2>
+            <p>See when this Market welcomes visitors, then request a specific time.</p>
+            {visitSlots[0] ? (
+              <p className="market-next-opening">
+                <strong>Next available:</strong>{' '}
+                {new Date(visitSlots[0].slot_start).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                {' · '}{new Date(visitSlots[0].slot_start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </p>
+            ) : null}
+            <VisitRequestButton marketId={m.id} marketName={m.name} slots={visitSlots} />
+          </div>
+          <div className="market-hours-grid">
+            {DOW.map((day, dayIndex) => {
+              const windows = pickupHours.filter((window) => window.weekday === dayIndex);
+              return (
+                <div className="market-hours-row" key={day}>
+                  <strong>{day.slice(0, 3)}</strong>
+                  <span>{windows.length
+                    ? windows.map((window) => `${minuteClock(window.start_minute)}–${minuteClock(window.end_minute)}`).join(', ')
+                    : 'Closed'}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div className="rep">
         <div className="rep-stats">

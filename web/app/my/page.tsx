@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function MyMarketPage() {
   return (
-    <main className="container" style={{ paddingTop: 32, paddingBottom: 64 }}>
+    <main className="container page-theme page-market" style={{ paddingTop: 32, paddingBottom: 64 }}>
       <MyMarketClient />
     </main>
   );

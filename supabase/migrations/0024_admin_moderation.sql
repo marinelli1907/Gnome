@@ -31,7 +31,9 @@ as $$
 $$;
 
 insert into public.admins (user_id)
-values ('3e64f6d5-9c3e-436a-b48d-be96edfba39a')  -- Daniel (site owner)
+select id
+from public.profiles
+where id = '3e64f6d5-9c3e-436a-b48d-be96edfba39a'  -- Daniel (site owner)
 on conflict do nothing;
 
 -- ---------------------------------------------------------------------------

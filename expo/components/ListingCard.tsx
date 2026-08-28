@@ -8,6 +8,7 @@ import { categoryFor } from '@/constants/categories';
 import TypeBadge from '@/components/TypeBadge';
 import { ctaLabel, formatPrice } from '@/lib/listingType';
 import { fmtDistance } from '@/lib/location';
+import { pickedDateLabel } from '@/lib/harvestDate';
 import { logEvent } from '@/lib/db';
 import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
@@ -49,6 +50,7 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
       ? fmtDistance(listing.distance_miles)
       : null;
   const distance = distanceBase == null ? null : distanceBase === 'Nearby' ? 'Nearby' : `${distanceBase} away`;
+  const pickedLabel = pickedDateLabel(listing.harvest_date);
 
   const open = () => {
     void logEvent('listing_card_opened', {
@@ -123,8 +125,13 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
           ) : null}
           <View style={styles.meta}>
             <Clock size={13} color={Colors.textSecondary} />
-            <Text style={styles.metaText}>{timeLeft(listing.expires_at)}</Text>
+            <Text style={styles.metaText}>{pickedLabel ?? timeLeft(listing.expires_at)}</Text>
           </View>
+          {pickedLabel ? (
+            <Text style={styles.tradeFor} numberOfLines={1}>
+              · {timeLeft(listing.expires_at)}
+            </Text>
+          ) : null}
           {type === 'trade' && listing.trade_for ? (
             <Text style={styles.tradeFor} numberOfLines={1}>
               · for {listing.trade_for}

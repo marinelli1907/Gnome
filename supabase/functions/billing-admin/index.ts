@@ -20,8 +20,16 @@
 //     exact URL + event set. The signing secret is neither stored nor returned;
 //     secrets belong in Supabase project secrets, entered by the owner.
 //   { action: "inspect_session" }     read-only: what a cs_test_ session bound.
+//   { action: "recent_payments" }     read-only: recent paid TEST sessions for
+//     the owner refund queue. No card details or secrets are returned.
+//   { action: "ensure_promo_campaign" } create/recreate the TEST Stripe coupon
+//     + promotion code for an admin-managed subscription promo campaign, then
+//     persist the TEST ids back to promotion_campaigns. Gnome still decides
+//     eligibility in promo_validate(); Stripe only supplies discount mechanics.
 //   { action: "cancel_subscription" } QA: cancel a TEST subscription.
-//   { action: "refund_payment" }      QA: refund a TEST checkout payment.
+//   { action: "refund_payment" }      QA: refund a TEST checkout payment,
+//     including the initial invoice payment for a subscription. Can also
+//     cancel that TEST subscription after the refund.
 //
 // Every MUTATING action shares one guard: refuse unless the live-payments gate
 // is OFF, the key's account is livemode:false, AND confirm_account_id matches
@@ -91,7 +99,7 @@ Deno.serve(async (req: Request) => {
     if (!/^(sk|rk)_test_/.test(key)) return json(400, { configured: true, error: 'NOT_A_TEST_KEY', message: 'STRIPE_SECRET_KEY_TEST is not a test-mode key.' });
 
     const stripe = new Stripe(key);
-    const acct = await stripe.accounts.retrieve();
+    const acct = await stripe.accounts.retrieve(null);
     const identity = {
       configured: true,
       account_id: acct.id,
@@ -283,6 +291,123 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === 'recent_payments') {
+      const [sessions, refunds] = await Promise.all([
+        stripe.checkout.sessions.list({ limit: 40 }),
+        stripe.refunds.list({ limit: 100 }),
+      ]);
+      const refundForSession = new Map(
+        refunds.data
+          .filter((r) => r.metadata?.checkout_session)
+          .map((r) => [String(r.metadata?.checkout_session), r]),
+      );
+      return json(200, {
+        ok: true,
+        account_id: acct.id,
+        payments: sessions.data
+          .filter((s) => s.livemode === false && s.payment_status === 'paid' && Number(s.amount_total ?? 0) > 0)
+          .slice(0, 20)
+          .map((s) => {
+            const priorRefund = refundForSession.get(s.id);
+            return ({
+            session_id: s.id,
+            created: s.created,
+            amount_total: s.amount_total,
+            currency: s.currency,
+            mode: s.mode,
+            payment_status: s.payment_status,
+            customer_email: s.customer_details?.email ?? s.customer_email ?? null,
+            customer_name: s.customer_details?.name ?? null,
+            product_key: s.metadata?.product_key ?? null,
+            market_id: s.metadata?.market_id ?? s.client_reference_id ?? null,
+            subscription_id: typeof s.subscription === 'string' ? s.subscription : s.subscription?.id ?? null,
+            refunded: !!priorRefund,
+            refund_status: priorRefund?.status ?? null,
+          }); }),
+      });
+    }
+
+    if (action === 'ensure_promo_campaign') {
+      const blocked = await guard();
+      if (blocked) return blocked;
+
+      const campaignId = String(body.campaign_id ?? '');
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(campaignId)) {
+        return json(400, { error: 'BAD_CAMPAIGN_ID' });
+      }
+
+      const { data: c, error: campErr } = await admin.from('promotion_campaigns')
+        .select('id,code,campaign_name,active,applicable_plans,discount_type,discount_percent,discount_amount_cents,duration,duration_in_months,expires_at,max_redemptions,new_customers_only,stripe_promotion_code_id_test')
+        .eq('id', campaignId).maybeSingle();
+      if (campErr) return json(500, { error: 'CAMPAIGN_LOOKUP_FAILED', detail: campErr.message });
+      if (!c) return json(404, { error: 'CAMPAIGN_NOT_FOUND' });
+      if (!/^[A-Z0-9_-]{3,40}$/.test(String(c.code ?? ''))) return json(400, { error: 'BAD_CODE' });
+
+      // Existing promo codes cannot change their discount/duration after use.
+      // Deactivate the prior TEST code owned by this campaign, then mint a new
+      // coupon + promotion code with the same customer-facing code.
+      const prior = String(c.stripe_promotion_code_id_test ?? '');
+      if (/^promo_/.test(prior)) {
+        try {
+          const old = await stripe.promotionCodes.retrieve(prior);
+          if (old.livemode) return json(409, { error: 'LIVE_OBJECT' });
+          if (old.active && old.metadata?.gnome_campaign_id === c.id) {
+            await stripe.promotionCodes.update(prior, { active: false });
+          }
+        } catch (e) {
+          console.error(`ensure_promo_campaign: could not deactivate prior ${prior}:`, e);
+        }
+      }
+
+      const coupon = await stripe.coupons.create({
+        name: `Gnome ${c.code} - ${c.campaign_name}`.slice(0, 40),
+        duration: c.duration as Stripe.CouponCreateParams.Duration,
+        ...(c.duration === 'repeating' ? { duration_in_months: Number(c.duration_in_months) } : {}),
+        ...(c.discount_type === 'percent'
+          ? { percent_off: Number(c.discount_percent) }
+          : { amount_off: Number(c.discount_amount_cents), currency: 'usd' }),
+        metadata: {
+          gnome_campaign_id: c.id,
+          gnome_code: c.code,
+          environment: 'test',
+        },
+      });
+
+      const promotion = await stripe.promotionCodes.create({
+        promotion: { type: 'coupon', coupon: coupon.id },
+        code: c.code,
+        ...(c.max_redemptions ? { max_redemptions: Number(c.max_redemptions) } : {}),
+        ...(c.expires_at ? { expires_at: Math.floor(new Date(c.expires_at).getTime() / 1000) } : {}),
+        restrictions: { first_time_transaction: c.new_customers_only === true },
+        metadata: {
+          gnome_campaign_id: c.id,
+          gnome_code: c.code,
+          gnome_plans: Array.isArray(c.applicable_plans) ? c.applicable_plans.join(',') : '',
+          environment: 'test',
+        },
+      });
+
+      const { error: updErr } = await admin.from('promotion_campaigns')
+        .update({
+          stripe_coupon_id: coupon.id,
+          stripe_promotion_code_id: promotion.id,
+          stripe_promotion_code_id_test: promotion.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', c.id);
+      if (updErr) return json(500, { error: 'PROMO_DB_UPDATE_FAILED', detail: updErr.message });
+
+      return json(200, {
+        ok: true,
+        account_id: acct.id,
+        campaign_id: c.id,
+        code: c.code,
+        coupon_id: coupon.id,
+        promotion_code_id: promotion.id,
+        livemode: promotion.livemode,
+      });
+    }
+
     if (action === 'cancel_subscription') {
       // QA only: cancel a TEST subscription so the real
       // customer.subscription.deleted branch can be exercised end-to-end.
@@ -298,19 +423,74 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'refund_payment') {
       // QA only: refund a TEST checkout payment so the real charge.refunded
-      // branch (promotion-credit clawback) can be exercised end-to-end.
+      // branch (promotion-credit clawback and financial audit logging) can be
+      // exercised end-to-end. Subscription Checkout sessions do not carry a
+      // top-level payment_intent, so resolve their initial paid invoice.
       const blocked = await guard();
       if (blocked) return blocked;
       const id = String(body.session_id ?? '');
       if (!/^cs_test_/.test(id)) return json(400, { error: 'TEST_SESSIONS_ONLY' });
       const s = await stripe.checkout.sessions.retrieve(id);
       if (s.livemode) return json(409, { error: 'LIVE_OBJECT' });
-      const pi = typeof s.payment_intent === 'string' ? s.payment_intent : s.payment_intent?.id;
-      if (!pi) return json(400, { error: 'NO_PAYMENT_INTENT', message: 'Session has no payment_intent (subscription invoices refund via the charge).' });
+      let paymentIntent = typeof s.payment_intent === 'string' ? s.payment_intent : s.payment_intent?.id ?? null;
+      let charge: string | null = null;
+      const subscriptionId = typeof s.subscription === 'string' ? s.subscription : s.subscription?.id ?? null;
+
+      if (!paymentIntent && subscriptionId) {
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        const invoiceId = typeof sub.latest_invoice === 'string' ? sub.latest_invoice : sub.latest_invoice?.id ?? null;
+        if (invoiceId) {
+          const invoice = await stripe.invoices.retrieve(invoiceId) as unknown as {
+            payment_intent?: string | { id?: string } | null;
+            charge?: string | { id?: string } | null;
+            payments?: { data?: Array<{
+              status?: string;
+              payment?: { payment_intent?: string | { id?: string } | null; charge?: string | { id?: string } | null };
+            }> };
+          };
+          const paid = invoice.payments?.data?.find((p) => p.status === 'paid') ?? invoice.payments?.data?.[0];
+          const invoicePi = paid?.payment?.payment_intent ?? invoice.payment_intent;
+          const invoiceCharge = paid?.payment?.charge ?? invoice.charge;
+          paymentIntent = typeof invoicePi === 'string' ? invoicePi : invoicePi?.id ?? null;
+          charge = typeof invoiceCharge === 'string' ? invoiceCharge : invoiceCharge?.id ?? null;
+        }
+      }
+      if (!paymentIntent && !charge) {
+        return json(400, { error: 'NO_REFUNDABLE_PAYMENT', message: 'Stripe could not find a refundable payment for this session.' });
+      }
       // Tag the refund with the originating session so the webhook can find the
       // credit to claw back (it reads metadata.checkout_session).
-      const refund = await stripe.refunds.create({ payment_intent: pi, metadata: { checkout_session: s.id } });
-      return json(200, { ok: true, refund_id: refund.id, status: refund.status, amount: refund.amount, livemode: refund.livemode });
+      const refund = await stripe.refunds.create({
+        ...(paymentIntent ? { payment_intent: paymentIntent } : { charge: charge! }),
+        reason: 'requested_by_customer',
+        metadata: { checkout_session: s.id },
+      });
+
+      let subscriptionCancelled = false;
+      let subscriptionCancelError: string | null = null;
+      if (body.cancel_subscription === true && subscriptionId) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId);
+          if (sub.livemode) subscriptionCancelError = 'Refusing to cancel a live subscription.';
+          else {
+            if (sub.status !== 'canceled') await stripe.subscriptions.cancel(subscriptionId);
+            subscriptionCancelled = true;
+          }
+        } catch (e) {
+          // The refund already succeeded. Report cancellation separately so the
+          // operator never retries the refund because a later step failed.
+          subscriptionCancelError = String(e).slice(0, 160);
+        }
+      }
+      return json(200, {
+        ok: true,
+        refund_id: refund.id,
+        status: refund.status,
+        amount: refund.amount,
+        subscription_cancelled: subscriptionCancelled,
+        subscription_cancel_error: subscriptionCancelError,
+        livemode: (refund as unknown as { livemode?: boolean }).livemode ?? false,
+      });
     }
 
     return json(400, { error: 'UNKNOWN_ACTION' });

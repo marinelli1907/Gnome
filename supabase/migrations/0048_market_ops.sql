@@ -371,7 +371,7 @@ end $$;
 create or replace function public.confirm_market_order(p_order uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
-  o public.market_orders; it record; inv int;
+  o public.market_orders; it record;
 begin
   select * into o from public.market_orders where id = p_order for update;
   if o is null then raise exception 'ORDER_NOT_FOUND' using errcode = 'P0001'; end if;

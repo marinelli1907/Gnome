@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Badge, Button, EmptyState, ErrorState } from '@/components/ui';
+import { Badge, EmptyState, ErrorState } from '@/components/ui';
 import RecordSaleSheet, { type SalePrefill } from '@/components/RecordSaleSheet';
 import { RowSkeleton } from '@/components/Skeleton';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { categoryFor } from '@/constants/categories';
-import { useMyListings, useMyMarket, useUpdateListingStatus } from '@/lib/db';
+import { useArchiveListing, useMyListings, useMyMarket, useUpdateListingStatus } from '@/lib/db';
 import { alertUnderReview, isUnderReview, safeErrorText, UNDER_REVIEW_LABEL } from '@/lib/screening';
 import { supabase } from '@/lib/supabase';
 import type { Listing } from '@/types';
@@ -45,6 +45,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
   const router = useRouter();
   const myListings = useMyListings(uid);
   const updateStatus = useUpdateListingStatus(uid);
+  const archiveListing = useArchiveListing(uid);
   const myMarket = useMyMarket(uid);
   const [saleSheet, setSaleSheet] = useState<SalePrefill | null>(null);
 
@@ -104,8 +105,8 @@ export default function MyListingsView({ uid }: { uid: string }) {
     return (
       <EmptyState
         emoji="🌱"
-        title="Nothing posted yet"
-        subtitle="Share surplus or post a want from the Post tab — it'll show up here."
+        title="No active listings"
+        subtitle="Post something from your garden or Market to get started."
       />
     );
   }
@@ -135,22 +136,24 @@ export default function MyListingsView({ uid }: { uid: string }) {
       },
     ]);
 
-  const remove = (l: Listing) =>
-    Alert.alert('Remove listing', `Remove “${l.title}”?`, [
-      { text: 'Back', style: 'cancel' },
+  const remove = (l: Listing) => {
+    const active = groupOf(l) === 'Available' || groupOf(l) === 'Claimed';
+    const detail = active
+      ? 'This listing will immediately stop appearing to buyers. Any completed sales or accounting records connected to it will remain in your Gnome records.'
+      : 'This listing will be removed from your Market. Any completed sales or accounting records connected to it will remain in your Gnome records.';
+    Alert.alert(`Delete “${l.title}”?`, detail, [
+      { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Remove',
+        text: 'Delete listing',
         style: 'destructive',
         onPress: () =>
-          updateStatus.mutate(
-            { listingId: l.id, status: 'removed', kind: l.kind, title: l.title },
-            {
-              onError: (e: any) =>
-                Alert.alert('Couldn’t remove it', safeErrorText(e?.message, 'Try again.')),
-            },
-          ),
+          archiveListing.mutate(l.id, {
+            onError: (e: any) =>
+              Alert.alert('Couldn’t delete it', safeErrorText(e?.message, 'Try again.')),
+          }),
       },
     ]);
+  };
 
   const repost = (l: Listing) =>
     router.push({
@@ -160,6 +163,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
         category: l.category,
         title: l.title,
         quantity: l.quantity ?? '',
+        harvestDate: l.harvest_date ?? '',
         description: l.description ?? '',
         // nonce so re-posting the same listing twice still re-seeds the form
         // (the Post screen keys its seeding effect on these params)
@@ -168,6 +172,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
     });
 
   const edit = (l: Listing) => router.push(`/edit-listing/${l.id}`);
+  const stats = (l: Listing) => router.push(`/listing-performance/${l.id}` as never);
 
   return (
     <View style={{ gap: 18 }}>
@@ -181,7 +186,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
               const cat = categoryFor(l.category);
               return (
                 <View key={l.id} style={styles.card}>
-                  <Pressable style={styles.main} onPress={() => router.push(`/listing/${l.id}`)}>
+                  <Pressable style={styles.main} onPress={() => stats(l)}>
                     <Text style={styles.title} numberOfLines={1}>
                       {cat.emoji} {l.kind === 'wanted' ? `Looking for ${l.title}` : l.title}
                     </Text>
@@ -191,6 +196,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
                   </Pressable>
                   <Badge label={g} color={GROUP_COLOR[g]} />
                   <View style={styles.actions}>
+                    <Pressable onPress={() => stats(l)}><Text style={styles.link}>View stats</Text></Pressable>
                     {(g === 'Available' || g === 'Claimed') && (
                       <>
                         {l.is_featured ? (
@@ -200,7 +206,7 @@ export default function MyListingsView({ uid }: { uid: string }) {
                         )}
                         <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
                         <Pressable onPress={() => markComplete(l)}><Text style={styles.link}>Mark Complete</Text></Pressable>
-                        <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Remove</Text></Pressable>
+                        <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Delete</Text></Pressable>
                       </>
                     )}
                     {g === UNDER_REVIEW_LABEL && (
@@ -209,16 +215,24 @@ export default function MyListingsView({ uid }: { uid: string }) {
                             along — never the keyword that matched. */}
                         <Pressable onPress={() => alertUnderReview(l)}><Text style={styles.link}>Why under review?</Text></Pressable>
                         <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
+                        <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Delete</Text></Pressable>
                       </>
                     )}
                     {g === 'Paused' && (
                       <>
                         <Pressable onPress={() => router.push('/compliance')}><Text style={styles.link}>Why paused?</Text></Pressable>
                         <Pressable onPress={() => edit(l)}><Text style={styles.link}>Edit</Text></Pressable>
+                        <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Delete</Text></Pressable>
                       </>
                     )}
                     {g === 'Expired' && (
-                      <Pressable onPress={() => repost(l)}><Text style={styles.link}>Repost</Text></Pressable>
+                      <>
+                        <Pressable onPress={() => repost(l)}><Text style={styles.link}>Repost</Text></Pressable>
+                        <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Delete</Text></Pressable>
+                      </>
+                    )}
+                    {g === 'Completed' && (
+                      <Pressable onPress={() => remove(l)}><Text style={styles.linkDanger}>Delete</Text></Pressable>
                     )}
                   </View>
                 </View>

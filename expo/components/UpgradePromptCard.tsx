@@ -7,6 +7,7 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { logEvent, usePlanLimits } from '@/lib/db';
 import { planDisplay } from '@/lib/allowance';
+import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import type { MarketPlan } from '@/types';
 
 const NEXT: Record<string, MarketPlan | null> = {
@@ -65,7 +66,9 @@ export default function UpgradePromptCard({
             : monthly != null ? ` for ${monthly} new Sell listings a month` : ''}
           {renewals === null ? ' and unlimited renewals'
             : renewals != null && renewals > 0 ? ` and ${renewals} free renewals` : ''}
-          . Plans are not sold in the app.
+          {canBuyDigitalInApp
+            ? '. See plans and subscribe securely.'
+            : '. Plans are not sold in the Android app.'}
         </Text>
       </View>
       <View style={styles.cta}>

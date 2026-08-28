@@ -6,6 +6,13 @@ export interface Coords {
   lng: number;
 }
 
+export interface BrowseLocationAnchor {
+  coords: Coords;
+  label: string;
+  source: 'current' | 'manual';
+  query?: string | null;
+}
+
 /** Legacy fixed choices — still used by the Map tab only. */
 export type RadiusOption = 'near' | 5 | 10 | 25 | 50;
 
@@ -43,6 +50,18 @@ export function radiusLabel(r: BrowseRadius): string {
 }
 
 const RADIUS_KEY = 'gnome.browseRadius';
+const LOCATION_KEY = 'gnome.browseLocationAnchor';
+
+export function coarseBrowseCoords(coords: Coords): Coords {
+  return {
+    lat: Math.round(coords.lat * 100) / 100,
+    lng: Math.round(coords.lng * 100) / 100,
+  };
+}
+
+export function normalizeBrowseLocationAnchor(anchor: BrowseLocationAnchor): BrowseLocationAnchor {
+  return { ...anchor, coords: coarseBrowseCoords(anchor.coords) };
+}
 
 export async function loadBrowseRadius(): Promise<BrowseRadius> {
   try {
@@ -61,6 +80,88 @@ export async function saveBrowseRadius(r: BrowseRadius): Promise<void> {
     await AsyncStorage.setItem(RADIUS_KEY, String(r));
   } catch {
     /* persistence is best-effort */
+  }
+}
+
+function readablePlace(
+  place: Location.LocationGeocodedAddress | undefined,
+  fallback: string,
+): string {
+  const city = (place?.city ?? place?.subregion ?? '').trim();
+  const state = toStateCode(place?.region);
+  const zip = /^\d{5}/.test(place?.postalCode ?? '') ? (place!.postalCode as string).slice(0, 5) : '';
+  if (city && state) return `${city}, ${state}`;
+  if (city) return city;
+  if (zip) return zip;
+  return fallback.trim();
+}
+
+async function reverseLabel(coords: Coords, fallback: string): Promise<string> {
+  try {
+    const [place] = await Location.reverseGeocodeAsync({
+      latitude: coords.lat,
+      longitude: coords.lng,
+    });
+    return readablePlace(place, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+export async function loadBrowseLocationAnchor(): Promise<BrowseLocationAnchor | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LOCATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as BrowseLocationAnchor;
+    if (
+      parsed &&
+      Number.isFinite(parsed.coords?.lat) &&
+      Number.isFinite(parsed.coords?.lng) &&
+      typeof parsed.label === 'string' &&
+      parsed.label.trim()
+    ) {
+      return parsed;
+    }
+  } catch {
+    /* persistence is best-effort */
+  }
+  return null;
+}
+
+export async function saveBrowseLocationAnchor(anchor: BrowseLocationAnchor): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LOCATION_KEY, JSON.stringify(normalizeBrowseLocationAnchor(anchor)));
+  } catch {
+    /* persistence is best-effort */
+  }
+}
+
+export async function clearBrowseLocationAnchor(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(LOCATION_KEY);
+  } catch {
+    /* persistence is best-effort */
+  }
+}
+
+export async function currentBrowseLocationAnchor(): Promise<BrowseLocationAnchor | null> {
+  const precise = await getCurrentCoords();
+  if (!precise) return null;
+  const label = await reverseLabel(precise, 'Current location');
+  return { coords: coarseBrowseCoords(precise), label, source: 'current' };
+}
+
+export async function geocodeBrowseLocation(query: string): Promise<BrowseLocationAnchor | null> {
+  const q = query.trim();
+  if (!q) return null;
+  try {
+    const [result] = await Location.geocodeAsync(q);
+    if (!result) return null;
+    const coords = coarseBrowseCoords({ lat: result.latitude, lng: result.longitude });
+    const label = await reverseLabel(coords, q);
+    return { coords, label, source: 'manual', query: q };
+  } catch {
+    return null;
   }
 }
 

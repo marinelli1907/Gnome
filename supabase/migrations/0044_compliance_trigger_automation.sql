@@ -73,6 +73,7 @@ begin
 
   return query select exp_count, paused;
 end $$;
+revoke all on function public.compliance_run_expiry() from public, anon, authenticated;
 
 -- When a seller renews a credential or resubscribes, resume their paused
 -- listings that now pass the gate — no re-review, nothing recreated.

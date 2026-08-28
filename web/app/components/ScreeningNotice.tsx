@@ -75,13 +75,20 @@ function Links({ code }: { code: ServerError['code'] }) {
       </div>
     );
   }
+  if (code === 'ACCOUNT_NOT_READY') {
+    return (
+      <div className="notice-links">
+        <a href="/account-ready">Update account</a>
+      </div>
+    );
+  }
   return null;
 }
 
 export function ServerErrorNotice({ error }: { error: ServerError }) {
   const tone =
     error.code === 'RATE_LIMITED' ? 'wait'
-      : error.code === 'PLAN_LIMIT_REACHED' || error.code === 'PLOTS_REQUIRE_PLAN' ? 'review'
+      : error.code === 'PLAN_LIMIT_REACHED' || error.code === 'PLOTS_REQUIRE_PLAN' || error.code === 'ACCOUNT_NOT_READY' ? 'review'
         : 'stop';
   return (
     <div className={`notice ${tone}`} role="alert">

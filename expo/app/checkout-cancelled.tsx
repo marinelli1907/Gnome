@@ -7,14 +7,15 @@
 // chose.
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 
 export default function CheckoutCancelled() {
   const router = useRouter();
+  const { kind } = useLocalSearchParams<{ kind?: string }>();
   useEffect(() => {
-    router.replace('/(tabs)/post');
-  }, [router]);
+    router.replace(kind === 'plan' ? '/upgrade' : '/(tabs)/post');
+  }, [kind, router]);
 
   return (
     <View style={styles.wrap}>

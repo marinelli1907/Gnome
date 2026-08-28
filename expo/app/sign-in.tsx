@@ -8,8 +8,8 @@ import {
   View,
   Pressable,
   Alert,
+  Linking,
 } from 'react-native';
-import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '@/providers/AuthProvider';
@@ -34,6 +34,14 @@ export default function SignInScreen() {
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
+
+  const finishAuthentication = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/');
+  };
 
   // Ask the auth server which providers are actually enabled instead of
   // hardcoding it — a disabled provider must never render a button that fails
@@ -74,7 +82,7 @@ export default function SignInScreen() {
     }
     try {
       await signInWithApple();
-      if (router.canGoBack()) router.back();
+      finishAuthentication();
     } catch (e: any) {
       if (e?.code === 'ERR_REQUEST_CANCELED') return; // user dismissed the sheet
       Alert.alert('Apple sign-in failed', e?.message ?? 'Please try again.');
@@ -89,7 +97,7 @@ export default function SignInScreen() {
     setGoogleBusy(true);
     try {
       await signInWithGoogle();
-      if (router.canGoBack()) router.back();
+      finishAuthentication();
     } catch (e: any) {
       Alert.alert('Google sign-in failed', e?.message ?? 'Please try again.');
     } finally {
@@ -127,7 +135,7 @@ export default function SignInScreen() {
     setBusy(true);
     try {
       await verifyEmailCode(email.trim(), code.trim());
-      if (router.canGoBack()) router.back();
+      finishAuthentication();
     } catch (e: any) {
       Alert.alert('Code didn’t match', e?.message ?? 'Check the code and try again.');
     } finally {
@@ -171,7 +179,7 @@ export default function SignInScreen() {
       await setNewPassword(password);
       clearRecoveryMode();
       Alert.alert('Password updated', 'You’re signed in.', [
-        { text: 'OK', onPress: () => { if (router.canGoBack()) router.back(); } },
+        { text: 'OK', onPress: finishAuthentication },
       ]);
     } catch (e: any) {
       const raw = e?.message ?? '';
@@ -201,11 +209,13 @@ export default function SignInScreen() {
         const { needsConfirm } = await signUp(email.trim(), password, name.trim() || 'Neighbor');
         if (needsConfirm) {
           Alert.alert('Check your inbox', 'Confirm your email, then sign in.');
+          setMode('in');
+          return;
         }
       } else {
         await signIn(email.trim(), password);
       }
-      if (router.canGoBack()) router.back();
+      finishAuthentication();
     } catch (e: any) {
       Alert.alert('Something went wrong', e?.message ?? 'Please try again.');
     } finally {
@@ -230,6 +240,31 @@ export default function SignInScreen() {
           Share your garden surplus and grab what neighbors have to spare.
         </Text>
 
+        {(mode === 'in' || mode === 'up') && (
+          <View style={styles.authModeSwitch}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: mode === 'in' }}
+              onPress={() => setMode('in')}
+              style={[styles.authModeOption, mode === 'in' && styles.authModeOptionSelected]}
+            >
+              <Text style={[styles.authModeText, mode === 'in' && styles.authModeTextSelected]}>
+                Sign in
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: mode === 'up' }}
+              onPress={() => setMode('up')}
+              style={[styles.authModeOption, mode === 'up' && styles.authModeOptionSelected]}
+            >
+              <Text style={[styles.authModeText, mode === 'up' && styles.authModeTextSelected]}>
+                Sign up
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {!configured && (
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
@@ -246,6 +281,8 @@ export default function SignInScreen() {
             onChangeText={setName}
             placeholder="Your name"
             autoCapitalize="words"
+            autoComplete="name"
+            textContentType="name"
           />
         )}
         {mode !== 'reset' && (
@@ -257,6 +294,9 @@ export default function SignInScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            autoComplete="email"
+            textContentType="emailAddress"
+            importantForAutofill="yes"
           />
         )}
         {mode === 'reset' && (
@@ -266,6 +306,10 @@ export default function SignInScreen() {
             onChangeText={setPassword}
             placeholder="••••••••"
             secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            passwordRules="required: upper; required: lower; required: digit; minlength: 8;"
+            importantForAutofill="yes"
           />
         )}
         {mode !== 'code' && mode !== 'forgot' && mode !== 'reset' && (
@@ -275,6 +319,12 @@ export default function SignInScreen() {
             onChangeText={setPassword}
             placeholder="••••••••"
             secureTextEntry
+            autoComplete={mode === 'up' ? 'new-password' : 'current-password'}
+            textContentType={mode === 'up' ? 'newPassword' : 'password'}
+            passwordRules={mode === 'up'
+              ? 'required: upper; required: lower; required: digit; minlength: 8;'
+              : undefined}
+            importantForAutofill="yes"
           />
         )}
         {mode === 'code' && codeSent && (
@@ -285,6 +335,9 @@ export default function SignInScreen() {
             placeholder="123456"
             keyboardType="number-pad"
             autoCorrect={false}
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            maxLength={6}
           />
         )}
 
@@ -325,6 +378,12 @@ export default function SignInScreen() {
         {(mode === 'in' || mode === 'up') && (
           <Pressable onPress={() => { setMode('code'); setCodeSent(false); setCode(''); }} style={styles.toggle}>
             <Text style={styles.toggleText}>Email me a code instead — no password needed</Text>
+          </Pressable>
+        )}
+
+        {mode === 'code' && (
+          <Pressable onPress={() => setMode('in')} style={styles.toggle}>
+            <Text style={styles.toggleText}>Use a password instead</Text>
           </Pressable>
         )}
 
@@ -376,19 +435,6 @@ export default function SignInScreen() {
           </Pressable>
           <Text style={styles.legalText}>.</Text>
         </View>
-
-        <Pressable
-          onPress={() => setMode(mode === 'code' ? 'in' : mode === 'up' ? 'in' : 'up')}
-          style={styles.toggle}
-        >
-          <Text style={styles.toggleText}>
-            {mode === 'code'
-              ? '← Use a password instead'
-              : mode === 'up'
-                ? 'Already have an account? Sign in'
-                : 'New here? Create an account'}
-          </Text>
-        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -402,8 +448,37 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: 6,
-    marginBottom: 24,
+    marginBottom: 18,
     lineHeight: 21, fontFamily: fonts.regular },
+  authModeSwitch: {
+    flexDirection: 'row',
+    height: 46,
+    padding: 3,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  authModeOption: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+  },
+  authModeOptionSelected: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  authModeText: {
+    color: Colors.textSecondary,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+  },
+  authModeTextSelected: {
+    color: Colors.primary,
+  },
   notice: {
     backgroundColor: Colors.warning + '22',
     borderRadius: 12,

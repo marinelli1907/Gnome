@@ -400,7 +400,14 @@ Deno.serve(async (req: Request) => {
           if (plan) patch.plan = plan;
           if (addonQty) patch.extra_pickup_locations = addonQty;
           await admin.from('markets').update(patch).eq('id', market);
-          await admin.from('market_subscriptions').insert({ market_id: market, plan: plan ?? 'free', kind: plan ? 'plan' : 'addon', provider: 'stripe', customer_id: String(session.customer ?? ''), subscription_id: String(session.subscription ?? ''), status: 'active', stripe_livemode: livemode });
+          await admin.from('market_subscriptions').insert({
+            market_id: market, user_id: userId, plan: plan ?? 'free', kind: plan ? 'plan' : 'addon',
+            provider: 'stripe', billing_source: 'STRIPE', customer_id: String(session.customer ?? ''),
+            subscription_id: String(session.subscription ?? ''), external_product_id: planKey ?? 'GNOME_PICKUP_LOCATION_ADDON',
+            external_transaction_id: String(session.subscription ?? ''), original_transaction_id: session.id,
+            status: 'active', environment: livemode ? 'PRODUCTION' : 'TEST', started_at: new Date().toISOString(),
+            last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString(), stripe_livemode: livemode,
+          });
           if (plan) {
             // Only priors minted in THIS event's mode: the client below can only
             // cancel subscriptions in its own account, so a cross-mode row would
@@ -480,9 +487,16 @@ Deno.serve(async (req: Request) => {
           break;
         }
 
-        const { data: row } = await admin.from('market_subscriptions').select('market_id,plan,kind').eq('subscription_id', sub.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const { data: row } = await admin.from('market_subscriptions').select('market_id,plan,kind,user_id').eq('subscription_id', sub.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
         if (!row) break;
-        await admin.from('market_subscriptions').update({ status: sub.status, current_period_start: new Date(sub.items.data[0]?.current_period_start * 1000).toISOString(), current_period_end: new Date(sub.items.data[0]?.current_period_end * 1000).toISOString() }).eq('subscription_id', sub.id);
+        const periodStart = sub.items.data[0]?.current_period_start ? new Date(sub.items.data[0].current_period_start * 1000).toISOString() : null;
+        const periodEnd = sub.items.data[0]?.current_period_end ? new Date(sub.items.data[0].current_period_end * 1000).toISOString() : null;
+        await admin.from('market_subscriptions').update({
+          user_id: row.user_id, billing_source: 'STRIPE', status: sub.status,
+          environment: livemode ? 'PRODUCTION' : 'TEST', current_period_start: periodStart,
+          current_period_end: periodEnd, expires_at: periodEnd, cancel_at_period_end: sub.cancel_at_period_end,
+          last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString(), stripe_livemode: livemode,
+        }).eq('subscription_id', sub.id);
 
         const addonKey = 'GNOME_PICKUP_LOCATION_ADDON';
         const carriesAddon = sub.items.data.some((i) => keyForPrice(i.price?.id) === addonKey);
@@ -495,15 +509,10 @@ Deno.serve(async (req: Request) => {
           break;
         }
 
-        // Plan sub. Downgrade only when NO other active plan sub survives
-        // (a plan change created a replacement) — stale cancel can't clobber.
-        if (!active) {
-          const { data: survivor } = await admin.from('market_subscriptions').select('subscription_id').eq('market_id', row.market_id).eq('kind', 'plan').neq('subscription_id', sub.id).in('status', ['active', 'trialing']).limit(1).maybeSingle();
-          if (survivor) { await log(event.type, row.market_id, null, null, null, 'stale_cancel_ignored'); break; }
-        }
-        const patch2: Record<string, unknown> = { plan: active ? row.plan : 'free' };
-        if (carriesAddon || !active) patch2.extra_pickup_locations = active ? addonQty2 : 0;
-        await admin.from('markets').update(patch2).eq('id', row.market_id);
+        // Recompute from every verified provider. A stale Stripe cancellation
+        // cannot erase a surviving Apple, Google Play, or complimentary plan.
+        await admin.rpc('reconcile_market_paid_plan', { p_market: row.market_id });
+        if (carriesAddon || !active) await admin.from('markets').update({ extra_pickup_locations: active ? addonQty2 : 0 }).eq('id', row.market_id);
         await admin.rpc('reconcile_pickup_locations', { p_market: row.market_id });
         await log(event.type, row.market_id, null, null, null, `plan:${active ? row.plan : 'free'} (${sub.status})`);
         break;

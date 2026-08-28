@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Fraunces, Inter } from 'next/font/google';
+import 'leaflet/dist/leaflet.css';
 import './globals.css';
-import { GnomeMark } from './components/art';
 import AuthNavLink from './components/AuthNavLink';
 import GnomeAssistant from './components/GnomeAssistant';
 import MobileNav from './components/MobileNav';
@@ -69,34 +69,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="container inner">
             <Link href="/" className="brand">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/badge.png" alt="" className="brand-badge" /> Gnome{' '}
-              <span>a farmers market in your pocket</span>
+              <img src="/brand/gnome-logo-full.png" alt="Gnome Farmers Market" className="brand-logo-full" />
             </Link>
             <nav className="nav-cta">
               <span className="nav-links">
-                <span className="nav-grow">
-                  <button type="button" aria-haspopup="true" aria-label="Grow menu: Garden Planner, Seed Drop, Reserve a Plot">Grow ▾</button>
-                  <span className="nav-grow-menu" role="menu">
-                    <Link href="/garden" role="menuitem">
-                      <span className="ngm-title">✨ Garden Planner</span>
-                      <span className="ngm-desc">Know what to plant, and when</span>
-                    </Link>
-                    <Link href="/seeds" role="menuitem">
-                      <span className="ngm-title">🌱 Seed Drop</span>
-                      <span className="ngm-desc">Coming soon</span>
-                    </Link>
-                    <Link href="/plots" role="menuitem">
-                      <span className="ngm-title">🧑‍🌾 Reserve a Plot</span>
-                      <span className="ngm-desc">Grow without the space</span>
-                    </Link>
-                  </span>
-                </span>
+                <Link href="/browse">Browse</Link>
+                <Link className="nav-map" href="/map">Map</Link>
+                <Link className="nav-sell" href="/sell">Sell</Link>
+                <a className="nav-ai" href="#gnome-ai">✦ Zordy</a>
+                <Link className="nav-market" href="/my">Market</Link>
                 <Link href="/pricing">Pricing</Link>
-                <Link href="/my">My Market</Link>
+                <Link href="/referrals">Referrals</Link>
                 <AuthNavLink />
               </span>
-              <Link className="btn btn-secondary btn-sm" href="/browse">Buy</Link>
-              <Link className="btn btn-primary btn-sm is-sell" href="/sell">Sell</Link>
               <a className="btn btn-secondary btn-sm nav-app-cta" href={IOS}>Get the app</a>
               {/* Below 900px the links above are hidden — this is how you reach them. */}
               <MobileNav iosUrl={IOS} />
@@ -110,8 +95,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="footer-cols">
               <div>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/badge.png" alt="Gnome Farmers Market badge" className="footer-badge" />
-                <div className="footer-brand"><GnomeMark size={24} className="brand-mark" /> Gnome</div>
+                <img src="/brand/gnome-logo-full.png" alt="Gnome Farmers Market" className="footer-logo-full" />
                 <p className="footer-tag">
                   Gnome is a neighborhood marketplace that helps people grow, find,
                   share, and sell local food and garden goods.
@@ -123,7 +107,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <li><Link href="/browse">Browse near you</Link></li>
                   <li><Link href="/following">Markets you follow</Link></li>
                   <li><Link href="/plots">Reserve a plot</Link></li>
-                  <li><Link href="/garden">AI Garden Planner</Link></li>
+                  <li><Link href="/garden">Zordy Garden Planner</Link></li>
                   <li><Link href="/seeds">The Seed Drop</Link></li>
                   <li><Link href="/category/vegetables">Vegetables</Link></li>
                   <li><Link href="/category/eggs">Eggs</Link></li>
@@ -136,6 +120,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <li><Link href="/sell">Sell on Gnome</Link></li>
                   <li><Link href="/my">My Market</Link></li>
                   <li><Link href="/pricing">Pricing &amp; boosts</Link></li>
+                  <li><Link href="/referrals">Referrals &amp; rewards</Link></li>
                   <li><Link href="/support">Support</Link></li>
                   <li><Link href="/trust">Trust &amp; Safety</Link></li>
                   <li><a href={IOS}>Get the app</a></li>

@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
-    "next": "^15.5.18",
+    "@types/leaflet": "^1.9.22",
+    "leaflet": "^1.9.4",
+    "next": "^15.5.24",
     "qrcode": "^1.5.4",
     "react": "19.0.0",
     "react-dom": "19.0.0"
@@ -24,5 +26,10 @@
     "jsqr": "^1.4.0",
     "pngjs": "^7.0.0",
     "typescript": "^5.7.0"
+  },
+  "overrides": {
+    "nanoid": "3.3.18",
+    "postcss": "8.5.26",
+    "sharp": "0.35.4"
   }
 }

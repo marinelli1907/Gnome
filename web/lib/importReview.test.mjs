@@ -115,9 +115,9 @@ ck('enum names never reach the seller',
 
 // ---- limit copy -------------------------------------------------------------
 ck('server limit message passes through',
-  m.importLimitCopy('You’ve used today’s 15 imports — more tomorrow.').includes('15'));
+  m.importLimitCopy('You’ve used today’s Zordy requests — they reset tomorrow.').includes('Zordy requests'));
 ck('missing server message falls back to human copy, not a token',
-  m.importLimitCopy(null).includes('Try again tomorrow'));
+  m.importLimitCopy(null).includes('reset tomorrow'));
 
 // ---- create payload hygiene -------------------------------------------------
 const payload = m.toCreatePayload([

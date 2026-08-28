@@ -67,6 +67,24 @@ export async function pickImages(opts: { selectionLimit?: number } = {}): Promis
   return Promise.all(result.assets.map(normalizeImageAsset));
 }
 
+export async function takePhoto(): Promise<ImagePickerAsset | null> {
+  const camera = await ImagePicker.getCameraPermissionsAsync();
+  const permission = camera.granted ? camera : await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error(permission.canAskAgain === false ? 'CAMERA_RESTRICTED' : 'CAMERA_DENIED');
+  }
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ['images'],
+    allowsEditing: false,
+    quality: 1,
+    base64: false,
+    exif: false,
+  });
+  if (result.canceled) return null;
+  const asset = result.assets[0];
+  return asset ? normalizeImageAsset(asset) : null;
+}
+
 function extFor(asset: ImagePickerAsset): { ext: string; contentType: string } {
   const mime = asset.mimeType ?? 'image/jpeg';
   if (mime.includes('png')) return { ext: 'png', contentType: 'image/png' };

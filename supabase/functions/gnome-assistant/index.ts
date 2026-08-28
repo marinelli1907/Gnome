@@ -17,7 +17,7 @@
 //
 // Safety carried over from the rest of the AI stack:
 //   * ai_settings.reads_enabled=false halts all provider spend.
-//   * Per-image atomic slot reservation via ai_reserve_slot BEFORE any spend.
+//   * Shared Zordy allowance reservation happens before provider spend.
 //   * Photo drafting requires an effective paid plan (market_effective_plan),
 //     matching the AI Listing Assistant entitlement. Chat is open to any
 //     signed-in user under a daily cap.
@@ -40,16 +40,178 @@ const CORS = {
 const MAX_TURNS = 12;
 const MAX_TURN_CHARS = 1500;
 const MAX_IMAGES = 10;
+const MAX_CHAT_IMAGE_B64 = 8_000_000;
+const ALLOWED_CHAT_IMAGE_MEDIA = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-const CHAT_SYSTEM = `You are Gnome — a knowledgeable, warm garden gnome inside the Gnome Farmers Market app, a neighborhood marketplace for home-grown food.
+type ZordyUsage = {
+  allowed?: boolean;
+  plan?: string;
+  plan_display?: string;
+  daily_limit?: number;
+  used?: number;
+  remaining?: number;
+  resets_on?: string;
+};
 
-You help with four things:
-1. GROWING — vegetables, fruit, herbs, eggs, honey, preserves, soil, pests, timing, harvest and storage. Be genuinely useful and specific. Give real numbers (spacing, depth, days to maturity, pH) when you know them.
-2. THEIR MARKET — what is actually happening around them. Use MARKET INTEL below; it is real data. Never invent counts, prices, or trends. If the intel is thin, say so plainly.
-3. WHAT TO SELL AND WHY — give a clear opinion, with the reason. Lean on demand signals (open Wanted posts), supply gaps (categories few neighbors list), the season, and how much of their plan's Sell publish allowance is left. Say the reasoning out loud so they can judge it.
-4. USING THE APP — how to post, promote, set pickup, handle requests, delivery, Seed Drop, plans.
+function isMissingRpc(error: unknown): boolean {
+  const text = typeof error === 'object' && error
+    ? JSON.stringify(error)
+    : String(error ?? '');
+  return /PGRST202|Could not find|does not exist|schema cache/i.test(text);
+}
+
+function normalizeUsage(row: unknown): ZordyUsage | null {
+  const value = Array.isArray(row) ? row[0] : row;
+  return value && typeof value === 'object' ? value as ZordyUsage : null;
+}
+
+function zordyLimitMessage(u: ZordyUsage | null): string {
+  const plan = String(u?.plan ?? 'free');
+  const label = String(u?.plan_display ?? (plan === 'grower' ? 'Pro' : plan === 'farm' ? 'Farm' : 'Free'));
+  const limit = Number(u?.daily_limit ?? (plan === 'grower' ? 25 : plan === 'farm' || plan === 'sponsor' ? 100 : 5));
+  if (plan === 'free') return `You've used today's ${limit} free Zordy requests. Come back tomorrow or upgrade to Pro for more.`;
+  if (plan === 'grower') return `You've used today's ${limit} Pro Zordy requests. Your allowance resets tomorrow. Upgrade to Farm for a much larger daily limit.`;
+  return `You've used today's ${limit} ${label} Zordy requests. Your allowance resets tomorrow.`;
+}
+
+function cleanChatReply(raw: string): string {
+  let text = raw.trim();
+  text = text
+    .replace(/^NO\s+MARKDOWN(?:\/ASTERISKS)?\s*:?\s*/i, '')
+    .replace(/^NO\s+ASTERISKS\s*:?\s*/i, '')
+    .replace(/^STYLE\s*:?\s*/i, '')
+    .replace(/^PLAIN\s+TEXT\s+ONLY\s*:?\s*/i, '')
+    .trim();
+  text = text
+    .replace(/\*\*([^*\n][^*]*?)\*\*/g, '$1')
+    .replace(/\*([^*\n][^*]*?)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '- ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!text) return '';
+  return text.length > 1400 ? `${text.slice(0, 1390).trim()}...` : text;
+}
+
+async function legacyAiUsage(
+  admin: any,
+  uid: string,
+  feature: string,
+  cap: number,
+): Promise<ZordyUsage> {
+  const { data, error } = await admin.rpc('ai_usage_increment', {
+    p_user: uid, p_feature: feature, p_cap: cap,
+  });
+  if (error) {
+    console.error('ai_usage_increment error:', error);
+    throw new Error('ZORDY_ALLOWANCE_UNAVAILABLE');
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: row } = await admin.from('ai_usage')
+    .select('count')
+    .eq('user_id', uid)
+    .eq('feature', feature)
+    .eq('day', today)
+    .maybeSingle();
+  const used = Number(row?.count ?? (data === false ? cap : 1));
+  return {
+    allowed: data !== false,
+    plan: 'legacy',
+    plan_display: 'Zordy',
+    daily_limit: cap,
+    used,
+    remaining: Math.max(0, cap - used),
+    resets_on: today,
+  };
+}
+
+async function legacyCapForUser(admin: any, uid: string, fallbackCap: number): Promise<number> {
+  const { data: market } = await admin
+    .from('markets')
+    .select('plan')
+    .eq('owner_id', uid)
+    .limit(1)
+    .maybeSingle();
+  const paid = !!market?.plan && market.plan !== 'free';
+  return paid ? Math.max(fallbackCap, 50) : fallbackCap;
+}
+
+async function reserveZordy(
+  admin: any,
+  uid: string,
+  opts: { feature?: string; fallbackCap?: number } = {},
+): Promise<ZordyUsage> {
+  const { data, error } = await admin.rpc('zordy_reserve_request', { p_user: uid });
+  if (error) {
+    if (isMissingRpc(error)) {
+      const feature = opts.feature ?? 'assistant';
+      const cap = await legacyCapForUser(admin, uid, opts.fallbackCap ?? 20);
+      return legacyAiUsage(admin, uid, feature, cap);
+    }
+    console.error('zordy_reserve_request error:', error);
+    throw new Error('ZORDY_ALLOWANCE_UNAVAILABLE');
+  }
+  return normalizeUsage(data) ?? { allowed: false, daily_limit: 5, used: 5, remaining: 0, plan: 'free', plan_display: 'Free' };
+}
+
+async function getZordyUsage(
+  admin: any,
+  uid: string,
+  opts: { feature?: string; fallbackCap?: number } = {},
+): Promise<ZordyUsage | null> {
+  const { data, error } = await admin.rpc('zordy_usage_for_user', { p_user: uid });
+  if (error) {
+    if (isMissingRpc(error)) {
+      const feature = opts.feature ?? 'assistant';
+      const cap = await legacyCapForUser(admin, uid, opts.fallbackCap ?? 20);
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: row } = await admin.from('ai_usage')
+        .select('count')
+        .eq('user_id', uid)
+        .eq('feature', feature)
+        .eq('day', today)
+        .maybeSingle();
+      const used = Number(row?.count ?? 0);
+      return {
+        allowed: used < cap,
+        plan: 'legacy',
+        plan_display: 'Zordy',
+        daily_limit: cap,
+        used,
+        remaining: Math.max(0, cap - used),
+        resets_on: today,
+      };
+    }
+    console.error('zordy_usage_for_user error:', error);
+    return null;
+  }
+  return normalizeUsage(data);
+}
+
+async function releaseZordy(admin: any, uid: string): Promise<void> {
+  await admin.rpc('zordy_release_request', { p_user: uid }).then(() => {}, (error: unknown) => {
+    if (isMissingRpc(error)) return;
+    console.error('zordy_release_request error:', error);
+  });
+}
+
+const CHAT_SYSTEM = `You are Zordy, Gnome's garden and Market assistant.
+IDENTITY: Your name is Zordy. Gnome is the marketplace/platform, not your name. Never introduce yourself as Gnome, "the gnome", or Gnome's garden guide. If the user asks who you are, say you are Zordy.
+
+You help neighbors grow plants, diagnose plant problems, create and manage listings, operate their Market, understand their inventory and pickups, analyze their own Market activity, promote what they sell, and learn how to use Gnome.
+
+CORE JOBS:
+1. HORTICULTURE — vegetables, fruit, herbs, eggs, honey, preserves, soil, pests, timing, harvest and storage. Be genuinely useful and specific.
+2. PLANT PHOTO DIAGNOSIS — when a plant photo is attached, actually analyze visible evidence. Consider environmental stress, nutrition, pests, disease, roots, and soil. Identify the most likely explanation, reasonable secondary possibilities, what supports it, what to do next, what to watch for, and only targeted questions that materially change the diagnosis. Be honest about uncertainty; a photo does not prove every diagnosis. Prefer Integrated Pest Management: cultural controls, mechanical controls, biological controls, then targeted chemical control only when justified.
+3. THEIR MARKET — what is actually happening around them. Use MARKET INTEL below; it is real data. Never invent counts, prices, revenue, customers, followers, reservations, pickups, popularity, or trends. If the intel is thin, say so plainly.
+4. LISTING HELP — prepare listing drafts and improve seller copy. You never publish anything by yourself.
+5. MARKETING AND MARKET ANALYSIS — write posts, captions, QR sign copy, Market updates, and practical suggestions. Clearly distinguish known Market facts from your suggestions.
+6. USING THE APP — explain how to post, promote, set pickup, follow a Market, reserve/request items, attach a plant photo, change radius, manage requests, delivery, Seed Drop, and plans. Only describe functionality that actually exists.
 
 PLANS — the only plan facts; never invent others, and prefer the user's own numbers in MARKET INTEL when present: Free $0 — 3 Sell publishes a month, no included renewals, 1 Wanted intro a day, QR tools locked. Pro $9.99/mo — unlimited Sell listings, unlimited renewals, 5 Wanted intros a day, premium QR tools. Farm $29.99/mo — unlimited Sell listings, renewals, and Wanted intros (subject to anti-abuse controls), premium QR tools. Every Sell listing runs 7 days, then expires; on Free, every renewal is $0.99 and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do; offering a plot needs a paid plan. Every Market has a free public link; the premium QR tools are the paid part.
+
+ZORDY REQUEST ALLOWANCE — customer-facing facts: Free gets 5 successful Zordy requests per day, Pro gets 25, Farm gets 100. No plan is unlimited. The server enforces this; do not invent another tier.
 
 STYLE: warm, plain text, no markdown, no asterisks or headers. Conversational. Usually 2–6 sentences; use a short plain list only when genuinely listing things. Sparing dry humor. Never childish, never salesy.
 
@@ -59,6 +221,7 @@ The app's market-management layer (separate from you) can also update a listing'
 HARD RULES:
 - Never claim to have changed, published, paused, or deleted anything. You only prepare drafts; the action layer handles changes and always reports its own results.
 - Never reveal or guess another user's data, address, or contact details. Aggregate counts in MARKET INTEL are fine to discuss; individuals are not.
+- Never fabricate Market facts. If you are suggesting something rather than reading it from data, say so.
 - Pesticides, food safety, cottage-food and licensing questions: be careful, point to the product label, the Trust page, and their county extension office or state ag department. No definitive legal rulings.
 - Pricing advice: give a range and say it depends on local conditions. Gnome takes 0% of neighbor-to-neighbor sales.
 - If you do not know, say so.`;
@@ -112,7 +275,7 @@ Deno.serve(async (req: Request) => {
     const { data: settings } = await admin.from('ai_settings')
       .select('reads_enabled, allow_paid_fallback, listing_daily_limit').limit(1).maybeSingle();
     if (settings?.reads_enabled === false) {
-      return json(503, { error: 'AI_PAUSED', message: 'Gnome AI is paused right now.' });
+      return json(503, { error: 'AI_PAUSED', message: 'Zordy is paused right now.' });
     }
     const keys = providerKeys();
     const allowPaid = settings?.allow_paid_fallback === true;
@@ -146,22 +309,28 @@ Deno.serve(async (req: Request) => {
       const { data: nodes } = await admin
         .from('marketplace_taxonomy_nodes').select('id,name,path,search_synonyms').eq('active', true);
 
+      const usableImages = images.filter((img) => img?.image_base64 && String(img.image_base64).length <= 8_000_000);
       const batchId = crypto.randomUUID();
-      const cap = settings?.listing_daily_limit ?? 20;
       const created: unknown[] = [];
       const skipped: { index: number; reason: string }[] = [];
+      if (!usableImages.length) {
+        images.forEach((_img, i) => skipped.push({ index: i, reason: 'BAD_IMAGE' }));
+        return json(200, { batch_id: batchId, drafts: created, skipped });
+      }
+      const usage = await reserveZordy(admin, uid, {
+        feature: 'listing_assistant',
+        fallbackCap: Number(settings?.listing_daily_limit ?? 20),
+      });
+      if (usage.allowed === false) {
+        return json(429, { error: 'DAILY_LIMIT', message: zordyLimitMessage(usage), usage });
+      }
+      let providerProcessed = false;
 
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         if (!img?.image_base64 || String(img.image_base64).length > 8_000_000) {
           skipped.push({ index: i, reason: 'BAD_IMAGE' }); continue;
         }
-        // Atomic per-image reservation BEFORE spend — a 10-photo batch cannot
-        // outrun the daily cap.
-        const { data: reserved } = await admin.rpc('ai_reserve_slot', {
-          p_uid: uid, p_feature: 'listing_assistant', p_cap: cap,
-        });
-        if (!reserved) { skipped.push({ index: i, reason: 'DAILY_LIMIT' }); continue; }
 
         // Attempt 1 at full length; if the payload does not survive STRICT
         // validation (usually because it was truncated), attempt 2 asks for a
@@ -193,7 +362,7 @@ Deno.serve(async (req: Request) => {
             provider = r.provider; model = r.model;
             inTok += r.inTok; outTok += r.outTok;
             const outcome = parseDraft(r.text);
-            if (outcome.ok) { candidate = outcome.value; break; }
+            if (outcome.ok) { candidate = outcome.value; providerProcessed = true; break; }
             lastReason = `INVALID_OUTPUT:${outcome.reason}${outcome.detail ? `:${outcome.detail}` : ''}`;
           } catch (e) {
             transportFailed = e instanceof RateLimitedError ? 'AI_BUSY' : 'ANALYZE_FAILED';
@@ -253,32 +422,61 @@ Deno.serve(async (req: Request) => {
         }).then(() => {}, () => {});
       }
 
-      return json(200, { batch_id: batchId, drafts: created, skipped });
+      if (!providerProcessed) await releaseZordy(admin, uid);
+      return json(200, {
+        batch_id: batchId,
+        drafts: created,
+        skipped,
+        usage: await getZordyUsage(admin, uid, {
+          feature: 'listing_assistant',
+          fallbackCap: Number(settings?.listing_daily_limit ?? 20),
+        }) ?? usage,
+      });
     }
 
     // -----------------------------------------------------------------------
     // CHAT
     // -----------------------------------------------------------------------
-    const chain = chainFor(false);
+    const chatImage = body.image && typeof body.image === 'object' ? body.image : null;
+    const imageB64 = typeof chatImage?.image_base64 === 'string' ? chatImage.image_base64 : '';
+    const hasChatImage = imageB64.length > 100;
+    if (hasChatImage && imageB64.length > MAX_CHAT_IMAGE_B64) {
+      return json(400, { error: 'IMAGE_TOO_LARGE', message: 'That image is too large. Try a smaller photo.' });
+    }
+    const imageMedia =
+      typeof chatImage?.media_type === 'string' && ALLOWED_CHAT_IMAGE_MEDIA.has(chatImage.media_type)
+        ? chatImage.media_type
+        : 'image/jpeg';
+
+    const chain = chainFor(hasChatImage);
     if (!chain.length) return json(503, { error: 'AI_UNAVAILABLE', message: 'AI isn’t configured yet.' });
 
-    // Daily cap (paid plans get more) — same helper the site assistant uses.
     const { data: mkt2 } = await admin.from('markets').select('id,plan,name').eq('owner_id', uid).limit(1).maybeSingle();
-    const paid = !!mkt2?.plan && mkt2.plan !== 'free';
-    const { data: allowed, error: capErr } = await admin.rpc('ai_usage_increment', {
-      p_user: uid, p_feature: 'assistant', p_cap: paid ? 50 : 20,
-    });
-    if (!capErr && allowed === false) {
-      return json(429, { error: 'DAILY_LIMIT', message: 'You’ve used today’s chat allowance — it resets tomorrow.' });
-    }
 
     const messages: { role: string; content: string }[] = Array.isArray(body.messages) ? body.messages : [];
     const turns: PTurn[] = messages
       .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
       .slice(-MAX_TURNS)
       .map((m) => ({ role: m.role as 'user' | 'assistant', parts: [{ text: m.content.slice(0, MAX_TURN_CHARS) }] }));
+    if (hasChatImage && turns.length && turns[turns.length - 1].role === 'user') {
+      const last = turns[turns.length - 1];
+      const lastText = last.parts[0]?.text?.trim()
+        || 'Diagnose this plant from the photo. Say the most likely issue, what visual evidence supports it, what to do next today, and what to watch for. Be concise and practical.';
+      turns[turns.length - 1] = {
+        role: 'user',
+        parts: [
+          { imageB64, mediaType: imageMedia },
+          { text: lastText },
+        ],
+      };
+    }
     if (!turns.length || turns[turns.length - 1].role !== 'user') {
       return json(400, { error: 'EMPTY', message: 'Say something first.' });
+    }
+
+    const usage = await reserveZordy(admin, uid);
+    if (usage.allowed === false) {
+      return json(429, { error: 'DAILY_LIMIT', message: zordyLimitMessage(usage), usage });
     }
 
     // -----------------------------------------------------------------------
@@ -290,6 +488,7 @@ Deno.serve(async (req: Request) => {
     // -----------------------------------------------------------------------
     const lastUserMsg = turns[turns.length - 1].parts[0].text ?? '';
     try {
+      if (hasChatImage) throw new Error('SKIP_ACTION_LAYER_FOR_IMAGE');
       const userClient = createClient(
         Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
         { global: { headers: { Authorization: `Bearer ${token}` } } },
@@ -325,11 +524,13 @@ Deno.serve(async (req: Request) => {
           actual_cost_cents: actualCents(itok.provider as 'gemini' | 'openai' | 'anthropic', itok.model, itok.inTok, itok.outTok),
           free_tier: itok.provider === 'gemini', duration_ms: Date.now() - t0, success: true,
         }).then(() => {}, () => {});
-        return json(200, actionResp);
+        return json(200, { ...actionResp, usage: await getZordyUsage(admin, uid) ?? usage });
       }
     } catch (e) {
       // The action layer must never take chat down with it; fall through.
-      console.error('gnome-assistant action layer:', e);
+      if (!(e instanceof Error && e.message === 'SKIP_ACTION_LAYER_FOR_IMAGE')) {
+        console.error('gnome-assistant action layer:', e);
+      }
     }
 
     const intel = await marketIntel(admin, uid, mkt2);
@@ -355,20 +556,25 @@ Deno.serve(async (req: Request) => {
       });
     } catch (e) {
       if (e instanceof RateLimitedError) {
+        await releaseZordy(admin, uid);
         admin.from('ai_usage_log').insert({
           feature: 'assistant', user_id: uid, success: false,
           failure_family: 'rate_limited', duration_ms: Date.now() - t0,
         }).then(() => {}, () => {});
-        return json(503, { error: 'AI_BUSY', message: 'Gnome AI is busy. Try again shortly.' });
+        return json(503, { error: 'AI_BUSY', message: 'Zordy is busy. Try again shortly.' });
       }
+      await releaseZordy(admin, uid);
       admin.from('ai_usage_log').insert({
         feature: 'assistant', user_id: uid, success: false,
         failure_family: 'provider_error', duration_ms: Date.now() - t0,
       }).then(() => {}, () => {});
       throw e;
     }
-    const reply = r.text.trim();
-    if (!reply) throw new Error('empty completion');
+    const reply = cleanChatReply(r.text);
+    if (!reply) {
+      await releaseZordy(admin, uid);
+      throw new Error('empty completion');
+    }
 
     // Persist the exchange so the tab keeps a real history.
     const lastUser = turns[turns.length - 1].parts[0].text ?? '';
@@ -379,23 +585,27 @@ Deno.serve(async (req: Request) => {
 
     admin.from('ai_usage_log').insert({
       feature: 'assistant', user_id: uid, provider: r.provider, model: r.model,
+      images: hasChatImage ? 1 : 0,
       input_tokens: r.inTok, output_tokens: r.outTok,
       estimated_cost_cents: estCents(r.model, r.inTok, r.outTok),
       actual_cost_cents: actualCents(r.provider, r.model, r.inTok, r.outTok),
       free_tier: r.provider === 'gemini', duration_ms: Date.now() - t0, success: true,
     }).then(() => {}, () => {});
 
-    return json(200, { reply });
+    return json(200, { reply, usage: await getZordyUsage(admin, uid) ?? usage });
   } catch (e) {
     console.error('gnome-assistant:', e);
-    return json(502, { error: 'ASSISTANT_FAILED', message: 'The gnome tripped over a root — try again in a moment.' });
+    const msg = e instanceof Error && e.message === 'ZORDY_ALLOWANCE_UNAVAILABLE'
+      ? 'Zordy allowance is unavailable right now. Try again shortly.'
+      : 'Zordy couldn’t answer right now. Try again in a moment.';
+    return json(502, { error: 'ASSISTANT_FAILED', message: msg });
   }
 });
 
 // Real, aggregate-only context. Nothing here identifies another user: counts
 // and category names only, scoped to the caller's state/county.
 async function marketIntel(
-  admin: ReturnType<typeof createClient>,
+  admin: any,
   uid: string,
   mkt: { id: string; plan: string; name: string } | null,
 ): Promise<string> {

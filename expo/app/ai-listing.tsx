@@ -84,7 +84,7 @@ export default function AiListingScreen() {
       setDraft(null);
       setFailed(
         /PLAN_REQUIRED/.test(e?.message) ? 'The AI Listing Assistant is included with paid plans.'
-        : /DAILY_LIMIT/.test(e?.message) ? 'Daily AI limit reached — try again tomorrow.'
+        : /DAILY_LIMIT/.test(e?.message) ? 'You’ve used today’s Zordy requests — they reset tomorrow.'
         : 'Gnome couldn’t confidently identify this item.',
       );
     } finally {
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   failBox: { marginTop: 16, backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.borderLight },
   failText: { fontSize: 14.5, fontFamily: fonts.semibold, color: Colors.text },
   // AI Listing Assistant is the purple gnome's room (identity §2), so its
-  // accents are AI Purple, not brand red. #8E44AD on white measures 5.87:1.
+  // accents are AI Purple, not brand red. #6B2FB9 on white measures 7.69:1.
   draftBox: { marginTop: 16, backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1.5, borderColor: Colors.aiPurple },
   draftName: { fontSize: 18, fontFamily: fonts.bold, color: Colors.aiPurple },
   conf: { fontSize: 12, fontFamily: fonts.regular, color: Colors.textTertiary },
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 12, fontFamily: fonts.bold, color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 12, marginBottom: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.borderLight },
-  // White on #8E44AD: 5.87:1.
+  // White on #6B2FB9: 7.69:1.
   chipActive: { backgroundColor: Colors.aiPurple, borderColor: Colors.aiPurple },
   chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
   chipTextActive: { color: Colors.textInverse },

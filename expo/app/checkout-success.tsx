@@ -18,21 +18,22 @@
 // returns to Post, where that reconciliation finishes and navigates.
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 
 export default function CheckoutSuccess() {
   const router = useRouter();
+  const { kind } = useLocalSearchParams<{ kind?: string }>();
   useEffect(() => {
     // replace(), not push(): the deep link should leave no entry to go "back"
     // into, or the seller can navigate into a dead checkout screen afterwards.
-    router.replace('/(tabs)/post');
-  }, [router]);
+    router.replace(kind === 'plan' ? '/upgrade' : '/(tabs)/post');
+  }, [kind, router]);
 
   return (
     <View style={styles.wrap}>
       <ActivityIndicator color={Colors.primary} />
-      <Text style={styles.text}>Finishing your publish…</Text>
+      <Text style={styles.text}>{kind === 'plan' ? 'Confirming your plan...' : 'Finishing your publish...'}</Text>
     </View>
   );
 }

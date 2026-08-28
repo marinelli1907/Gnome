@@ -19,6 +19,7 @@ export interface WebListing {
   currency: string | null;
   trade_for: string | null;
   quantity: string | null;
+  harvest_date: string | null;
   unit: string | null;
   photos: string[];
   city: string | null;
@@ -75,10 +76,30 @@ export interface WebMarket {
   verified_email?: boolean;
   tagline?: string | null;
   theme?: string | null;
+  featured_until?: string | null;
+}
+
+export interface WebMarketStorefrontStats {
+  follower_count: number;
+  scheduling_enabled: boolean;
+}
+
+export interface WebPickupHour {
+  id: string;
+  market_id: string;
+  weekday: number;
+  start_minute: number;
+  end_minute: number;
+}
+
+export interface WebPickupSlot {
+  slot_start: string;
+  slot_end: string;
+  remaining: number | null;
 }
 
 const LISTING_COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured,inventory_count,request_options,allow_custom_request,is_bundle,component_count';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,market_position,market_featured,inventory_count,request_options,allow_custom_request,is_bundle,component_count,harvest_date';
 
 async function rest<T>(view: string, params: Record<string, string>, revalidate: number): Promise<T[]> {
   if (!SUPABASE_URL || !ANON) return [];
@@ -231,12 +252,19 @@ const MARKET_COLS =
   'id,slug,name,description,market_type,status,avatar_url,banner_url,city,county,state,verified,sponsor_visible,website_url,instagram_url,facebook_url,created_at,active_listing_count,member_since,listings_shared,listings_sold,trades_completed,response_rate,verified_email,tagline,theme';
 
 export async function getFeaturedMarkets(limit = 8): Promise<WebMarket[]> {
-  return rest<WebMarket>('public_markets', {
-    select: MARKET_COLS,
-    active_listing_count: 'gt.0',
-    order: 'verified.desc,active_listing_count.desc',
-    limit: String(limit),
-  }, 300);
+  const [markets, boosts] = await Promise.all([
+    rest<WebMarket>('public_markets', {
+      select: MARKET_COLS, active_listing_count: 'gt.0', order: 'verified.desc,active_listing_count.desc',
+      limit: String(Math.max(limit, 60)),
+    }, 300),
+    rest<{ market_id: string; featured_until: string }>('public_active_market_boosts', {
+      select: 'market_id,featured_until', limit: '100',
+    }, 60),
+  ]);
+  const byMarket = new Map(boosts.map((b) => [b.market_id, b.featured_until]));
+  return markets.map((m) => ({ ...m, featured_until: byMarket.get(m.id) ?? null }))
+    .sort((a, b) => Number(Boolean(b.featured_until)) - Number(Boolean(a.featured_until)))
+    .slice(0, limit);
 }
 
 export async function getMarketBySlug(slug: string): Promise<WebMarket | null> {
@@ -245,7 +273,38 @@ export async function getMarketBySlug(slug: string): Promise<WebMarket | null> {
     slug: `eq.${slug}`,
     limit: '1',
   }, 300);
+  const market = rows[0] ?? null;
+  if (!market) return null;
+  const boost = await rest<{ featured_until: string }>('public_active_market_boosts', {
+    select: 'featured_until', market_id: `eq.${market.id}`, limit: '1',
+  }, 60);
+  return { ...market, featured_until: boost[0]?.featured_until ?? null };
+}
+
+/** Optional additive storefront data. Kept separate from MARKET_COLS so a web
+ * deploy remains readable while the reviewed database migration rolls out. */
+export async function getMarketStorefrontStats(marketId: string): Promise<WebMarketStorefrontStats | null> {
+  const rows = await rest<WebMarketStorefrontStats>('public_markets', {
+    select: 'follower_count,scheduling_enabled',
+    id: `eq.${marketId}`,
+    limit: '1',
+  }, 60);
   return rows[0] ?? null;
+}
+
+export async function getMarketPickupHours(marketId: string): Promise<WebPickupHour[]> {
+  return rest<WebPickupHour>('market_pickup_hours', {
+    select: 'id,market_id,weekday,start_minute,end_minute',
+    market_id: `eq.${marketId}`,
+    order: 'weekday.asc,start_minute.asc',
+  }, 60);
+}
+
+export async function getMarketVisitSlots(marketId: string, days = 14): Promise<WebPickupSlot[]> {
+  return rest<WebPickupSlot>('rpc/market_available_slots', {
+    p_market: marketId,
+    p_days: String(Math.min(Math.max(days, 1), 21)),
+  }, 60);
 }
 
 // --- Taxonomy roots (server-side) -----------------------------------------
@@ -319,6 +378,7 @@ export type ServerErrorCode =
   | 'PROHIBITED_CATEGORY'
   | 'RATE_LIMITED'
   | 'COMPLIANCE_BLOCKED'
+  | 'ACCOUNT_NOT_READY'
   | 'PLAN_LIMIT_REACHED'
   | 'PUBLISH_ALLOWANCE_EXHAUSTED'
   | 'PLOTS_REQUIRE_PLAN'
@@ -355,6 +415,7 @@ const TITLES: Record<ServerErrorCode, string> = {
   PROHIBITED_CATEGORY: 'Not allowed on Gnome',
   RATE_LIMITED: 'Posting too quickly',
   COMPLIANCE_BLOCKED: 'Verification required',
+  ACCOUNT_NOT_READY: 'One quick account update',
   PLAN_LIMIT_REACHED: 'Listing limit reached',
   PUBLISH_ALLOWANCE_EXHAUSTED: 'Included listings used up',
   PLOTS_REQUIRE_PLAN: 'Paid plan required',
@@ -378,6 +439,8 @@ const FALLBACK_BODY: Record<ServerErrorCode, string> = {
     'You’ve posted a lot of listings in the last hour. Try again in a little while.',
   COMPLIANCE_BLOCKED:
     'This category needs verification before publishing. Adding your permit, licence, or registration in the Credential Center is what clears it.',
+  ACCOUNT_NOT_READY:
+    'Verify your email and mobile phone, confirm you are 18+, and accept the current marketplace rules before continuing.',
   // Transitional: raised by the retired pre-0104 active-listing gate. Production runs the
   // allowance model now (0104 applied 2026-08-16), so this should no longer fire — kept only so
   // a stale environment degrades to readable copy instead of a raw code. Safe to delete later.
@@ -403,10 +466,19 @@ const FALLBACK_BODY: Record<ServerErrorCode, string> = {
 
 const CODES: Exclude<ServerErrorCode, 'UNKNOWN'>[] = [
   'PROHIBITED_ITEM', 'PROHIBITED_CATEGORY', 'RATE_LIMITED', 'COMPLIANCE_BLOCKED',
-  'PLAN_LIMIT_REACHED', 'PUBLISH_ALLOWANCE_EXHAUSTED', 'PLOTS_REQUIRE_PLAN', 'NOT_AUTHORIZED', 'OWNER_ONLY',
+  'ACCOUNT_NOT_READY', 'PLAN_LIMIT_REACHED', 'PUBLISH_ALLOWANCE_EXHAUSTED', 'PLOTS_REQUIRE_PLAN', 'NOT_AUTHORIZED', 'OWNER_ONLY',
   'LAST_OWNER', 'INVITE_EXPIRED', 'NO_PENDING_INVITE', 'INVALID_ROLE',
   'INVALID_EMAIL', 'REASON_REQUIRED', 'UNKNOWN_STATE',
 ];
+
+const READINESS_LABELS: Record<string, string> = {
+  verified_email: 'verified email',
+  verified_phone: 'verified mobile phone',
+  age_18: '18+ confirmation',
+  terms: 'current Terms',
+  privacy: 'current Privacy Policy',
+  marketplace_rules: 'Marketplace Rules',
+};
 
 // Anything that reads like plumbing rather than a sentence written for a person.
 const MACHINE_PREFIX = /^[A-Z][A-Z0-9_]{3,}(:|$)/;
@@ -441,6 +513,12 @@ export function mapServerError(
     // COMPLIANCE_BLOCKED is raised as CODE:REASON:message — REASON is an internal
     // enum (CREDENTIAL_REQUIRED, PLAN_REQUIRED…) and never belongs on screen.
     if (code === 'COMPLIANCE_BLOCKED') body = body.replace(/^[A-Z][A-Z0-9_]{2,}:\s*/, '').trim();
+    if (code === 'ACCOUNT_NOT_READY') {
+      const missing = body.split(':').pop()?.split(',').map((s) => READINESS_LABELS[s.trim()] ?? '').filter(Boolean) ?? [];
+      body = missing.length
+        ? `Complete these account steps before continuing: ${missing.join(', ')}.`
+        : '';
+    }
     return { code, title: TITLES[code], message: body || FALLBACK_BODY[code] };
   }
 

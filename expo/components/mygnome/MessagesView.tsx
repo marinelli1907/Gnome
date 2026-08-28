@@ -23,7 +23,7 @@ export default function MessagesView({
       <EmptyState
         emoji="💬"
         title="No messages yet"
-        subtitle="Once a claim is approved, you and the other neighbor can chat here to sort out pickup."
+        subtitle="Buyer and seller conversations will appear here."
       />
     );
   }

@@ -80,6 +80,7 @@ export interface MarketOrderItem {
 
 export interface MarketOrder {
   id: string;
+  request_kind: 'ORDER' | 'VISIT';
   market_id: string;
   buyer_id: string;
   status: MarketOrderStatus;
@@ -381,7 +382,7 @@ export function usePickupSlots(marketId?: string, days = 10) {
 // Only the granted columns — the delivery-address snapshot is withheld at the
 // grant level (0066) and would 42501 a select('*').
 const ORDER_COLS =
-  'id,market_id,buyer_id,status,requested_start,requested_end,confirmed_start,confirmed_end,' +
+  'id,request_kind,market_id,buyer_id,status,requested_start,requested_end,confirmed_start,confirmed_end,' +
   'proposed_start,proposed_end,timezone,subtotal_cents,buyer_note,decline_reason,created_at,' +
   'pickup_location_id,pickup_location_name,pickup_location_type,' +
   'fulfillment_type,delivery_distance_miles,delivery_base_fee_cents,delivery_surcharge_cents,delivery_fee_cents';
@@ -483,6 +484,37 @@ export function useCreateOrder(uid?: string) {
         (input.fulfillment ?? 'pickup') === 'delivery' ? 'delivery_order_requested' : 'pickup_request',
         orderId,
       );
+      invalidateOrders(qc);
+    },
+  });
+}
+
+/** Paid storefront visit request. The backend rechecks the Market's verified
+ * plan and requires an exact server-generated slot before it creates anything. */
+export function useCreateVisitRequest(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      marketId: string;
+      slot: Pick<PickupSlot, 'slot_start' | 'slot_end'>;
+      note?: string | null;
+    }): Promise<string> => {
+      if (!uid) throw new Error('Sign in to request a visit.');
+      const { data, error } = await supabase.rpc('create_market_visit_request', {
+        p_market: input.marketId,
+        p_start: input.slot.slot_start,
+        p_end: input.slot.slot_end,
+        p_note: input.note?.trim() || null,
+      });
+      if (error) throw error;
+      return data as string;
+    },
+    onSuccess: (orderId, input) => {
+      void logEvent('market_visit_requested', {
+        userId: uid,
+        metadata: { market_id: input.marketId, order_id: orderId },
+      });
+      void notifyOrderEvent('pickup_request', orderId, { request_kind: 'VISIT' });
       invalidateOrders(qc);
     },
   });

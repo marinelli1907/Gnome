@@ -4,7 +4,7 @@ import PricingCTA from './PricingCTA';
 export const metadata: Metadata = {
   title: 'Pricing — grow your Market',
   description:
-    'Gnome is free to start. Upgrade to Pro or Farm for unlimited Sell listings, premium QR tools, and full AI access.',
+    'Gnome is free to start. Upgrade to Pro or Farm for unlimited Sell listings, premium QR tools, and more daily Zordy requests.',
   alternates: { canonical: '/pricing' },
 };
 
@@ -109,8 +109,7 @@ const TIERS = [
       'Share Free & Trade posts — always free, never counted',
       'Your own Market page',
       'Local delivery — up to 15 miles, one flat fee',
-      'AI listing drafts — 5/day',
-      'Garden planner — 10 questions/day',
+      'Zordy — 5 requests/day',
       'Local pickup, no fees ever',
     ],
     cta: null,
@@ -129,7 +128,7 @@ const TIERS = [
       'Delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules',
       'Offer plots — neighbors reserve, you grow',
       '3 listing promotions every month',
-      'Full AI access — 25 drafts, 40 planner questions/day',
+      'Zordy — 25 requests/day',
       'Featured eligibility on the homepage rail',
     ],
     cta: { productKey: 'GNOME_GROWER_MONTHLY', label: 'Upgrade to Pro' },
@@ -147,6 +146,7 @@ const TIERS = [
       '10 listing promotions every month',
       'Offer plots — pre-sell your whole season',
       'Featured eligibility + verified review',
+      'Zordy — 100 requests/day',
       'Everything in Pro',
     ],
     cta: { productKey: 'GNOME_FARM_MONTHLY', label: 'Upgrade to Farm' },
@@ -194,15 +194,21 @@ export default async function PricingPage() {
     };
   });
   return (
-    <main className="container" style={{ paddingTop: 40, paddingBottom: 64 }}>
-      <section className="hero" style={{ paddingTop: 0, paddingBottom: 20 }}>
-        <span className="kicker">Simple, neighborly pricing</span>
-        <h1>Free for neighbors. Fair for growers.</h1>
-        <p>
-          Sharing your surplus never costs a cent. When your garden becomes a
-          business, your Market grows with you — and Gnome still never takes a
-          cut of what you sell.
-        </p>
+    <main className="container page-theme page-pricing" style={{ paddingTop: 40, paddingBottom: 64 }}>
+      <section className="hero page-hero pricing-hero-panel" style={{ paddingTop: 0, paddingBottom: 20 }}>
+        <div>
+          <span className="kicker">Simple, neighborly pricing</span>
+          <h1>Free for neighbors. Fair for growers.</h1>
+          <p>
+            Sharing your surplus never costs a cent. When your garden becomes a
+            business, your Market grows with you — and Gnome still never takes a
+            cut of what you sell.
+          </p>
+        </div>
+        <div className="pricing-promise">
+          <strong>0%</strong>
+          <span>transaction fees on neighbor sales</span>
+        </div>
       </section>
 
       <div className="tiers">

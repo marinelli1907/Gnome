@@ -13,7 +13,8 @@
 //     listing photo are different concepts);
 //   * every sentence and derivation comes from lib/importReview (byte-identical
 //     twin in expo) — this file renders pixels, never meanings of its own.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { CATEGORIES } from '../../../lib/categories';
 import { LISTING_TYPE_ACTION_LABEL, listingPath, TYPE_LABEL } from '../../../lib/format';
 import { mapServerError, type ServerError } from '../../../lib/gnome';
@@ -143,6 +144,8 @@ function conflictFieldValue(c: ImportCandidate, field: string): string | number 
 }
 
 export default function ImportClient() {
+  const params = useSearchParams();
+  const conciergeCaseId = params.get('case') ?? '';
   const { session, ready } = useSession();
   const uid = session?.user?.id;
   const fileRef = useRef<HTMLInputElement>(null);
@@ -349,15 +352,24 @@ export default function ImportClient() {
 
   // --- drafts section (existing RPCs; RLS-scoped reads) ---------------------
 
-  async function loadDrafts() {
-    if (!requestId) return;
-    const { data } = await supabaseBrowser()
+  async function loadDrafts(caseId = conciergeCaseId) {
+    if (!caseId && !requestId) return;
+    let query = supabaseBrowser()
       .from('listing_drafts')
       .select('id,title,description,category,listing_type,price_cents,unit,quantity,status,published_listing_id,import_candidate_index')
-      .eq('import_request_id', requestId)
       .order('import_candidate_index', { ascending: true });
+    query = caseId
+      ? query.eq('concierge_case_id', caseId)
+      : query.eq('import_request_id', requestId!);
+    const { data } = await query;
     setDrafts((data as ImportDraft[]) ?? []);
   }
+
+  useEffect(() => {
+    if (!uid || !conciergeCaseId) return;
+    setShowDrafts(true);
+    void loadDrafts(conciergeCaseId);
+  }, [conciergeCaseId, uid]);
 
   async function publishDraft(d: ImportDraft) {
     setDraftBusy(d.id);
@@ -418,6 +430,86 @@ export default function ImportClient() {
   const draftPrice = (d: ImportDraft) =>
     priceLabel({ price_cents: d.price_cents, unit: d.unit ?? '' } as ImportCandidate);
 
+  const renderDraftReview = (title: string, emptyCopy: string) => (
+    <section className="section">
+      <div className="section-head"><h2>{title}</h2></div>
+      {draftError && <ServerErrorNotice error={draftError} />}
+      {drafts === null && <p className="authhint">Loading drafts…</p>}
+      {drafts?.length === 0 && <p className="authhint">{emptyCopy}</p>}
+      <div className="mm-list">
+        {(drafts ?? []).map((d) => (
+          <div key={d.id}>
+            <div className="mm-row">
+              <div className="mm-info">
+                <span className="mm-title">{d.title ?? 'Untitled draft'}</span>
+                <div className="mm-meta">
+                  {draftPrice(d) && <span className="tag type-sale">{draftPrice(d)}</span>}
+                  {d.listing_type !== 'sale' && (
+                    <span className={`tag type-${d.listing_type}`}>
+                      {TYPE_LABEL[d.listing_type as keyof typeof TYPE_LABEL] ?? d.listing_type}
+                    </span>
+                  )}
+                  {d.status === 'pending' && <span className="tag">Draft</span>}
+                  {d.status === 'published' && <span className="tag type-free">Published</span>}
+                  {d.status === 'discarded' && <span className="tag">Discarded</span>}
+                </div>
+              </div>
+              <div className="mm-btns">
+                {d.status === 'pending' && (
+                  <>
+                    <button className="mm-btn" disabled={draftBusy === d.id}
+                      onClick={() => (draftEdit === d.id ? setDraftEdit(null) : openDraftEdit(d))}>
+                      {draftEdit === d.id ? 'Close' : 'Edit'}
+                    </button>
+                    <button className="mm-btn" disabled={draftBusy === d.id}
+                      onClick={() => void publishDraft(d)}>Publish</button>
+                    <button className="mm-btn danger" disabled={draftBusy === d.id}
+                      onClick={() => void discardDraft(d)}>Discard</button>
+                  </>
+                )}
+                {d.status === 'published' && d.published_listing_id && (
+                  <a className="mm-btn" href={listingPath(d.published_listing_id, d.title ?? '')}>View</a>
+                )}
+              </div>
+            </div>
+            {draftEdit === d.id && d.status === 'pending' && (
+              <div className="preview-note" style={{ marginTop: 8 }}>
+                <div className="field-row">
+                  <div className="field"><label>Title</label>
+                    <input maxLength={80} value={draftForm.title}
+                      onChange={(e) => setDraftForm({ ...draftForm, title: e.target.value })} /></div>
+                  <div className="field" style={{ maxWidth: 120 }}><label>Price $</label>
+                    <input inputMode="decimal" value={draftForm.price}
+                      onChange={(e) => setDraftForm({ ...draftForm, price: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
+                  <div className="field" style={{ maxWidth: 140 }}><label>Per</label>
+                    <select value={draftForm.unit} onChange={(e) => setDraftForm({ ...draftForm, unit: e.target.value })}>
+                      <option value="">—</option>
+                      {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select></div>
+                </div>
+                <div className="field" style={{ marginTop: 8 }}><label>Category</label>
+                  <select value={draftForm.category} onChange={(e) => setDraftForm({ ...draftForm, category: e.target.value })}>
+                    {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+                  </select></div>
+                <div className="field" style={{ marginTop: 8 }}><label>Description</label>
+                  <textarea rows={3} value={draftForm.description}
+                    onChange={(e) => setDraftForm({ ...draftForm, description: e.target.value })} /></div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                  <button className="btn btn-primary btn-sm" disabled={draftBusy === d.id}
+                    onClick={() => void saveDraftEdit(d)}>Save</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setDraftEdit(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="authhint">
+        A published listing can still be held for review — its live status shows in <a href="/my">My Market</a>.
+      </p>
+    </section>
+  );
+
   // --- render ---------------------------------------------------------------
 
   if (!ready) return <div className="empty"><p>Loading…</p></div>;
@@ -444,6 +536,20 @@ export default function ImportClient() {
       </div>
     </div>
   );
+
+  if (conciergeCaseId) {
+    return (
+      <div>
+        {head}
+        <div className="authcard" style={{ maxWidth: 640 }}>
+          <h2>Review your prepared listings</h2>
+          <p className="sub">These drafts are private. Edit, publish, or discard each one when you are ready.</p>
+          <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
+        </div>
+        {renderDraftReview('Prepared drafts', 'No private drafts were found for this claimed Market.')}
+      </div>
+    );
+  }
 
   // ---------- result + drafts ----------
   if (result) {
@@ -499,105 +605,7 @@ export default function ImportClient() {
           </div>
         </div>
 
-        {showDrafts && (
-          <section className="section">
-            <div className="section-head"><h2>Your imported drafts</h2></div>
-            {draftError && <ServerErrorNotice error={draftError} />}
-            {drafts === null && <p className="authhint">Loading drafts…</p>}
-            {drafts?.length === 0 && <p className="authhint">No drafts found for this import.</p>}
-            <div className="mm-list">
-              {(drafts ?? []).map((d) => (
-                <div key={d.id}>
-                  <div className="mm-row">
-                    <div className="mm-info">
-                      <span className="mm-title">{d.title ?? 'Untitled draft'}</span>
-                      <div className="mm-meta">
-                        {draftPrice(d) && <span className="tag type-sale">{draftPrice(d)}</span>}
-                        {d.listing_type !== 'sale' && (
-                          <span className={`tag type-${d.listing_type}`}>
-                            {TYPE_LABEL[d.listing_type as keyof typeof TYPE_LABEL] ?? d.listing_type}
-                          </span>
-                        )}
-                        {d.status === 'pending' && <span className="tag">Draft</span>}
-                        {d.status === 'published' && <span className="tag type-free">Published</span>}
-                        {d.status === 'discarded' && <span className="tag">Discarded</span>}
-                      </div>
-                    </div>
-                    <div className="mm-btns">
-                      {d.status === 'pending' && (
-                        <>
-                          <button
-                            className="mm-btn"
-                            disabled={draftBusy === d.id}
-                            onClick={() => (draftEdit === d.id ? setDraftEdit(null) : openDraftEdit(d))}
-                          >
-                            {draftEdit === d.id ? 'Close' : 'Edit'}
-                          </button>
-                          <button
-                            className="mm-btn"
-                            disabled={draftBusy === d.id}
-                            onClick={() => void publishDraft(d)}
-                          >
-                            Publish
-                          </button>
-                          <button
-                            className="mm-btn danger"
-                            disabled={draftBusy === d.id}
-                            onClick={() => void discardDraft(d)}
-                          >
-                            Discard
-                          </button>
-                        </>
-                      )}
-                      {d.status === 'published' && d.published_listing_id && (
-                        <a className="mm-btn" href={listingPath(d.published_listing_id, d.title ?? '')}>
-                          View
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  {draftEdit === d.id && d.status === 'pending' && (
-                    <div className="preview-note" style={{ marginTop: 8 }}>
-                      <div className="field-row">
-                        <div className="field"><label>Title</label>
-                          <input maxLength={80} value={draftForm.title}
-                            onChange={(e) => setDraftForm({ ...draftForm, title: e.target.value })} /></div>
-                        <div className="field" style={{ maxWidth: 120 }}><label>Price $</label>
-                          <input inputMode="decimal" value={draftForm.price}
-                            onChange={(e) => setDraftForm({ ...draftForm, price: e.target.value.replace(/[^0-9.]/g, '') })} /></div>
-                        <div className="field" style={{ maxWidth: 140 }}><label>Per</label>
-                          <select value={draftForm.unit}
-                            onChange={(e) => setDraftForm({ ...draftForm, unit: e.target.value })}>
-                            <option value="">—</option>
-                            {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                          </select></div>
-                      </div>
-                      <div className="field" style={{ marginTop: 8 }}><label>Category</label>
-                        <select value={draftForm.category}
-                          onChange={(e) => setDraftForm({ ...draftForm, category: e.target.value })}>
-                          {CATEGORIES.map((c) => (
-                            <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>
-                          ))}
-                        </select></div>
-                      <div className="field" style={{ marginTop: 8 }}><label>Description</label>
-                        <textarea rows={3} value={draftForm.description}
-                          onChange={(e) => setDraftForm({ ...draftForm, description: e.target.value })} /></div>
-                      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-                        <button className="btn btn-primary btn-sm" disabled={draftBusy === d.id}
-                          onClick={() => void saveDraftEdit(d)}>Save</button>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setDraftEdit(null)}>Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p className="authhint">
-              A published listing can still be held for review — its live status
-              shows in <a href="/my">My Market</a>.
-            </p>
-          </section>
-        )}
+        {showDrafts && renderDraftReview('Your imported drafts', 'No drafts found for this import.')}
       </div>
     );
   }

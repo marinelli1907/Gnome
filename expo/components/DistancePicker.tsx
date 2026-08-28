@@ -21,7 +21,6 @@ import {
   MAX_BROWSE_RADIUS,
   RADIUS_DETENTS,
   RADIUS_SHORTCUTS,
-  radiusLabel,
   type BrowseRadius,
 } from '@/lib/location';
 

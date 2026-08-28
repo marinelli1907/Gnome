@@ -122,13 +122,15 @@ begin
 
   -- ------------------------------------------------------------------- C2b
   -- A grant BELOW the base plan must never demote a market someone paid for.
-  update public.admin_plan_grants set plan = 'free' where id = gid;
+  update public.markets set plan = 'farm' where id = mc;
+  update public.admin_plan_grants set plan = 'grower' where id = gid;
   select * into r from public.market_effective_plan(mc);
   perform pg_temp.ck('C2b: a LOWER grant never demotes the paid base plan',
-    r.plan = 'grower' and r.source = 'stripe' and r.grant_id is null,
+    r.plan = 'farm' and r.source = 'stripe' and r.grant_id is null,
     format('plan=%s source=%s', r.plan, r.source));
 
   -- ------------------------------------------------------------------- C3a
+  update public.markets set plan = 'grower' where id = mc;
   update public.admin_plan_grants
      set plan = 'farm', expires_at = now() - interval '1 day' where id = gid;
   select * into r from public.market_effective_plan(mc);

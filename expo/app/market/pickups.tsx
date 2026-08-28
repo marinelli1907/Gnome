@@ -29,6 +29,9 @@ const fmtTime = (iso: string) =>
 
 function rowLine(o: MarketOrder): string {
   const win = orderWindow(o);
+  if (o.request_kind === 'VISIT') {
+    return `${fmtTime(win.start)}–${fmtTime(win.end)} · ${o.buyer?.name ?? 'Neighbor'} · Visit request`;
+  }
   const count = (o.items ?? []).reduce((s, it) => s + it.quantity, 0);
   return `${fmtTime(win.start)}–${fmtTime(win.end)} · ${o.buyer?.name ?? 'Neighbor'} · ${count} item${count === 1 ? '' : 's'} · ${money(o.subtotal_cents)}`;
 }
@@ -40,7 +43,7 @@ function PickupRow({ o, onPress }: { o: MarketOrder; onPress: () => void }) {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Pickup order, ${rowLine(o)}, ${STATUS_META[o.status].label}`}
+      accessibilityLabel={`${o.request_kind === 'VISIT' ? 'Market visit' : 'Pickup order'}, ${rowLine(o)}, ${STATUS_META[o.status].label}`}
       style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
     >
       <View style={{ flex: 1 }}>
@@ -50,6 +53,7 @@ function PickupRow({ o, onPress }: { o: MarketOrder; onPress: () => void }) {
         </Text>
         <View style={styles.rowBadges}>
           <OrderStatusBadge status={o.status} />
+          {o.request_kind === 'VISIT' ? <Badge label="Visit" color={Colors.marketOrangeInteractive} /> : null}
           {o.fulfillment_type === 'delivery' ? (
             <Badge
               label={o.delivery_distance_miles != null ? `Delivery · ${o.delivery_distance_miles} mi` : 'Delivery'}
@@ -141,7 +145,7 @@ export default function SellerPickupsScreen() {
   const emptyCopy: Record<Tab, string> = {
     today: 'No confirmed pickups today.',
     upcoming: 'No upcoming or pending orders.',
-    all: 'No pickup orders yet — buyers order from your Market page.',
+    all: 'No pickup orders or visit requests yet.',
   };
 
   return (

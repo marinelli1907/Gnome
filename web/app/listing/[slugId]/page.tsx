@@ -4,7 +4,7 @@ import AppLink from '../../components/AppLink';
 import ListingCard from '../../components/ListingCard';
 import ReservePlot from '../../components/ReservePlot';
 import { categoryFor } from '@/lib/categories';
-import { appCtaLabel, areaLabel, formatPrice, idFromSlugId, listingPath, listingValue, marketPath, TYPE_LABEL } from '@/lib/format';
+import { appCtaLabel, areaLabel, formatPrice, idFromSlugId, listingPath, listingValue, marketPath, pickedDateLabel, TYPE_LABEL } from '@/lib/format';
 import { getActiveListings, getBundleComponents, getListingById, getMarketBySlug } from '@/lib/gnome';
 
 export const revalidate = 60;
@@ -64,6 +64,7 @@ export default async function ListingPage({ params }: Params) {
   const where = areaLabel(l.city, l.state);
   const photos = l.photos ?? [];
   const fulfillment = l.fulfillment_type ? l.fulfillment_type.replace(/^\w/, (c) => c.toUpperCase()) : 'Pickup';
+  const picked = pickedDateLabel(l.harvest_date);
 
   return (
     <main className="container">
@@ -106,6 +107,7 @@ export default async function ListingPage({ params }: Params) {
               {l.listing_type === 'plot' && l.inventory_count != null
                 ? ` · ${l.inventory_count} plot${l.inventory_count === 1 ? '' : 's'} available`
                 : ''}
+              {picked ? ` · ${picked}` : ''}
               {' · '}{where} · {fulfillment}
             </div>
             {l.description ? <p className="desc">{l.description}</p> : null}

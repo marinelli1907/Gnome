@@ -8,6 +8,97 @@
 // so a replayed return, a re-opened app, or a double tap cannot buy one publish and take two.
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
+import type { MarketPlan } from '@/types';
+
+export type PlanProductKey = 'GNOME_GROWER_MONTHLY' | 'GNOME_FARM_MONTHLY';
+export type PlanCheckoutSession = { url: string; mode: 'test' | 'live'; productKey: PlanProductKey };
+export type PlanCheckoutOutcome = 'active' | 'pending' | 'cancelled' | 'error';
+export type PlanPromoPreview = {
+  mode: 'test' | 'live';
+  product_key: PlanProductKey;
+  plan: MarketPlan;
+  renewal_price_cents: number;
+  currency: string;
+  checkout_configured: boolean;
+  promo: {
+    code: string;
+    campaign_name: string;
+    discount_type: 'percent' | 'amount';
+    discount_percent: number | null;
+    discount_amount_cents: number | null;
+    duration: 'once' | 'repeating' | 'forever';
+    duration_in_months: number | null;
+    conversion_behavior: 'AUTO_RENEW' | 'NO_AUTO_CONVERSION';
+    payment_method_required: boolean;
+  };
+};
+
+const PLAN_FOR_PRODUCT: Record<PlanProductKey, MarketPlan> = {
+  GNOME_GROWER_MONTHLY: 'grower',
+  GNOME_FARM_MONTHLY: 'farm',
+};
+const PLAN_RANK: Record<string, number> = { free: 0, grower: 1, farm: 2, sponsor: 3 };
+
+/** Create a server-owned plan checkout. The server resolves test/live mode,
+ * price, customer identity, and Market ownership; the app supplies only an
+ * allowlisted product key. */
+export async function createPlanCheckout(productKey: PlanProductKey, promoCode?: string): Promise<
+  { session?: PlanCheckoutSession; error?: string }
+> {
+  const { data, error } = await supabase.functions.invoke('billing-checkout', {
+    body: { product_key: productKey, platform: 'app', promo_code: promoCode?.trim() || undefined },
+  });
+  const body = (data ?? {}) as { url?: string; mode?: 'test' | 'live'; error?: string; message?: string };
+  if (body.error || error || !body.url || !body.mode) {
+    return { error: body.message ?? 'Checkout is unavailable right now. Nothing was charged.' };
+  }
+  return { session: { url: body.url, mode: body.mode, productKey } };
+}
+
+/** Validate and describe a promo without opening checkout. The edge function
+ * uses the same private promo_validate RPC as checkout and returns only the
+ * customer-facing benefit, authoritative renewal price, and billing mode. */
+export async function previewPlanPromo(productKey: PlanProductKey, promoCode: string): Promise<
+  { preview?: PlanPromoPreview; error?: string }
+> {
+  const { data, error } = await supabase.functions.invoke('billing-checkout', {
+    body: { action: 'preview_promo', product_key: productKey, promo_code: promoCode.trim(), platform: 'app' },
+  });
+  const body = (data ?? {}) as PlanPromoPreview & { error?: string; message?: string };
+  if (body.error || error || !body.promo) {
+    return { error: body.message ?? 'That code could not be applied.' };
+  }
+  return { preview: body };
+}
+
+export async function openStripeSubscriptionPortal(): Promise<{error?:string}> {
+  const {data,error}=await supabase.functions.invoke('billing-checkout',{
+    body:{action:'portal',product_key:'GNOME_GROWER_MONTHLY',platform:'app'},
+  });
+  const body=(data??{}) as {url?:string;message?:string};
+  if (error || !body.url) return {error:body.message??'Subscription management is unavailable right now.'};
+  const result=await WebBrowser.openBrowserAsync(body.url);
+  return result.type==='cancel'?{}:{};
+}
+
+/** Open Stripe Checkout, then ask Gnome whether the expected plan is active.
+ * A success-shaped deep link is only a signal to reconcile, never payment
+ * proof. */
+export async function finishPlanCheckout(session: PlanCheckoutSession): Promise<PlanCheckoutOutcome> {
+  const result = await WebBrowser.openAuthSessionAsync(session.url, 'gnome://checkout');
+  if (result.type !== 'success') return 'cancelled';
+
+  const expectedRank = PLAN_RANK[PLAN_FOR_PRODUCT[session.productKey]];
+  for (let attempt = 0; attempt < 7; attempt++) {
+    const { data, error } = await supabase.rpc('my_plan_entitlements');
+    if (!error) {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row && (PLAN_RANK[String(row.plan)] ?? -1) >= expectedRank) return 'active';
+    }
+    await sleep(1500);
+  }
+  return 'pending';
+}
 
 export type OverageRow = {
   required: boolean;

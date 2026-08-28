@@ -66,8 +66,8 @@ export default function GrowLogScreen() {
   const log = useGrowLog(canView ? claimId : undefined);
   const cropsQ = usePlotCrops(canView ? claimId : undefined);
 
-  const entries = log.data ?? [];
-  const crops = cropsQ.data ?? [];
+  const entries = useMemo(() => log.data ?? [], [log.data]);
+  const crops = useMemo(() => cropsQ.data ?? [], [cropsQ.data]);
   const summary = useMemo(() => growSummary(entries, crops), [entries, crops]);
 
   const [composerOpen, setComposerOpen] = useState(false);

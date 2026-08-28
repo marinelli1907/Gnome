@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import GardenClient from './GardenClient';
 
 export const metadata: Metadata = {
-  title: 'AI Garden Planner — what to plant now, where you live',
+  title: 'Zordy Garden Planner — what to plant now, where you live',
   description:
     'Tell Gnome where your garden is and get a planting plan for this exact week — zone-aware picks, spacing, timing, and beginner tips. Free during beta.',
 };

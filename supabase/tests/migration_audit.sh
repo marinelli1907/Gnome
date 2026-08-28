@@ -41,8 +41,11 @@ echo "3. numbering is contiguous (a hole means a lost migration)"
 prev=0
 for path in "$MIG"/*.sql; do
   f="$(basename "$path")"; case "$f" in *_down_*) continue ;; esac
-  n="$(printf '%s' "$f" | cut -c1-4)"
-  case "$n" in ''|*[!0-9]*) continue ;; esac
+  if [[ "$f" =~ ^([0-9]{4})_ ]]; then
+    n="${BASH_REMATCH[1]}"
+  else
+    continue
+  fi
   cur=$((10#$n))
   [ "$cur" -eq "$prev" ] && { echo "   FAIL duplicate migration number $n"; fail=1; }
   if [ "$cur" -gt $((prev + 1)) ]; then

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import ImportClient from './ImportClient';
 
 export const metadata: Metadata = {
@@ -11,7 +12,9 @@ export const metadata: Metadata = {
 export default function ImportPage() {
   return (
     <main className="container" style={{ maxWidth: 720, paddingTop: 32, paddingBottom: 64 }}>
-      <ImportClient />
+      <Suspense fallback={<div className="empty"><p>Loading…</p></div>}>
+        <ImportClient />
+      </Suspense>
     </main>
   );
 }

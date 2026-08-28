@@ -24,11 +24,12 @@ const UPCOMING = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY'];
 function OrderCard({ o, onPress }: { o: MarketOrder; onPress: () => void }) {
   const win = orderWindow(o);
   const count = (o.items ?? []).reduce((s, it) => s + it.quantity, 0);
+  const isVisit = o.request_kind === 'VISIT';
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Order from ${o.market?.name ?? 'a market'}, ${money(o.subtotal_cents)}`}
+      accessibilityLabel={`${isVisit ? 'Visit request' : 'Order'} at ${o.market?.name ?? 'a market'}`}
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
     >
       <View style={{ flex: 1 }}>
@@ -37,7 +38,7 @@ function OrderCard({ o, onPress }: { o: MarketOrder; onPress: () => void }) {
         </Text>
         <Text style={styles.cardSub}>{fmtWindow(win.start, win.end)}</Text>
         <Text style={styles.cardSub}>
-          {count} item{count === 1 ? '' : 's'} · {money(o.subtotal_cents)}
+          {isVisit ? 'Market visit' : `${count} item${count === 1 ? '' : 's'} · ${money(o.subtotal_cents)}`}
         </Text>
         <View style={{ marginTop: 6 }}>
           <OrderStatusBadge status={o.status} />
@@ -96,8 +97,8 @@ export default function OrdersScreen() {
       {upcoming.length === 0 && past.length === 0 && !orders.isLoading ? (
         <EmptyState
           emoji="🧺"
-          title="No pickup orders yet"
-          subtitle="When you order from a neighbor's market, it shows up here."
+          title="No orders or visits yet"
+          subtitle="Orders and Market visit requests show up here."
         />
       ) : (
         <>

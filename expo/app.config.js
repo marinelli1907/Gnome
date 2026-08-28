@@ -1,5 +1,3 @@
-const app = require('./app.json');
-
 const mapsKey = process.env.EXPO_ANDROID_GOOGLE_MAPS_API_KEY;
 const buildProfile = process.env.EAS_BUILD_PROFILE;
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
@@ -14,17 +12,18 @@ if (!mapsKey && mustHaveAndroidMapsKey) {
   );
 }
 
-if (mapsKey) {
-  app.expo.android = {
-    ...app.expo.android,
-    config: {
-      ...app.expo.android?.config,
-      googleMaps: {
-        ...app.expo.android?.config?.googleMaps,
-        apiKey: mapsKey,
-      },
-    },
-  };
-}
-
-module.exports = app;
+module.exports = ({ config }) => ({
+  ...config,
+  android: mapsKey
+    ? {
+        ...config.android,
+        config: {
+          ...config.android?.config,
+          googleMaps: {
+            ...config.android?.config?.googleMaps,
+            apiKey: mapsKey,
+          },
+        },
+      }
+    : config.android,
+});

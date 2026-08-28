@@ -6,8 +6,8 @@ import { Avatar } from '@/components/ui';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
-import { useBoostCreditsRemaining, useMyListingAllowance, useMyListings, useMyMarket, useMyWantedAllowance, usePlanLimits } from '@/lib/db';
-import { exhaustedHint, listingsMeter, renewalsMeter, wantedMeter, planDisplay, resetLabel, type Meter } from '@/lib/allowance';
+import { useBoostCreditsRemaining, useMyListingAllowance, useMyListings, useMyMarket, usePlanLimits } from '@/lib/db';
+import { exhaustedHint, listingsMeter, renewalsMeter, planDisplay, resetLabel, type Meter } from '@/lib/allowance';
 import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import type { MarketPlan } from '@/types';
 
@@ -31,7 +31,6 @@ export default function MyMarketCard({ uid }: { uid: string }) {
   const market = useMyMarket(uid);
   const limits = usePlanLimits();
   const allowance = useMyListingAllowance(uid);
-  const wantedAllow = useMyWantedAllowance(uid);
   const credits = useBoostCreditsRemaining(market.data?.id);
   // Every account gets a market row at signup, because listings, orders,
   // pickup hours and the sales notebook all hang off market_id. But someone
@@ -81,12 +80,6 @@ export default function MyMarketCard({ uid }: { uid: string }) {
               meter={renewalsMeter(row, { canBuyExtras: canBuyDigitalInApp })}
               hint={exhaustedHint(row, 'renewals', { canBuyExtras: canBuyDigitalInApp })}
             />
-            {wantedAllow.data ? (
-              <MeterBlock
-                meter={wantedMeter(wantedAllow.data)}
-                hint={wantedMeter(wantedAllow.data).exhausted ? 'More tomorrow — or upgrade' : null}
-              />
-            ) : null}
           </View>
         )}
         {row && <Text style={styles.reset}>{resetLabel(row)} · Sell listings run for {row.listing_lifetime_days} days</Text>}
@@ -95,9 +88,14 @@ export default function MyMarketCard({ uid }: { uid: string }) {
           <Text style={styles.boosts}>✨ Boosts: {boostsLeft} of {includedBoosts} left this month</Text>
         )}
 
-        <Pressable style={styles.editBtn} onPress={() => router.push(`/market/edit/${m.id}`)}>
-          <Text style={styles.editText}>Name your Market</Text>
-        </Pressable>
+        <View style={styles.actionRow}>
+          <Pressable style={styles.editBtn} onPress={() => router.push(`/market/edit/${m.id}`)}>
+            <Text style={styles.editText}>Market settings</Text>
+          </Pressable>
+          <Pressable style={styles.editBtn} onPress={() => router.push('/market/assistance')}>
+            <Text style={styles.editText}>Gnome assistance</Text>
+          </Pressable>
+        </View>
       </View>
 
       {exhausted && (
@@ -140,6 +138,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
   },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   // On a light wash of its own hue, the interactive red lands at ~4.0-4.2:1 —
   // under AA body. Same hue, deep cut: #B71C1C measures ~6:1 on these washes.
   editText: { color: Colors.primaryDark, fontSize: 13, fontFamily: fonts.bold },

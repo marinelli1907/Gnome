@@ -36,7 +36,7 @@ import PickupOrdersManager from './PickupOrdersManager';
 // Explicit column list — post-0010 the base table rejects select=* for
 // non-service roles (lat/lng/slug are revoked; everything else is granted).
 const COLS =
-  'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until,market_position,market_featured,inventory_count';
+  'id,title,category,listing_type,status,price_cents,unit,photos,created_at,expires_at,is_featured,featured_until,market_position,market_featured,inventory_count,harvest_date';
 
 interface MyListing extends ScreenedListing {
   id: string;
@@ -56,11 +56,13 @@ interface MyListing extends ScreenedListing {
   market_position: number | null;
   market_featured: boolean;
   inventory_count: number | null;
+  harvest_date: string | null;
 }
 
 interface MyMarket {
   id: string; name: string; slug: string; plan: string | null;
   tagline: string | null; theme: string; description: string | null;
+  avatar_url: string | null; banner_url: string | null;
 }
 
 interface Txn {
@@ -80,6 +82,26 @@ const PAY_METHODS = [
 const THEMES = ['garden', 'harvest', 'herb', 'farm_stand', 'minimal'] as const;
 const EXPENSE_CATS = ['seeds', 'soil', 'fertilizer', 'packaging', 'market_fees', 'supplies', 'mileage', 'other'] as const;
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+
+/** Canvas re-encoding strips EXIF (including GPS) before a public Market image
+ * leaves the browser, matching the mobile uploader's privacy boundary. */
+async function marketImageBlob(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const maxEdge = 1600;
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('This browser could not prepare the photo.');
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return new Promise((resolve, reject) => canvas.toBlob(
+    (blob) => blob ? resolve(blob) : reject(new Error('This browser could not prepare the photo.')),
+    'image/jpeg',
+    0.82,
+  ));
+}
 
 // A plot-reservation request on one of MY plot listings (I'm the grower).
 interface Reservation {
@@ -157,7 +179,11 @@ export default function MyMarketClient() {
   const [txns, setTxns] = useState<Txn[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customizeOpen, setCustomizeOpen] = useState(false);
-  const [custForm, setCustForm] = useState({ name: '', tagline: '', description: '', theme: 'garden' });
+  const [custForm, setCustForm] = useState({
+    name: '', tagline: '', description: '', theme: 'garden',
+    avatar_url: null as string | null, banner_url: null as string | null,
+  });
+  const [imageBusy, setImageBusy] = useState<'avatar' | 'banner' | null>(null);
   const [saleOpen, setSaleOpen] = useState(false);
   const [saleForm, setSaleForm] = useState({ listing: '', qty: '1', amount: '', discount: '', fee: '', method: 'cash', buyer: '', notes: '' });
   const [expenseOpen, setExpenseOpen] = useState(false);
@@ -178,12 +204,14 @@ export default function MyMarketClient() {
     max_pickup_locations: number; extra_location_fee_cents: number | null;
     extra_pickup_locations: number; effective_pickup_locations: number;
   } | null>(null);
+  const [subscriptionSummary,setSubscriptionSummary]=useState<any|null>(null);
   useEffect(() => {
     const sb = supabaseBrowser();
     void sb.rpc('my_plan_entitlements').then(({ data }) => {
       const row = Array.isArray(data) ? data[0] : data;
       if (row) setEnt(row);
     });
+    void sb.rpc('my_subscription_summary').then(({data})=>setSubscriptionSummary(data??null));
   }, []);
   // Aggregate only (0119): the seller sees a follower COUNT, never identities.
   const [followerCount, setFollowerCount] = useState<number | null>(null);
@@ -216,6 +244,16 @@ export default function MyMarketClient() {
   // caught. Never let that read as "it's live again".
   const [heldNow, setHeldNow] = useState<string | null>(null);
 
+  const manageWebsiteSubscription=async()=>{
+    setError(null);
+    const {data,error}=await supabaseBrowser().functions.invoke('billing-checkout',{
+      body:{action:'portal',product_key:'GNOME_GROWER_MONTHLY',platform:'web'},
+    });
+    const body=(data??{}) as {url?:string;message?:string};
+    if (error || !body.url) { setError(body.message??'Subscription management is unavailable right now.'); return; }
+    window.location.href=body.url;
+  };
+
   const load = useCallback(async () => {
     if (!uid) return;
     const supabase = supabaseBrowser();
@@ -224,7 +262,7 @@ export default function MyMarketClient() {
     // missing the dashboard still loads, and 'paused' alone still marks the
     // listing Under review — only the server's written explanation is lost.
     const [{ data: m }, { data: ls, error: lerr }, { data: screens }] = await Promise.all([
-      supabase.from('markets').select('id,name,slug,plan,tagline,theme,description').eq('owner_id', uid).limit(1).maybeSingle(),
+      supabase.from('markets').select('id,name,slug,plan,tagline,theme,description,avatar_url,banner_url').eq('owner_id', uid).limit(1).maybeSingle(),
       supabase.from('listings').select(COLS).eq('owner_id', uid).order('created_at', { ascending: false }),
       supabase.from('listings').select(`id,${SCREENING_COLS}`).eq('owner_id', uid),
     ]);
@@ -287,7 +325,14 @@ export default function MyMarketClient() {
       setTxns((tx as Txn[]) ?? []);
       setExpenses((ex as Expense[]) ?? []);
       const mm = m as MyMarket;
-      setCustForm({ name: mm.name, tagline: mm.tagline ?? '', description: mm.description ?? '', theme: mm.theme ?? 'garden' });
+      setCustForm({
+        name: mm.name,
+        tagline: mm.tagline ?? '',
+        description: mm.description ?? '',
+        theme: mm.theme ?? 'garden',
+        avatar_url: mm.avatar_url ?? null,
+        banner_url: mm.banner_url ?? null,
+      });
     }
   }, [uid]);
 
@@ -406,10 +451,35 @@ export default function MyMarketClient() {
       tagline: custForm.tagline.trim().slice(0, 120) || null,
       description: custForm.description.trim() || null,
       theme: custForm.theme,
+      avatar_url: custForm.avatar_url,
+      banner_url: custForm.banner_url,
     }).eq('id', market.id);
     setBusyId(null);
     if (error) setRefused(mapServerError(error));
     else { logWeb('market_customized'); setCustomizeOpen(false); await load(); }
+  }
+
+  async function uploadMarketImage(kind: 'avatar' | 'banner', file?: File) {
+    if (!uid || !file) return;
+    if (!file.type.startsWith('image/')) return setError('Choose an image file.');
+    setImageBusy(kind);
+    setError(null);
+    try {
+      const blob = await marketImageBlob(file);
+      const path = `${uid}/market-${kind}-${Date.now()}.jpg`;
+      const sb = supabaseBrowser();
+      const { error: uploadError } = await sb.storage.from('listing-images').upload(path, blob, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      const publicUrl = sb.storage.from('listing-images').getPublicUrl(path).data.publicUrl;
+      setCustForm((current) => ({ ...current, [`${kind}_url`]: publicUrl }));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'That photo could not be uploaded.');
+    } finally {
+      setImageBusy(null);
+    }
   }
 
   async function recordSale() {
@@ -569,7 +639,7 @@ export default function MyMarketClient() {
         <div className="empty">
           <div className="emoji">🌱</div>
           <h2>Nothing posted yet</h2>
-          <p>Your first listing takes under a minute — the AI even writes it for you.</p>
+          <p>Your first listing takes under a minute — Zordy can write it for you.</p>
           <p><a className="btn btn-primary" href="/sell">Post your first listing</a></p>
           <p className="authhint">
             Already selling somewhere else?{' '}
@@ -633,13 +703,19 @@ export default function MyMarketClient() {
               {ent.extra_location_fee_cents != null ? ` · extras $${(ent.extra_location_fee_cents / 100).toFixed(0)}/mo each` : ''}</>
             ) : null}
             {' · '}{credits} boost credit{credits === 1 ? '' : 's'} left this month
+            {subscriptionSummary?.paid_subscriptions?.[0] ? (
+              <> · Billed by {subscriptionSummary.paid_subscriptions[0].source === 'APPLE' ? 'Apple' : subscriptionSummary.paid_subscriptions[0].source === 'GOOGLE_PLAY' ? 'Google Play' : 'Gnome website'}</>
+            ) : null}
           </span>
+          {subscriptionSummary?.duplicate_paid_sources ? <span className="plan-usage">Two billing providers are active. Manage both to avoid duplicate charges.</span> : null}
         </div>
         {(market?.plan ?? 'free') === 'free' && (
           <a className="btn btn-primary btn-sm" href="/pricing">Upgrade</a>
         )}
         {(market?.plan ?? 'free') !== 'free' && (
-          <a className="btn btn-secondary btn-sm" href="/pricing">Plans</a>
+          subscriptionSummary?.paid_subscriptions?.[0]?.source === 'STRIPE'
+            ? <button className="btn btn-secondary btn-sm" onClick={()=>void manageWebsiteSubscription()}>Manage subscription</button>
+            : <a className="btn btn-secondary btn-sm" href="/pricing">Plans</a>
         )}
       </div>
 
@@ -791,6 +867,40 @@ export default function MyMarketClient() {
             {customizeOpen && (
               <div className="preview-note" style={{ marginTop: 12 }}>
                 <strong>Customize your Market</strong>
+                <div className="market-custom-media">
+                  <div className={`market-cover-preview theme-${custForm.theme}`}>
+                    {custForm.banner_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={custForm.banner_url} alt="Market cover preview" />
+                    ) : null}
+                    <label className="market-image-action">
+                      {imageBusy === 'banner' ? 'Uploading…' : custForm.banner_url ? 'Change cover' : 'Add cover photo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={imageBusy !== null}
+                        onChange={(event) => void uploadMarketImage('banner', event.target.files?.[0])}
+                      />
+                    </label>
+                  </div>
+                  <div className="market-avatar-editor">
+                    <div className="market-avatar-preview">
+                      {custForm.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={custForm.avatar_url} alt="Market profile preview" />
+                      ) : <span>{(custForm.name || '?').charAt(0).toUpperCase()}</span>}
+                    </div>
+                    <label className="btn btn-secondary btn-sm">
+                      {imageBusy === 'avatar' ? 'Uploading…' : custForm.avatar_url ? 'Change profile photo' : 'Add profile photo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={imageBusy !== null}
+                        onChange={(event) => void uploadMarketImage('avatar', event.target.files?.[0])}
+                      />
+                    </label>
+                  </div>
+                </div>
                 <div className="field" style={{ marginTop: 8 }}><label>Market name</label>
                   <input maxLength={60} value={custForm.name} placeholder="Marinelli Backyard Market" onChange={(e) => setCustForm({ ...custForm, name: e.target.value })} /></div>
                 <div className="field" style={{ marginTop: 8 }}><label>Tagline (shows under your name)</label>
@@ -802,7 +912,10 @@ export default function MyMarketClient() {
                   <div className="chiprow">
                     {THEMES.map((t) => (
                       <button key={t} type="button" className={`chip${custForm.theme === t ? ' active' : ''}`}
-                        onClick={() => setCustForm({ ...custForm, theme: t })}>{t.replace('_', ' ')}</button>
+                        onClick={() => setCustForm({ ...custForm, theme: t })}>
+                        <span className={`market-theme-swatch theme-${t}`} aria-hidden="true" />
+                        {t.replace('_', ' ')}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -815,7 +928,7 @@ export default function MyMarketClient() {
             )}
 
             {paymentsOpen && <PaymentMethodsEditor marketId={market.id} />}
-            {pickupOpen && <PickupAvailabilityEditor marketId={market.id} />}
+            {pickupOpen && <PickupAvailabilityEditor marketId={market.id} marketPlan={ent?.plan ?? market.plan ?? 'free'} />}
             {deliveryOpen && <DeliverySettingsEditor marketId={market.id} plan={market.plan ?? 'free'} />}
             {dropsOpen && <MarketDropsEditor marketId={market.id} marketSlug={market.slug} />}
             {bundlesOpen && <BundleEditor marketId={market.id} />}
@@ -1031,7 +1144,7 @@ export default function MyMarketClient() {
         <div className="empty">
           <div className="emoji">🌱</div>
           <h2>Nothing posted yet</h2>
-          <p>Your first listing takes under a minute — the AI even writes it for you.</p>
+          <p>Your first listing takes under a minute — Zordy can write it for you.</p>
           <p><a className="btn btn-primary" href="/sell">Post your first listing</a></p>
         </div>
       )}

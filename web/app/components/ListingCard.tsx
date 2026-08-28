@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { categoryFor } from '@/lib/categories';
-import { areaLabel, formatPrice, listingPath, TYPE_LABEL, timeLeft } from '@/lib/format';
+import { areaLabel, formatPrice, listingPath, pickedDateLabel, TYPE_LABEL, timeLeft } from '@/lib/format';
 import type { WebListing } from '@/lib/gnome';
 
 function shortValue(l: WebListing): string {
@@ -15,6 +15,7 @@ export default function ListingCard({ listing, promoted }: { listing: WebListing
   const cat = categoryFor(listing.category);
   const photo = listing.photos?.[0];
   const t = listing.listing_type;
+  const picked = pickedDateLabel(listing.harvest_date);
   return (
     <Link className="card" href={listingPath(listing.id, listing.slug ?? listing.title)}>
       <div className="imgwrap">
@@ -36,7 +37,7 @@ export default function ListingCard({ listing, promoted }: { listing: WebListing
         ) : null}
         {listing.market_name ? <div className="market">🏡 {listing.market_name}</div> : null}
         <div className="meta">
-          {areaLabel(listing.city, listing.state)} · {timeLeft(listing.expires_at)}
+          {areaLabel(listing.city, listing.state)} · {picked ? `${picked} · ` : ''}{timeLeft(listing.expires_at)}
         </div>
       </div>
     </Link>

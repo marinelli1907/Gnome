@@ -39,8 +39,9 @@ export default function PrivacyPage() {
         how you sign in. On the website you can use a password or a one-time
         sign-in link; in the app you sign in with a code emailed to you, or with
         Apple or Google. When you first join, Gnome&rsquo;s welcome conversation
-        asks for your first name, last name, and the best email for order
-        notices. A phone number is optional and Gnome never requires one.{' '}
+        asks for your first name, last name, best email for order notices, and
+        mobile number. A verified mobile number is required before posting,
+        requests, messages, and Market setup unlock.{' '}
         <strong>
           Your full last name, contact email, and phone are kept in a private
           record that other users cannot read.
@@ -111,8 +112,8 @@ export default function PrivacyPage() {
         you about claims, messages, and orders.
       </p>
       <p>
-        <strong>Gnome AI.</strong> The garden planner, the listing assistant,
-        the in-app help gnome, and the welcome conversation are AI features. We
+        <strong>Zordy and AI features.</strong> The garden planner, the listing assistant,
+        the in-app help gnome, and the welcome conversation use AI. We
         store your side of those conversations and the assistant&rsquo;s replies
         so the conversation has a memory, along with usage counts (which
         feature, how many requests, how long they took) to enforce daily limits
@@ -360,9 +361,9 @@ export default function PrivacyPage() {
         from your account&rsquo;s email address and we will delete it for you.
       </p>
 
-      <h2>What Gnome AI can and can&rsquo;t do for you</h2>
+      <h2>What Zordy can and can&rsquo;t do for you</h2>
       <p>
-        Gnome&rsquo;s AI is a helpful gardener, not an authority. It guesses at
+        Zordy is a helpful gardener, not an authority. It guesses at
         plants, pests, and varieties from a photo and it is sometimes wrong. It
         does not know your local ordinances, your state&rsquo;s cottage food or
         egg or meat rules, or whether a plant is safe to eat. Never rely on it

@@ -39,3 +39,24 @@
 
 # AI market import round: 0114 and 0115 are both APPLIED to production (see APPLIED.tsv) —
 # 0114 on owner approval as a bug fix, 0115 as the coordinated Build My Market release.
+
+# ---------------------------------------------------------------------------
+# 2026-08-24 launch hardening. Replayed and tested locally; NOT applied to
+# production. Public submission remains outside this work.
+# ---------------------------------------------------------------------------
+20260824145211_zordy_daily_allowance.sql  proposed Zordy daily allowance enforcement
+20260824192500_block_unverified_restricted_listing_drafts.sql  proposed restricted-draft verification gate
+20260824223000_legacy_category_map_integrity.sql  proposed repair for live RLS and foreign-key drift
+
+# ---------------------------------------------------------------------------
+# Apple sandbox subscription reconciliation repair. Applied through the SQL
+# editor and verified live, but absent from Supabase migration history. Keep it
+# classified here like 0057 rather than inventing a schema_migrations row.
+# ---------------------------------------------------------------------------
+20260827130544_fix_verified_subscription_readiness_gate.sql  applied via SQL editor; live function verified; no schema_migrations row
+
+# ---------------------------------------------------------------------------
+# Final release migrations. Clean-room verified; NOT applied to production.
+# ---------------------------------------------------------------------------
+20260828035457_fix_email_readiness_after_otp.sql  fixes verified email OTP users being trapped by stale identity metadata
+20260828045652_paid_market_storefront_visits.sql  adds paid Market hours, public scheduling metadata, and guarded visit requests; clean-room verified, pending production rollout

@@ -154,6 +154,18 @@ export default function MobileNav({ iosUrl }: { iosUrl: string }) {
             <button type="button" className="mn-close" aria-label="Close menu" onClick={() => setOpen(false)}>
               <span aria-hidden="true">✕</span>
             </button>
+            <a className="mn-item mn-ai" href="#gnome-ai">
+              <span className="mn-title">✦ Zordy</span>
+              <span className="mn-desc">Open the chat</span>
+            </a>
+            <Link className={`mn-item${isHere('/browse') ? ' is-here' : ''}`} href="/browse">
+              <span className="mn-title">Browse</span>
+              <span className="mn-desc">Fresh listings nearby</span>
+            </Link>
+            <Link className={`mn-item mn-map${isHere('/map') ? ' is-here' : ''}`} href="/map">
+              <span className="mn-title">Map</span>
+              <span className="mn-desc">See what is close</span>
+            </Link>
             <p className="mn-heading">Grow</p>
             {GROW.map((g) => (
               <Link key={g.href} className={`mn-item mn-sub${isHere(g.href) ? ' is-here' : ''}`} href={g.href}>
@@ -164,6 +176,9 @@ export default function MobileNav({ iosUrl }: { iosUrl: string }) {
 
             <Link className={`mn-item${isHere('/pricing') ? ' is-here' : ''}`} href="/pricing">
               Pricing
+            </Link>
+            <Link className={`mn-item${isHere('/referrals') ? ' is-here' : ''}`} href="/referrals">
+              Referrals &amp; rewards
             </Link>
             <Link className={`mn-item${isHere('/my') ? ' is-here' : ''}`} href="/my">
               My Market

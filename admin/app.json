@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Gnome Admin",
+    "name": "Zordy Ops",
     "slug": "gnome-admin",
     "version": "1.1.0",
     "orientation": "portrait",
@@ -9,7 +9,25 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.boonesystems.gnome.admin"
     },
-    "splash": { "backgroundColor": "#143023" },
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Zordy Ops uses selected screenshots to prepare private seller Market drafts.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ]
   }
 }

@@ -10,6 +10,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CreditCard } from 'lucide-react-native';
 import { Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
@@ -23,9 +24,8 @@ import ClaimsToReview from '@/components/mygnome/ClaimsToReview';
 import MyListingsView from '@/components/mygnome/MyListingsView';
 import MyPickups from '@/components/mygnome/MyPickups';
 import MessagesView from '@/components/mygnome/MessagesView';
-import ActivityFeed from '@/components/mygnome/ActivityFeed';
 
-type Tab = 'claims' | 'listings' | 'pickups' | 'messages' | 'activity';
+type Tab = 'claims' | 'listings' | 'pickups' | 'messages';
 
 export default function MyGnomeScreen() {
   const insets = useSafeAreaInsets();
@@ -65,7 +65,6 @@ export default function MyGnomeScreen() {
     { key: 'listings', label: 'Listings' },
     { key: 'pickups', label: 'Pickups' },
     { key: 'messages', label: 'Messages', badge: unreadCount },
-    { key: 'activity', label: 'Activity' },
   ];
 
   const onRefresh = () => {
@@ -79,48 +78,56 @@ export default function MyGnomeScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <Text style={styles.h1}>Market</Text>
-
-      <MyMarketCard uid={userId} />
-      <BuildMarketCard />
-      <ShareMarketCard uid={userId} />
-
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.segRow}
-        contentContainerStyle={styles.segRowContent}
-      >
-        {SEGMENTS.map((s) => {
-          const active = tab === s.key;
-          return (
-            <Pressable
-              key={s.key}
-              onPress={() => setTab(s.key)}
-              style={[styles.seg, active && styles.segActive]}
-            >
-              <Text style={[styles.segText, active && styles.segTextActive]}>{s.label}</Text>
-              {s.badge ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{s.badge}</Text>
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <ScrollView
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 104 }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.marketOrangeInteractive} />
         }
       >
-        {tab === 'claims' && <ClaimsToReview uid={userId} />}
-        {tab === 'listings' && <MyListingsView uid={userId} />}
-        {tab === 'pickups' && <MyPickups uid={userId} />}
-        {tab === 'messages' && <MessagesView uid={userId} chats={chats} reads={reads} />}
-        {tab === 'activity' && <ActivityFeed uid={userId} />}
+        <View style={styles.headerRow}>
+          <Text style={styles.h1}>Market</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="View and upgrade your plan"
+            onPress={() => router.push('/upgrade')}
+            style={styles.planButton}
+          >
+            <CreditCard size={17} color={Colors.primaryDark} />
+            <Text style={styles.planButtonText}>Plans</Text>
+          </Pressable>
+        </View>
+        <MyMarketCard uid={userId} />
+        <BuildMarketCard />
+        <ShareMarketCard uid={userId} />
+
+        <View style={styles.segShell}>
+          {SEGMENTS.map((s) => {
+            const active = tab === s.key;
+            return (
+              <Pressable
+                key={s.key}
+                onPress={() => setTab(s.key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                style={[styles.seg, active && styles.segActive]}
+              >
+                <Text style={[styles.segText, active && styles.segTextActive]}>{s.label}</Text>
+                {s.badge ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{s.badge}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.sectionBody}>
+          {tab === 'claims' && <ClaimsToReview uid={userId} />}
+          {tab === 'listings' && <MyListingsView uid={userId} />}
+          {tab === 'pickups' && <MyPickups uid={userId} />}
+          {tab === 'messages' && <MessagesView uid={userId} chats={chats} reads={reads} />}
+        </View>
       </ScrollView>
     </View>
   );
@@ -129,19 +136,37 @@ export default function MyGnomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   gate: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center' },
-  h1: { fontSize: 28, fontFamily: fonts.displayBlack, color: Colors.text, paddingHorizontal: 16, paddingTop: 6 },
-  segRow: { marginTop: 10, flexGrow: 0 },
-  segRowContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
-  seg: {
+  headerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 6,
+  },
+  h1: { fontSize: 28, fontFamily: fonts.displayBlack, color: Colors.text },
+  planButton: {
+    minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 13, borderRadius: 8, borderWidth: 1,
+    borderColor: Colors.primary + '55', backgroundColor: Colors.primary + '0D',
+  },
+  planButtonText: { fontSize: 13, fontFamily: fonts.bold, color: Colors.primaryDark },
+  body: { paddingTop: 0 },
+  segShell: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 4,
+    borderRadius: 12,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  seg: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 4,
+    borderRadius: 8,
   },
   // Market is orange. White on this cut measures 5.18:1.
   segActive: { backgroundColor: Colors.marketOrangeInteractive, borderColor: Colors.marketOrangeInteractive },
@@ -159,5 +184,5 @@ const styles = StyleSheet.create({
   // Harvest Yellow NEVER takes a white label — that pairing is 1.63:1 and the
   // count was invisible. Charcoal on #FFC107 measures 9.76:1.
   badgeText: { color: Colors.text, fontSize: 11, fontFamily: fonts.bold },
-  body: { padding: 16, paddingBottom: 40 },
+  sectionBody: { padding: 16, paddingTop: 14 },
 });

@@ -204,16 +204,22 @@ export default function EditProfileScreen() {
           placeholder="Last" autoCapitalize="words" />
         <Field label="Email for notifications" value={contactEmail} onChangeText={setContactEmail}
           placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
-        <Field label="Mobile (optional)" value={phone} onChangeText={setPhone}
+        <Field label="Mobile" value={phone} onChangeText={setPhone}
           placeholder="For pickup and delivery coordination" keyboardType="phone-pad" />
         <Text style={styles.hint}>
           Neighbours only ever see {name || 'your first name and last initial'}. Your full last
-          name, email, and phone stay private — neighbours reach you through Gnome messaging.
+          name, email, and phone stay private. A verified mobile number is required for posting,
+          requests, messages, and Market setup.
         </Text>
         <Button
           label={savingDetails ? 'Saving…' : 'Save details'}
           onPress={saveDetails}
           disabled={savingDetails}
+        />
+        <Button
+          label="One quick account update"
+          variant="secondary"
+          onPress={() => router.push('/account-ready' as never)}
         />
 
         <Pressable

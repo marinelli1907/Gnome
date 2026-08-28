@@ -320,6 +320,11 @@ export default function PickupSettingsScreen() {
           Set the weekly windows when buyers can come by. Slots are generated from these hours
           automatically.
         </Text>
+        <Text style={styles.planNote}>
+          {market.data?.plan === 'free'
+            ? 'Pickup ordering uses these hours. Pro and Farm also show them on your public Market and let neighbors request a visit.'
+            : 'These hours appear on your public Market in the app and website, where neighbors can request a visit.'}
+        </Text>
 
         {/* Weekly hours */}
         <Text style={styles.sectionTitle}>Weekly pickup hours</Text>
@@ -553,6 +558,10 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   intro: { fontSize: 13.5, fontFamily: fonts.regular, color: Colors.textSecondary, lineHeight: 19, marginBottom: 14 },
+  planNote: {
+    fontSize: 13, fontFamily: fonts.semibold, color: Colors.marketOrangeInteractive,
+    lineHeight: 18, marginTop: -6, marginBottom: 14,
+  },
   sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: Colors.text, marginBottom: 6 },
   dayCard: {
     backgroundColor: Colors.surface,

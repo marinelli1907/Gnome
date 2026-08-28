@@ -183,6 +183,8 @@ export interface Listing {
   /** Pointer into marketplace_taxonomy_nodes (nullable for legacy rows). */
   taxonomy_node_id?: string | null;
   quantity: string | null;
+  /** Seller-entered date the item was picked/harvested, YYYY-MM-DD. */
+  harvest_date?: string | null;
   photos: string[];
   /** Wanted: acceptable variants the poster will accept. Plot: grower-supported crops. null = none. */
   request_options?: RequestOption[] | null;
@@ -202,6 +204,8 @@ export interface Listing {
   is_bundle?: boolean | null; // 0121: a Gift Basket composed of other listings
   created_at: string;
   expires_at: string;
+  /** Owner soft-delete marker. Public active rows always expose null. */
+  archived_at?: string | null;
   // Joined / derived (not columns):
   owner?: PublicProfile | null;
   market?: { name: string } | null;
@@ -230,6 +234,9 @@ export interface Claim {
   is_custom_option?: boolean | null;
   agreed_price_cents?: number | null;
   quantity_requested?: number | null;
+  payment_method?: 'cash' | 'venmo' | 'cashapp' | 'paypal' | 'zelle' | 'other' | null;
+  pickup_start?: string | null;
+  pickup_end?: string | null;
   payment_status?: string;
   fulfillment_method?: string; // future (V2 delivery): pickup | delivery | meetup
   assigned_fulfiller_id?: string | null; // future (V2 delivery), dormant in V1

@@ -26,18 +26,18 @@ import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useBundleComponents, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { safeErrorText } from '@/lib/screening';
 import { purchaseOverage } from '@/lib/billing';
 import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
+import { pickedDateLabel } from '@/lib/harvestDate';
 import { breadcrumb, useTaxonomy } from '@/lib/taxonomy';
-import { alertUnderReview, isUnderReview, UNDER_REVIEW_LABEL } from '@/lib/screening';
+import { alertUnderReview, isUnderReview, safeErrorText, UNDER_REVIEW_LABEL } from '@/lib/screening';
 import { listingShareUrl } from '@/lib/links';
 
 const { width } = Dimensions.get('window');
 
 export default function ListingDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, preview } = useLocalSearchParams<{ id: string; preview?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userId } = useAuth();
@@ -64,14 +64,20 @@ export default function ListingDetailScreen() {
   const bundle = useBundleComponents(listing?.id, !!listing?.is_bundle);
 
   useEffect(() => {
-    if (listing) {
+    if (listing && userId === listing.owner_id && preview !== '1') {
+      router.replace(`/listing-performance/${listing.id}` as never);
+    }
+  }, [listing, preview, router, userId]);
+
+  useEffect(() => {
+    if (listing && userId && userId !== listing.owner_id) {
       void logEvent('listing_viewed', {
-        userId: userId ?? null,
+        userId,
         listingId: listing.id,
-        metadata: { listing_type: listing.listing_type },
+        metadata: { source: 'detail' },
       });
     }
-  }, [listing?.id, userId]);
+  }, [listing, userId]);
 
   if (isLoading) {
     return (
@@ -89,6 +95,16 @@ export default function ListingDetailScreen() {
     return (
       <View style={[styles.screen, styles.center]}>
         <EmptyState emoji="🥕" title="Listing not found" subtitle="It may have expired or been removed." />
+      </View>
+    );
+  }
+  if (userId === listing.owner_id && preview !== '1') {
+    return (
+      <View style={styles.screen}>
+        <View style={{ padding: 20, gap: 12 }}>
+          <Skeleton style={{ width: '70%', height: 26, borderRadius: 6 }} />
+          <Skeleton style={{ width: '100%', height: 120, borderRadius: 8 }} />
+        </View>
       </View>
     );
   }
@@ -232,6 +248,7 @@ export default function ListingDetailScreen() {
   };
 
   const photos = listing.photos ?? [];
+  const pickedLabel = pickedDateLabel(listing.harvest_date);
 
   return (
     <View style={styles.screen}>
@@ -313,6 +330,12 @@ export default function ListingDetailScreen() {
               <Clock size={14} color={Colors.textSecondary} />
               <Text style={styles.metaText}>Expires {new Date(listing.expires_at).toLocaleDateString()}</Text>
             </View>
+            {pickedLabel ? (
+              <View style={styles.meta}>
+                <Text style={styles.metaIcon}>🧺</Text>
+                <Text style={styles.metaText}>{pickedLabel}</Text>
+              </View>
+            ) : null}
           </View>
 
           {listing.description ? <Text style={styles.description}>{listing.description}</Text> : null}
@@ -451,6 +474,7 @@ const styles = StyleSheet.create({
   verifiedText: { fontSize: 12.5, fontFamily: fonts.bold, color: Colors.primaryDark },
   metaRow: { flexDirection: 'row', gap: 18, marginTop: 14 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaIcon: { fontSize: 13, fontFamily: fonts.regular },
   metaText: { fontSize: 13, color: Colors.textSecondary, fontFamily: fonts.regular },
   previewNote: {
     backgroundColor: Colors.goldLight,

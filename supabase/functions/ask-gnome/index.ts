@@ -1,4 +1,4 @@
-// Gnome — the site-wide gnome assistant ("Ask Gnome").
+// Zordy — the site-wide garden and Market assistant.
 //
 // One assistant, two jobs: gardening/product help AND site support, routed by
 // the model from a single system prompt. Page-aware (the client sends the
@@ -23,29 +23,53 @@ import {
 } from './providers.ts';
 import { handleMarketAction } from './market_actions.ts';
 
-function userIdFrom(req: Request): string | null {
-  try {
-    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.sub === 'string' && payload.sub.length > 10 ? payload.sub : null;
-  } catch {
-    return null;
-  }
+async function verifiedUserIdFrom(req: Request): Promise<string | null> {
+  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  if (!token) return null;
+  const authClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } },
+  );
+  const { data, error } = await authClient.auth.getUser(token);
+  if (error || !data.user?.id) return null;
+  return data.user.id;
 }
 
-async function underDailyCap(userId: string, freeCap: number, paidCap: number): Promise<boolean> {
+async function underDailyCap(userId: string): Promise<boolean> {
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
-  const { data: market } = await admin
-    .from('markets').select('plan').eq('owner_id', userId).limit(1).maybeSingle();
-  const paid = !!market?.plan && market.plan !== 'free';
-  const { data, error } = await admin.rpc('ai_usage_increment', {
-    p_user: userId, p_feature: 'assistant', p_cap: paid ? paidCap : freeCap,
+  const { data, error } = await admin.rpc('zordy_reserve_request', { p_user: userId });
+  if (error) {
+    const text = JSON.stringify(error);
+    if (/PGRST202|Could not find|does not exist|schema cache/i.test(text)) {
+      const { data: market } = await admin
+        .from('markets').select('plan').eq('owner_id', userId).limit(1).maybeSingle();
+      const paid = !!market?.plan && market.plan !== 'free';
+      const { data: legacy, error: legacyErr } = await admin.rpc('ai_usage_increment', {
+        p_user: userId, p_feature: 'assistant', p_cap: paid ? 50 : 20,
+      });
+      if (legacyErr) { console.error('ai_usage_increment error:', legacyErr); return false; }
+      return legacy !== false;
+    }
+    console.error('zordy_reserve_request error:', error);
+    return false;
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return row?.allowed !== false;
+}
+
+async function releaseDailyCap(userId: string): Promise<void> {
+  const admin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+  await admin.rpc('zordy_release_request', { p_user: userId }).then(() => {}, (error: unknown) => {
+    const text = JSON.stringify(error);
+    if (/PGRST202|Could not find|does not exist|schema cache/i.test(text)) return;
   });
-  if (error) { console.error('ai_usage_increment error:', error); return true; }
-  return data !== false;
 }
 
 // Enum → customer-facing plan name. plan_limits.display_name on the server is
@@ -129,7 +153,7 @@ const CORS = {
 const MAX_TURNS = 10;
 const MAX_TURN_CHARS = 1500;
 
-const SYSTEM = `You are Gnome — the friendly garden-gnome assistant living on gnomefarmersmarket.com, a neighborhood marketplace where people grow, find, share, and sell local food. Warm, practical, concise (2–6 short sentences or a tight list; this is a small chat panel). Plain text only — no markdown, no asterisks, no headers. Sparing, gentle humor; never childish.
+const SYSTEM = `You are Zordy — the friendly garden and Market assistant living on gnomefarmersmarket.com, a neighborhood marketplace where people grow, find, share, and sell local food. Gnome is the marketplace/platform, not your name. Never introduce yourself as Gnome, "the gnome", or Gnome's garden guide. If the user asks who you are, say you are Zordy. Warm, practical, concise (2–6 short sentences or a tight list; this is a small chat panel). Plain text only — no markdown, no asterisks, no headers. Sparing, gentle humor; never childish.
 
 WHAT GNOME IS (answer product questions from this, don't invent):
 - Browse: find nearby listings — Free / Trade / For Sale / Wanted — with approximate locations and distance. Exact pickup spots are shared only after a seller approves a request. Current listings are labeled "Preview" demos until real neighbors post.
@@ -153,28 +177,22 @@ Deno.serve(async (req: Request) => {
       status, headers: { ...CORS, 'Content-Type': 'application/json' },
     });
 
-  const userId = userIdFrom(req);
-  if (!userId) return json(401, { error: 'Sign in to chat with Gnome.' });
+  const userId = await verifiedUserIdFrom(req);
+  if (!userId) return json(401, { error: 'Sign in to chat with Zordy.' });
 
   // Kill switch + paid-fallback gate (server-side config, never client input).
   const cfgClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const { data: settings } = await cfgClient.from('ai_settings')
     .select('reads_enabled, allow_paid_fallback').limit(1).maybeSingle();
   if (settings?.reads_enabled === false) {
-    return json(503, { error: 'The gnome is on a short break — AI is paused right now.' });
+    return json(503, { error: 'Zordy is on a short break — AI is paused right now.' });
   }
   const keys = providerKeys();
   const chain: ModelRef[] = [];
   if (keys.gemini) chain.push({ provider: 'gemini', model: MODELS.lite });
   if (settings?.allow_paid_fallback === true && keys.openai) chain.push({ provider: 'openai', model: 'gpt-4o-mini' });
   if (settings?.allow_paid_fallback === true && keys.anthropic) chain.push({ provider: 'anthropic', model: 'claude-haiku-4-5' });
-  if (!chain.length) return json(503, { error: 'The gnome is napping — AI isn’t configured yet.' });
-
-  if (!(await underDailyCap(userId, 20, 50))) {
-    return json(429, {
-      error: 'You’ve used today’s chat allowance — it resets tomorrow. (Paid plans get more.)',
-    });
-  }
+  if (!chain.length) return json(503, { error: 'Zordy is napping — AI isn’t configured yet.' });
 
   let body: { messages?: { role: string; content: string }[]; page?: string };
   try {
@@ -195,6 +213,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const page = typeof body.page === 'string' ? body.page.slice(0, 80) : '/';
+  if (!(await underDailyCap(userId))) {
+    return json(429, {
+      error: 'You’ve used today’s Zordy requests — they reset tomorrow.',
+    });
+  }
+  let reserved = true;
 
   const t0 = Date.now();
 
@@ -264,23 +288,25 @@ Deno.serve(async (req: Request) => {
     return json(200, { reply });
   } catch (e) {
     if (e instanceof RateLimitedError) {
+      if (reserved) { await releaseDailyCap(userId); reserved = false; }
       try {
         await cfgClient.from('ai_usage_log').insert({
           feature: 'assistant', user_id: userId, success: false,
           failure_family: 'rate_limited', duration_ms: Date.now() - t0,
         });
       } catch { /* best-effort */ }
-      return json(503, { error: 'Gnome AI is temporarily busy. Try again shortly.' });
+      return json(503, { error: 'Zordy is temporarily busy. Try again shortly.' });
     }
     console.error('ask-gnome error:', e);
     try {
+      if (reserved) { await releaseDailyCap(userId); reserved = false; }
       await cfgClient.from('ai_usage_log').insert({
         feature: 'assistant', user_id: userId, success: false,
         failure_family: 'provider_error', duration_ms: Date.now() - t0,
       });
     } catch { /* best-effort */ }
     return json(502, {
-      error: 'The gnome tripped over a root — try that again in a moment.',
+      error: 'Zordy hit a snag — try that again in a moment.',
     });
   }
 });

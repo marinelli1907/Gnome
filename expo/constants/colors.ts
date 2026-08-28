@@ -19,27 +19,27 @@
 //   Sell  red   -> green   (selling is growing; green is the product's heart)
 //   Free  green -> blue    (Free is a community act)
 //   Trade blue  -> red     (trade is the high-energy exchange)
-// Red is deliberately no longer the global brand colour. `primary` is now the
-// green interactive cut, so the everyday chrome reads agricultural rather than
-// urgent, and purple stays reserved so Gnome AI genuinely owns it.
+// Red and green are deliberately no longer the global brand colours. `primary`
+// is the purple brand cut, so the everyday chrome reads as Gnome while green,
+// blue, orange, red and yellow keep their own jobs.
 //
 // TWO TOKENS PER HUE, on purpose. The *brand* value is for fills, illustration
 // and map pins — anything that is not text. The *interactive* value is a deeper
 // cut of the same hue that carries a WHITE label at WCAG AA (measured, not
-// assumed: green 4.51:1, blue 4.56:1, red 4.51:1, purple 5.87:1). White on the
+// assumed: green 4.51:1, blue 4.56:1, red 4.51:1, purple 7.69:1). White on the
 // brand yellow measures 1.63:1 — effectively invisible — so yellow NEVER takes
 // a white label; pair it with `text` (charcoal, 9.76:1 on this yellow).
 //
 // Key names are unchanged so all ~70 importers re-skin without an edit.
 const Colors = {
   // v6: PURPLE is the Gnome brand colour. It carries brand moments, Gnome AI
-  // and brand-level actions — 5.87:1 with white, so it needs no deeper cut.
+  // and brand-level actions — 7.69:1 with white, so it needs no deeper cut.
   // Green did NOT disappear; it moved to where it means something (Sell, grow,
   // success). Deliberately not every button: Post and Market are orange, the
   // listing types keep their own hues.
-  primary: '#8E44AD',
-  primaryLight: '#A569BD',
-  primaryDark: '#6C3382',
+  primary: '#6B2FB9',
+  primaryLight: '#8E5AD2',
+  primaryDark: '#542394',
 
   secondary: '#43B649', // Garden Green brand — grow/sell fills and art
   secondaryLight: '#77C97B',
@@ -55,7 +55,7 @@ const Colors = {
   textSecondary: '#6B7280', // Slate — 4.83:1 on white
   textTertiary: '#9CA3AF',
   textInverse: '#FFFFFF',
-  textOnPrimary: '#FFFFFF', // on `primary` (#8E44AD): 5.87:1 ✓
+  textOnPrimary: '#FFFFFF', // on `primary` (#6B2FB9): 7.69:1 ✓
 
   border: '#E5E7EB',
   borderLight: '#F1F5F9',
@@ -70,11 +70,11 @@ const Colors = {
   success: '#328736',
   warning: '#B45309',
   error: '#C62828',
-  info: '#1878CD',
+  info: '#075A9A',
 
   // Listing-type identity. These double as text labels and badge tints, so
   // they are the interactive cuts. Sell = green, Free = blue, Trade = red.
-  free: '#1878CD',  // blue — community/give
+  free: '#075A9A',  // blue — community/give
   sell: '#328736',  // green — grow/sell
   trade: '#E32C27', // red — exchange
 
@@ -87,15 +87,15 @@ const Colors = {
   // semantic colour in app/(tabs)/_layout.tsx: Browse green, Map blue, Post
   // orange, Ask AI purple, Market orange, Profile purple. Inactive stays
   // neutral slate so the bar reads as one product, not six.
-  tabBarActive: '#8E44AD',
+  tabBarActive: '#6B2FB9',
   tabBarInactive: '#6B7280', // neutral slate; inactive is never semantic
 
   cardShadow: 'rgba(17, 24, 39, 0.07)',
 
   // Gnome AI's room. Purple appears here and in the AI tab, nowhere else.
-  chatBubbleUser: '#8E44AD',
+  chatBubbleUser: '#6B2FB9',
   chatBubbleAI: '#F1F5F9',
-  chatBubbleUserText: '#FFFFFF', // 5.87:1 on AI Purple ✓
+  chatBubbleUserText: '#FFFFFF', // 7.69:1 on AI Purple ✓
   chatBubbleAIText: '#222222',
 
   gold: '#FFC107', // Harvest Yellow
@@ -115,10 +115,10 @@ const Colors = {
   gnomeRedInteractive: '#E32C27',
   gardenGreen: '#43B649',
   gardenGreenInteractive: '#328736',
-  tradeBlue: '#1E88E5',
-  tradeBlueInteractive: '#1878CD',
-  aiPurple: '#8E44AD',
-  aiPurpleInteractive: '#8E44AD', // already 5.87:1 with white
+  tradeBlue: '#075A9A',
+  tradeBlueInteractive: '#075A9A',
+  aiPurple: '#6B2FB9',
+  aiPurpleInteractive: '#6B2FB9', // already 7.69:1 with white
   harvestYellow: '#FFC107',
 
   // Legacy Rork names, re-pointed to their nearest new-identity hue so old
@@ -126,8 +126,8 @@ const Colors = {
   terracotta: '#E53935',
   marigold: '#FFC107',
   moss: '#43B649',
-  sky: '#1E88E5',
-  plum: '#8E44AD',
+  sky: '#075A9A',
+  plum: '#6B2FB9',
 };
 
 export default Colors;

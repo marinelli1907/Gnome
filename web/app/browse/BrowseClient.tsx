@@ -23,7 +23,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 const COLS =
-  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,approx_lat,approx_lng,taxonomy_node_id';
+  'id,slug,title,description,category,listing_type,status,price_cents,currency,trade_for,quantity,unit,photos,city,county,state,fulfillment_type,market_id,market_name,market_slug,market_avatar_url,market_type,market_verified,created_at,expires_at,is_featured,featured_until,has_active_promotion,is_demo,approx_lat,approx_lng,taxonomy_node_id,harvest_date';
 
 type GeoListing = WebListing & {
   approx_lat: number | null;
@@ -248,6 +248,7 @@ export default function BrowseClient() {
           ? miles(coords.lat, coords.lng, l.approx_lat, l.approx_lng)
           : null,
     }));
+    rows = rows.filter((l) => (TYPES as readonly string[]).includes(l.listing_type));
     if (type) rows = rows.filter((l) => l.listing_type === type);
     if (taxNode && taxIndex) {
       // Subtree filter, same as the app: "Vegetables" matches a listing filed

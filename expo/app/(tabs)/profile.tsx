@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, Package, HandHeart, LogOut, ChevronRight } from 'lucide-react-native';
+import { CalendarDays, Package, HandHeart, LogOut, ChevronRight, Gift } from 'lucide-react-native';
 import { Avatar, Button, EmptyState } from '@/components/ui';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
@@ -103,6 +103,16 @@ export default function ProfileScreen() {
         <ChevronRight size={18} color={Colors.textSecondary} />
       </Pressable>
 
+      <Pressable
+        style={[styles.link, { marginTop: 10 }]}
+        onPress={() => router.push('/referrals' as never)}
+        accessibilityRole="button"
+        accessibilityLabel="Referrals and rewards"
+      >
+        <View style={styles.linkLabel}><Gift size={18} color={Colors.primary} /><Text style={styles.linkText}>Referrals & rewards</Text></View>
+        <ChevronRight size={18} color={Colors.textSecondary} />
+      </Pressable>
+
       {isSeller ? (
         <>
           <Pressable
@@ -180,6 +190,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.borderLight,
   },
   linkText: { fontSize: 15, color: Colors.text, fontFamily: fonts.semibold },
+  linkLabel: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   signOut: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -21,10 +21,27 @@ node_modules/
 
 admin/
 web/
+supabase/
+artifacts/
+tmp/
 
 expo/ios/
 expo/android/
 expo/dist/
+expo/.expo/
+
+# Build-time values come from the EAS environment. Never upload local env or
+# signing material, even when a local file currently contains public-only keys.
+.env
+.env.*
+**/.env
+**/.env.*
+*.p8
+*.p12
+*.pem
+*.key
+credentials.json
+**/credentials/
 
 .git/
 docs/
@@ -35,3 +52,5 @@ supabase/tests/
 *.aab
 *.apk
 *.apks
+*.ipa
+*.xcarchive/

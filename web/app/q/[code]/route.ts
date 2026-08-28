@@ -24,9 +24,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
     { auth: { persistSession: false } },
   );
-  const { data } = await anon.rpc('resolve_market_qr', { p_code: code });
+  const [{ data }, referral] = await Promise.all([
+    anon.rpc('resolve_market_qr', { p_code: code }),
+    anon.rpc('resolve_market_qr_referral', { p_code: code }),
+  ]);
   const row = Array.isArray(data) ? data[0] : data;
+  const referralRow = Array.isArray(referral.data) ? referral.data[0] : referral.data;
 
   if (!row?.slug) notFound();
-  redirect(`/market/${row.slug}`);
+  const query = referralRow?.referral_code
+    ? `?ref=${encodeURIComponent(referralRow.referral_code)}&source=market_qr&source_market=${encodeURIComponent(referralRow.market_id)}` : '';
+  redirect(`/market/${row.slug}${query}`);
 }

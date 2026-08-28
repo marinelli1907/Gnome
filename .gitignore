@@ -10,3 +10,14 @@ supabase/tests/.build/
 .env.stripe.local
 .env.*.local
 supabase/baseline/*.bak
+
+# Local release products and generated QA work. Keep the small, reviewed store
+# presentation assets, but never commit signed binaries, archives, or captures.
+artifacts/*
+!artifacts/store/
+!artifacts/store/**
+tmp/
+
+# Supabase CLI state and accidental nested local-stack output.
+supabase/.temp/
+supabase/supabase/

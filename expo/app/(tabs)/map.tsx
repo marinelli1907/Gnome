@@ -12,7 +12,18 @@ import { TYPE_BADGE_BG, TYPE_BADGE_FG } from '@/components/listingSemantics';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useListings } from '@/lib/db';
-import { getCurrentCoords, RADIUS_OPTIONS, radiusToMiles, type Coords, type RadiusOption } from '@/lib/location';
+import {
+  currentBrowseLocationAnchor,
+  loadBrowseLocationAnchor,
+  loadBrowseRadius,
+  radiusLabel,
+  saveBrowseLocationAnchor,
+  saveBrowseRadius,
+  RADIUS_SHORTCUTS,
+  type BrowseLocationAnchor,
+  type BrowseRadius,
+  type Coords,
+} from '@/lib/location';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import type { Listing, ListingType } from '@/types';
 
@@ -21,32 +32,40 @@ const DEFAULT_CENTER: Coords = { lat: 41.5573, lng: -81.5101 }; // Richmond Heig
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [coords, setCoords] = useState<Coords | null>(null);
+  const [anchor, setAnchor] = useState<BrowseLocationAnchor | null>(null);
   const [locState, setLocState] = useState<'pending' | 'ok' | 'denied'>('pending');
-  const [radius, setRadius] = useState<RadiusOption>(10);
+  const [radius, setRadiusState] = useState<BrowseRadius>(10);
   const [typeFilter, setTypeFilter] = useState<'all' | ListingType>('all');
   const [selected, setSelected] = useState<Listing | null>(null);
 
   const requestLocation = async () => {
     setLocState('pending');
-    const c = await getCurrentCoords();
-    if (c) {
-      setCoords(c);
+    const next = await currentBrowseLocationAnchor();
+    if (next) {
+      setAnchor(next);
+      void saveBrowseLocationAnchor(next);
       setLocState('ok');
     } else {
       setLocState('denied');
     }
   };
   useEffect(() => {
-    void requestLocation();
+    void Promise.all([loadBrowseLocationAnchor(), loadBrowseRadius()]).then(([savedAnchor, savedRadius]) => {
+      setAnchor(savedAnchor);
+      setRadiusState(savedRadius);
+      setLocState(savedAnchor ? 'ok' : 'denied');
+    });
   }, []);
 
-  const center = coords ?? DEFAULT_CENTER;
+  const setRadius = (r: BrowseRadius) => {
+    setRadiusState(r);
+    void saveBrowseRadius(r);
+  };
+
+  const center = anchor?.coords ?? DEFAULT_CENTER;
   const filters = useMemo(
-    // The map keeps its fixed chips; convert to plain miles for the shared
-    // BrowseRadius filter type ('near' → 2-mile bubble).
-    () => ({ coords: center, radius: radiusToMiles(radius), category: null, listingType: typeFilter }),
-    [center, radius, typeFilter],
+    () => ({ coords: anchor?.coords ?? null, radius, category: null, listingType: typeFilter }),
+    [anchor?.coords, radius, typeFilter],
   );
   const { data, isLoading, error, refetch } = useListings(filters);
   const listings = data ?? [];
@@ -54,6 +73,11 @@ export default function MapScreen() {
   const Header = (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <Text style={styles.title}>Markets Near You</Text>
+      <Text style={styles.context}>
+        {anchor
+          ? `${anchor.label} · ${radius === 'anywhere' ? 'No distance limit' : radiusLabel(radius)}`
+          : 'Set your location in Browse to map local discovery.'}
+      </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         {TYPE_FILTERS.map((o) => {
           const active = typeFilter === o.value;
@@ -84,20 +108,22 @@ export default function MapScreen() {
         })}
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        {RADIUS_OPTIONS.map((o) => {
-          const active = radius === o.value;
+        {RADIUS_SHORTCUTS.map((value) => {
+          const active = radius === value;
           return (
-            <Pressable key={String(o.value)} onPress={() => setRadius(o.value)} style={[styles.chip, active && styles.chipActive, active && styles.chipRadius]}>
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
+            <Pressable key={String(value)} onPress={() => setRadius(value)} style={[styles.chip, active && styles.chipActive, active && styles.chipRadius]}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {value === 'anywhere' ? 'Anywhere' : `${value} mi`}
+              </Text>
             </Pressable>
           );
         })}
       </ScrollView>
-      {locState === 'denied' && (
+      {!anchor && locState === 'denied' && (
         <View style={styles.locBanner}>
-          <Text style={styles.locText}>Showing the Richmond Heights area — turn on location for Markets near you.</Text>
+          <Text style={styles.locText}>Showing the map around Richmond Heights as a starting point. Set a location for local results.</Text>
           <Pressable onPress={requestLocation} style={styles.locBtn}>
-            <Navigation size={14} color={Colors.primary} />
+              <Navigation size={14} color={Colors.tradeBlueInteractive} />
             <Text style={styles.locBtnText}>Enable</Text>
           </Pressable>
         </View>
@@ -126,7 +152,7 @@ export default function MapScreen() {
         </EmptyState>
       );
     }
-    return <MapListings listings={listings} center={coords} onSelect={setSelected} />;
+    return <MapListings listings={listings} center={center} onSelect={setSelected} />;
   };
 
   return (
@@ -149,7 +175,8 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   header: { paddingHorizontal: 16, paddingBottom: 4 },
-  title: { fontSize: 26, fontFamily: fonts.displayBlack, color: Colors.primaryDark, marginBottom: 10 },
+  title: { fontSize: 26, fontFamily: fonts.displayBlack, color: Colors.text, marginBottom: 10 },
+  context: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.tradeBlueInteractive, marginBottom: 10 },
   chips: { gap: 8, paddingBottom: 10 },
   chip: {
     paddingHorizontal: 14,
@@ -161,7 +188,6 @@ const styles = StyleSheet.create({
   },
   // "All" selects no type, so it stays charcoal rather than spending a hue.
   chipActive: { backgroundColor: Colors.text, borderColor: Colors.text },
-  // Radius is a location control — Map blue, white label at 4.56:1.
   chipRadius: { backgroundColor: Colors.tradeBlueInteractive, borderColor: Colors.tradeBlueInteractive },
   chipText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
   chipTextActive: { color: Colors.textInverse },
@@ -169,14 +195,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.gold + '22',
+    backgroundColor: Colors.tradeBlueInteractive + '10',
     borderRadius: 12,
     padding: 10,
     marginBottom: 8,
   },
   locText: { flex: 1, fontSize: 12, fontFamily: fonts.medium, color: Colors.text, lineHeight: 17 },
   locBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  locBtnText: { color: Colors.primary, fontFamily: fonts.bold, fontSize: 13 },
+  locBtnText: { color: Colors.tradeBlueInteractive, fontFamily: fonts.bold, fontSize: 13 },
   mapArea: { flex: 1 },
   mapSkeleton: { flex: 1, margin: 16, borderRadius: 16 },
   preview: {

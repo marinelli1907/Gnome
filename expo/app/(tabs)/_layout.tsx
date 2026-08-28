@@ -60,7 +60,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="map"
         options={{
-          tabBarActiveTintColor: Colors.tradeBlueInteractive, // Map — navigation/discovery
+          tabBarActiveTintColor: Colors.harvestYellow, // Map — discovery/location
           title: 'Map',
           tabBarIcon: ({ color, size }) => <MapIcon color={color} size={size} />,
         }}
@@ -76,9 +76,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="ai"
         options={{
-          // D3: 'Gnome AI' was the second-widest label and truncated at
-          // Android's Large font setting. 'Ask AI' keeps the meaning.
-          title: 'Ask AI',
+          // D3: longer AI labels truncated at Android's Large font setting.
+          // The screen header and avatar carry "Ask Zordy"; the tab stays short.
+          title: 'Zordy',
           tabBarActiveTintColor: Colors.aiPurple,
           tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
         }}

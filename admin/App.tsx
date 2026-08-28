@@ -3,13 +3,19 @@
 // admin_me() gate and sees "You don't have access" — no privileged data ever
 // loads client-side because every read/mutation below is RLS/permission-
 // checked server-side (admin_has_perm / audited RPCs). No service keys here.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
-  RefreshControl, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, View,
+  RefreshControl, SafeAreaView, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type Session } from '@supabase/supabase-js';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  Activity, ArrowLeft, Bot, CalendarDays, Check, ChevronRight, ClipboardCheck,
+  Gift, Home as HomeIcon, ImagePlus, LockKeyhole, Mail, Menu, MessageCircle, PackageCheck, Play,
+  RotateCcw, Send, Share2, ShieldCheck, Sparkles, Sprout, Store, UsersRound, X, type LucideIcon,
+} from 'lucide-react-native';
 
 const supabase = createClient(
   process.env.EXPO_PUBLIC_SUPABASE_URL!,
@@ -17,14 +23,30 @@ const supabase = createClient(
   { auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true } },
 );
 
+const ZORDY = require('./assets/zordy-avatar.png');
+
+// Mirrors expo/constants/colors.ts. Admin stays dense and work-focused while
+// sharing the same white canvas, charcoal type, and semantic Gnome colors.
 const C = {
-  bg: '#F7F5EE', surface: '#FFFFFF', green: '#143023', mid: '#4E6E5D',
-  muted: '#6C7A72', border: '#E2DFD3', red: '#A33A2E', gold: '#B98A2F',
+  bg: '#FFFFFF', surface: '#FFFFFF', surfaceMuted: '#F1F5F9',
+  primary: '#6B2FB9', primaryDark: '#542394', primarySoft: '#F4EDFB',
+  green: '#328736', greenBrand: '#43B649', blue: '#075A9A',
+  orange: '#C2410C', orangeBrand: '#F4700A', red: '#C62828', yellow: '#FFC107',
+  text: '#222222', mid: '#374151', muted: '#6B7280', border: '#E5E7EB',
+  gold: '#B45309',
 };
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 type Me = { user_id: string; role: string; permissions: string[]; is_owner: boolean };
-type Tab = 'home' | 'fulfill' | 'ai' | 'more';
+type Tab = 'home' | 'concierge' | 'fulfill' | 'ai' | 'more';
+
+const TABS: { id: Tab; label: string; icon: LucideIcon; color: string }[] = [
+  { id: 'home', label: 'Brief', icon: HomeIcon, color: C.primary },
+  { id: 'concierge', label: 'Sellers', icon: Store, color: C.orange },
+  { id: 'fulfill', label: 'Fulfill', icon: PackageCheck, color: C.orange },
+  { id: 'ai', label: 'Zordy', icon: Sparkles, color: C.primary },
+  { id: 'more', label: 'More', icon: Menu, color: C.blue },
+];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -47,12 +69,12 @@ export default function App() {
 
   if (!session) return <SignIn />;
   if (me === 'loading') {
-    return <Centered><ActivityIndicator color={C.green} size="large" /></Centered>;
+    return <Centered><ActivityIndicator color={C.primary} size="large" /></Centered>;
   }
   if (me === 'denied') {
     return (
       <Centered>
-        <Text style={s.deniedEmoji}>🔒</Text>
+        <View style={s.deniedIcon}><LockKeyhole size={26} color={C.red} /></View>
         <Text style={s.deniedTitle}>You don’t have access to Gnome Admin.</Text>
         <Text style={s.deniedSub}>This app is for the Gnome team. Your regular Gnome account still works in the Gnome app.</Text>
         <Pressable style={s.btn} onPress={() => supabase.auth.signOut()}>
@@ -67,19 +89,28 @@ export default function App() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={s.header}>
-        <Text style={s.brand}>🧑‍🌾 Gnome Admin</Text>
-        <Text style={s.role}>{admin.role}</Text>
+        <View style={s.headerBrand}>
+          <Image source={ZORDY} style={s.headerAvatar} accessibilityLabel="Zordy" />
+          <View>
+            <Text style={s.brand}>Zordy Ops</Text>
+            <Text style={s.brandSub}>GNOME ADMIN</Text>
+          </View>
+        </View>
+        <View style={s.roleBadge}><Text style={s.role}>{admin.role}</Text></View>
       </View>
       <View style={{ flex: 1 }}>
         {tab === 'home' && <Home />}
+        {tab === 'concierge' && <SellerConcierge can={can} isOwner={admin.is_owner} />}
         {tab === 'fulfill' && <Fulfill can={can} />}
         {tab === 'ai' && <AiHQ can={can} />}
         {tab === 'more' && <More can={can} isOwner={admin.is_owner} />}
       </View>
       <View style={s.tabbar}>
-        {([['home', '🏠 Home'], ['fulfill', '📦 Fulfill'], ['ai', '🤖 AI HQ'], ['more', '☰ More']] as [Tab, string][]).map(([t, label]) => (
-          <Pressable key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]} onPress={() => setTab(t)}>
-            <Text style={[s.tabText, tab === t && s.tabTextActive]}>{label}</Text>
+        {TABS.map(({ id, label, icon: Icon, color }) => (
+          <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: tab === id }}
+            style={[s.tabBtn, tab === id && { borderTopColor: color }]} onPress={() => setTab(id)}>
+            <Icon size={21} strokeWidth={tab === id ? 2.5 : 2} color={tab === id ? color : C.muted} />
+            <Text style={[s.tabText, tab === id && { color, fontWeight: '800' }]}>{label}</Text>
           </Pressable>
         ))}
       </View>
@@ -101,9 +132,9 @@ function SignIn() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Centered>
-        <Text style={{ fontSize: 40 }}>🧑‍🌾</Text>
-        <Text style={s.signTitle}>Gnome Admin</Text>
-        <Text style={s.deniedSub}>The Gnome business, in your pocket.</Text>
+        <Image source={ZORDY} style={s.signAvatar} accessibilityLabel="Zordy" />
+        <Text style={s.signTitle}>Zordy Operations</Text>
+        <Text style={s.deniedSub}>Private command center for the Gnome team.</Text>
         <TextInput style={s.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address"
           value={email} onChangeText={setEmail} placeholderTextColor={C.muted} />
         <TextInput style={s.input} placeholder="Password" secureTextEntry value={pw} onChangeText={setPw}
@@ -119,16 +150,21 @@ function SignIn() {
 // ---------------------------------------------------------------- Home (Daily Brief)
 function Home() {
   const [brief, setBrief] = useState<Record<string, unknown> | null>(null);
+  const [execDash, setExecDash] = useState<any | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const load = useCallback(async () => {
     setRefreshing(true);
-    const { data } = await supabase.rpc('admin_daily_brief');
+    const [{ data }, { data: executive }] = await Promise.all([
+      supabase.rpc('admin_daily_brief'),
+      supabase.rpc('admin_executive_dashboard'),
+    ]);
     setBrief(data as Record<string, unknown>);
+    setExecDash(executive ?? null);
     setRefreshing(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  if (!brief) return <Centered><ActivityIndicator color={C.green} /></Centered>;
+  if (!brief) return <Centered><ActivityIndicator color={C.primary} /></Centered>;
   const n = (k: string) => Number(brief[k] ?? 0);
   const attention: [string, number][] = ([
     ['Pending credentials', n('pending_compliance')],
@@ -140,7 +176,34 @@ function Home() {
   ] as [string, number][]).filter(([, v]) => v > 0);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
+      {execDash && (
+        <>
+          <Text style={s.h2}>President's brief</Text>
+          <Card>
+            <View style={s.rowBetween}>
+              <View>
+                <Text style={s.cardBig}>{Number(execDash.health_score ?? 0)}/100</Text>
+                <Text style={s.cardSub}>Gnome health</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={s.cardBig}>{Number(execDash.attention_count ?? 0)}</Text>
+                <Text style={s.cardSub}>attention items</Text>
+              </View>
+            </View>
+          </Card>
+          {((execDash.findings ?? []) as any[]).slice(0, 3).map((f) => (
+            <Card key={f.id}>
+              <View style={s.rowBetween}>
+                <Text style={[s.riskBadge, ['URGENT', 'CRITICAL'].includes(f.severity) && { color: C.red, backgroundColor: '#FEF2F2' }]}>{f.severity}</Text>
+                <Text style={s.cardSub}>{f.agent_name ?? f.agent_id}</Text>
+              </View>
+              <Text style={[s.cardTitle, { marginTop: 8 }]}>{f.title}</Text>
+              <Text style={s.cardSub}>{f.summary}</Text>
+            </Card>
+          ))}
+        </>
+      )}
       <Text style={s.h2}>Needs your attention</Text>
       {attention.length === 0
         ? <Card><Text style={s.cardBig}>All clear 🌱</Text><Text style={s.cardSub}>Nothing is waiting on you right now.</Text></Card>
@@ -167,7 +230,35 @@ function Home() {
   );
 }
 
-// ---------------------------------------------------------------- AI HQ
+// ---------------------------------------------------------------- Zordy Ops
+const AGENT_PRESENTATION: Record<string, { label: string; role: string; color: string; icon: LucideIcon }> = {
+  gnome_hq: { label: 'Zordy', role: 'President of Gnome', color: C.primary, icon: Sparkles },
+  boon: { label: 'Boon', role: 'Chief Marketplace Officer', color: C.orange, icon: Store },
+  buddy: { label: 'Buddy', role: 'Chief Grower & Horticulture Officer', color: C.green, icon: Sprout },
+  enzo: { label: 'Enzo', role: 'Chief Community Officer', color: C.blue, icon: UsersRound },
+  gemma: { label: 'Gemma', role: 'Chief Growth & Rewards Officer', color: C.orange, icon: Gift },
+  reddy: { label: 'Reddy', role: 'Chief Marketing & Creative Officer', color: C.red, icon: Sparkles },
+  senior: { label: 'Senior', role: 'Chief Security Officer', color: C.blue, icon: ShieldCheck },
+  junior: { label: 'Junior', role: 'Chief Technology Officer', color: C.primary, icon: Bot },
+  debb: { label: 'Debb', role: 'Chief Compliance & Risk Officer', color: C.red, icon: ClipboardCheck },
+  gee: { label: 'Gee', role: 'Chief Financial Officer', color: C.green, icon: Activity },
+  kay: { label: 'Kay', role: 'Chief Customer Experience & Trust/Safety Officer', color: C.blue, icon: MessageCircle },
+  marty: { label: 'Marty', role: 'Chief Data & Intelligence Officer', color: C.blue, icon: Activity },
+  operations: { label: 'Operations', role: 'Orders and fulfillment', color: C.orange, icon: ClipboardCheck },
+  inventory: { label: 'Inventory', role: 'Stock, lots and reorders', color: C.green, icon: Sprout },
+  seeds: { label: 'Seed Drop', role: 'Seed orders and seasons', color: C.green, icon: PackageCheck },
+  compliance: { label: 'Compliance', role: 'Credentials and policy gates', color: C.red, icon: ShieldCheck },
+  security: { label: 'Security', role: 'Access, anomalies and safety', color: C.blue, icon: LockKeyhole },
+  marketplace: { label: 'Marketplace', role: 'Listings and seller quality', color: C.orange, icon: Activity },
+  support: { label: 'Support', role: 'Reports and member care', color: C.blue, icon: MessageCircle },
+  finance: { label: 'Finance', role: 'Revenue, plans and costs', color: C.green, icon: Activity },
+  growth: { label: 'Growth', role: 'Activation and expansion', color: C.orange, icon: Sprout },
+};
+
+const agentDisplay = (agent: any) => AGENT_PRESENTATION[agent?.id] ?? {
+  label: agent?.name ?? 'Specialist', role: agent?.charter ?? 'Gnome operations', color: C.primary, icon: Bot,
+};
+
 function AiHQ({ can }: { can: (p: string) => boolean }) {
   const [reqs, setReqs] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
@@ -175,6 +266,7 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const [reads, setReads] = useState<boolean | null>(null);
   const [usageToday, setUsageToday] = useState<{ cents: number; actualCents: number; fails: number } | null>(null);
   const [providers, setProviders] = useState<{ stats: any; health: any } | null>(null);
+  const [execDash, setExecDash] = useState<any | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [room, setRoom] = useState<any | null>(null);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -183,18 +275,20 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const load = useCallback(async () => {
     setRefreshing(true);
     const since = new Date(); since.setHours(0, 0, 0, 0);
-    const [{ data: r }, { data: a }, { data: st }, { data: rm }, { data: usage }, { data: pstats }, health] = await Promise.all([
+    const [{ data: r }, { data: a }, { data: st }, { data: rm }, { data: usage }, { data: pstats }, { data: executive }, health] = await Promise.all([
       supabase.from('ai_action_requests').select('*').order('requested_at', { ascending: false }).limit(30),
       supabase.from('ai_agents').select('*').order('id'),
       supabase.from('ai_settings').select('writes_paused, reads_enabled, allow_paid_fallback').limit(1).maybeSingle(),
       supabase.from('ai_rooms').select('*').eq('status', 'active').order('updated_at', { ascending: false }).limit(12),
       supabase.from('ai_usage_log').select('estimated_cost_cents, actual_cost_cents, success').gte('created_at', since.toISOString()).limit(400),
       supabase.rpc('admin_ai_provider_stats'),
+      supabase.rpc('admin_executive_dashboard'),
       supabase.functions.invoke('ai-health', { body: {} }).then((x) => x.data).catch(() => null),
     ]);
     setReqs(r ?? []); setAgents(a ?? []);
     setPaused(st?.writes_paused ?? null); setReads(st?.reads_enabled ?? null);
     setRooms(rm ?? []);
+    setExecDash(executive ?? null);
     setProviders({ stats: (pstats as any) ?? {}, health });
     const rows = (usage ?? []) as any[];
     setUsageToday({
@@ -210,10 +304,26 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
     const { error } = await supabase.rpc('admin_review_ai_action', { p_request: id, p_approve: approve });
     if (error) Alert.alert('Failed', error.message); else void load();
   };
+  const confirmReview = (request: any, approve: boolean) => Alert.alert(
+    approve ? 'Approve this proposal?' : 'Reject this proposal?',
+    `${request.human_summary}\n\n${request.requested_action} · risk ${request.risk_level}`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: approve ? 'Approve' : 'Reject', style: approve ? 'default' : 'destructive', onPress: () => void review(request.id, approve) },
+    ],
+  );
   const execute = async (id: string) => {
     const { error } = await supabase.rpc('admin_execute_ai_action', { p_request: id });
     if (error) Alert.alert('Failed', error.message); else void load();
   };
+  const confirmExecute = (request: any) => Alert.alert(
+    'Execute approved action?',
+    `${request.human_summary}\n\nThis writes to production and will be added to the audit log.`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Execute', onPress: () => void execute(request.id) },
+    ],
+  );
   const togglePause = async (v: boolean) => {
     const { error } = await supabase.rpc('admin_set_ai_paused', { p_paused: v });
     if (error) Alert.alert('Failed', error.message); else setPaused(v);
@@ -221,6 +331,10 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const toggleReads = async (v: boolean) => {
     const { error } = await supabase.rpc('admin_set_ai_reads', { p_enabled: v });
     if (error) Alert.alert('Failed', error.message); else setReads(v);
+  };
+  const disablePaidFallback = async () => {
+    const { error } = await supabase.rpc('admin_set_paid_fallback', { p_allow: false });
+    if (error) Alert.alert('Failed', error.message); else void load();
   };
   const openChat = async (agentId: string, agentName: string) => {
     // 1:1 = a room with exactly one agent; reuse an existing one when present.
@@ -243,26 +357,107 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
   const pending = reqs.filter((r) => r.status === 'PENDING');
   const approved = reqs.filter((r) => r.status === 'APPROVED');
   const enabledAgents = agents.filter((a) => a.status !== 'disabled');
+  const specialists = enabledAgents.filter((a) => a.id !== 'gnome_hq');
+  const paidFallback = providers?.health?.settings?.allow_paid_fallback === true;
+  const execAgent = (id: string) => ((execDash?.agents ?? []) as any[]).find((a) => a.id === id);
+  const findingSummary = (id: string) => {
+    const f = execAgent(id)?.open_findings;
+    if (!f) return 'No findings data';
+    const parts = [
+      Number(f.critical ?? 0) ? `${f.critical} Critical` : '',
+      Number(f.urgent ?? 0) ? `${f.urgent} Urgent` : '',
+      Number(f.important ?? 0) ? `${f.important} Important` : '',
+      Number(f.watch ?? 0) ? `${f.watch} Watch` : '',
+    ].filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'No open findings';
+  };
+  const agentTiming = (id: string) => {
+    const a = execAgent(id);
+    if (!a) return '';
+    const last = a.last_analysis_at ? `Last ${new Date(a.last_analysis_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not analyzed';
+    const next = a.next_check_at ? `Next ${new Date(a.next_check_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'No schedule';
+    return `${last} · ${next}`;
+  };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
+      <View style={s.zordyHero}>
+        <Image source={ZORDY} style={s.zordyHeroAvatar} accessibilityLabel="Zordy" />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.zordyEyebrow}>CHIEF OPERATOR</Text>
+          <Text style={s.zordyTitle}>Ask Zordy</Text>
+          <Text style={s.zordySub}>Business, operations, security, compliance, and the next move.</Text>
+          <Pressable style={s.zordyButton} onPress={() => void openChat('gnome_hq', 'Zordy Operations')}>
+            <MessageCircle size={17} color="#FFFFFF" />
+            <Text style={s.zordyButtonText}>Open operations chat</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={s.statusStrip}>
+        <View style={[s.statusDot, { backgroundColor: reads === false ? C.red : C.green }]} />
+        <Text style={s.statusText}>{reads === false ? 'AI paused' : 'Gemini free path active'}</Text>
+        <Text style={s.statusDivider}>·</Text>
+        <Text style={[s.statusText, paidFallback && { color: C.red }]}>{paidFallback ? 'Paid fallback on' : '$0 fallback policy'}</Text>
+      </View>
+
+      <Text style={s.h2}>Specialists</Text>
+      <View style={s.agentGrid}>
+        {specialists.map((a) => {
+          const meta = agentDisplay(a);
+          const Icon = meta.icon;
+          return (
+            <Pressable key={a.id} style={s.agentCard} onPress={() => void openChat(a.id, meta.label)}>
+              <View style={[s.agentIcon, { backgroundColor: `${meta.color}14` }]}><Icon size={20} color={meta.color} /></View>
+              <Text style={s.agentName}>{meta.label}</Text>
+              <Text style={s.agentRole}>{a.charter || meta.role}</Text>
+              <Text style={s.agentRole}>{findingSummary(a.id)}</Text>
+              {!!agentTiming(a.id) && <Text style={s.cardSub}>{agentTiming(a.id)}</Text>}
+              <View style={s.agentChatRow}><MessageCircle size={14} color={meta.color} /><Text style={[s.agentChatText, { color: meta.color }]}>Chat</Text></View>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={s.sectionRow}>
+        <Text style={s.h2}>Boardrooms</Text>
+        <Pressable style={s.iconCommand} onPress={() => setComposing(true)} accessibilityLabel="New boardroom">
+          <UsersRound size={19} color={C.primary} /><Text style={s.iconCommandText}>New</Text>
+        </Pressable>
+      </View>
+      {rooms.length === 0 && <Card><Text style={s.cardSub}>No saved conversations yet.</Text></Card>}
+      {rooms.map((r) => (
+        <Pressable key={r.id} onPress={() => setRoom(r)}>
+          <Card>
+            <View style={s.rowBetween}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.cardTitle}>{r.title}</Text>
+                <Text style={s.cardSub}>{(r.agent_ids ?? []).map((id: string) => AGENT_PRESENTATION[id]?.label ?? id).join(' · ')}</Text>
+              </View>
+              <ChevronRight size={19} color={C.muted} />
+            </View>
+          </Card>
+        </Pressable>
+      ))}
+
+      <Text style={s.h2}>Control plane</Text>
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
-            <Text style={s.cardBig}>{paused ? 'AI actions paused 🔒' : 'AI actions enabled'}</Text>
-            <Text style={s.cardSub}>Kill switch for AI-initiated changes (approve/execute). Server-enforced.</Text>
+            <Text style={s.cardTitle}>{paused ? 'Actions paused' : 'Approved actions enabled'}</Text>
+            <Text style={s.cardSub}>Server-enforced write kill switch</Text>
           </View>
           {can('ai.pause_actions') && paused != null && (
-            <Switch value={!paused} onValueChange={(v) => void togglePause(!v)} trackColor={{ true: C.green }} />
+            <Switch value={!paused} onValueChange={(v) => void togglePause(!v)} trackColor={{ true: C.primary }} />
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
           <View style={{ flex: 1 }}>
-            <Text style={s.cardTitle}>{reads === false ? 'AI features paused 🔒' : 'AI features on'}</Text>
-            <Text style={s.cardSub}>Emergency stop for paid AI calls — Listing Assistant & Boardroom.</Text>
+            <Text style={s.cardTitle}>{reads === false ? 'Conversations paused' : 'Conversations enabled'}</Text>
+            <Text style={s.cardSub}>Zordy, specialists, and listing assistance</Text>
           </View>
           {can('ai.kill_switch') && reads != null && (
-            <Switch value={reads !== false} onValueChange={(v) => void toggleReads(v)} trackColor={{ true: C.green }} />
+            <Switch value={reads !== false} onValueChange={(v) => void toggleReads(v)} trackColor={{ true: C.primary }} />
           )}
         </View>
         {providers && (
@@ -280,14 +475,15 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
               const hq = providers.health?.hq;
               return (
                 <>
-                  <Text style={s.cardSub}>{line('Gemini (primary, free tier)', 'gemini')}</Text>
-                  <Text style={s.cardSub}>{line('OpenAI', 'openai')}</Text>
-                  <Text style={s.cardSub}>{line('Anthropic', 'anthropic')}</Text>
-                  {hq && <Text style={s.cardSub}>Gnome HQ runs on {hq.provider}/{hq.model}</Text>}
+                  <Text style={s.cardSub}>{line('Gemini free tier', 'gemini')}</Text>
+                  {hq && <Text style={s.cardSub}>Zordy model: {hq.provider}/{hq.model}</Text>}
                   <Text style={s.cardSub}>
-                    Paid fallback {providers.health?.settings?.allow_paid_fallback ? 'ON' : 'OFF'}
+                    Paid fallback {paidFallback ? 'ON' : 'OFF'}
                     {usageToday ? ` · today actual ${money(usageToday.actualCents)} · paid-equivalent ${money(usageToday.cents)}` : ''}
                   </Text>
+                  {paidFallback && can('ai.pause_actions') && (
+                    <SmallBtn label="Disable paid fallback" icon={X} danger onPress={() => void disablePaidFallback()} />
+                  )}
                 </>
               );
             })()}
@@ -295,41 +491,21 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
         )}
       </Card>
 
-      <Text style={s.h2}>Boardroom</Text>
-      <Card>
-        <Text style={s.cardSub}>Talk to one agent, or put several in a room. Bounded discussion, HQ synthesis. Chat can’t change production — actions still go through approvals.</Text>
-        <SmallBtn label="🏛 New Boardroom" onPress={() => setComposing(true)} />
-      </Card>
-      {rooms.map((r) => (
-        <Pressable key={r.id} onPress={() => setRoom(r)}>
-          <Card>
-            <Text style={s.cardTitle}>{(r.agent_ids ?? []).length > 1 ? '🏛' : '💬'} {r.title}</Text>
-            <Text style={s.cardSub}>{(r.agent_ids ?? []).join(', ')} · {String(r.updated_at).slice(0, 16).replace('T', ' ')}</Text>
-          </Card>
-        </Pressable>
-      ))}
-
-      <Text style={s.h2}>Agents — tap to chat</Text>
-      {enabledAgents.map((a) => (
-        <Pressable key={a.id} onPress={() => void openChat(a.id, a.name)}>
-          <Card>
-            <Text style={s.cardTitle}>💬 {a.name}</Text>
-            <Text style={s.cardSub}>{a.status} · L{a.automation_level} · budget {money(a.daily_budget_cents)}/day</Text>
-          </Card>
-        </Pressable>
-      ))}
-
-      <Text style={s.h2}>Needs approval ({pending.length})</Text>
-      {pending.length === 0 && <Card><Text style={s.cardSub}>No AI actions waiting.</Text></Card>}
+      <Text style={s.h2}>Approval queue · {pending.length}</Text>
+      {pending.length === 0 && <Card><Text style={s.cardSub}>No proposals waiting.</Text></Card>}
       {pending.map((r) => (
         <Card key={r.id}>
-          <Text style={s.cardTitle}>{r.human_summary}</Text>
-          <Text style={s.cardSub}>{r.agent_id} · {r.requested_action} · risk {r.risk_level} · {r.reason ?? ''}</Text>
+          <View style={s.rowBetween}>
+            <Text style={[s.riskBadge, r.risk_level >= 3 && { color: C.red, backgroundColor: '#FEF2F2' }]}>RISK {r.risk_level}</Text>
+            <Text style={s.cardSub}>{AGENT_PRESENTATION[r.agent_id]?.label ?? r.agent_id}</Text>
+          </View>
+          <Text style={[s.cardTitle, { marginTop: 8 }]}>{r.human_summary}</Text>
+          <Text style={s.cardSub}>{r.requested_action}{r.reason ? ` · ${r.reason}` : ''}</Text>
           <Text style={s.mono}>{JSON.stringify(r.parameters)}</Text>
           {can('ai.approve_actions') && (
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <SmallBtn label="Approve" onPress={() => void review(r.id, true)} />
-              <SmallBtn label="Reject" danger onPress={() => void review(r.id, false)} />
+              <SmallBtn label="Approve" icon={Check} onPress={() => confirmReview(r, true)} />
+              <SmallBtn label="Reject" icon={X} danger onPress={() => confirmReview(r, false)} />
             </View>
           )}
         </Card>
@@ -339,7 +515,8 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
       {approved.map((r) => (
         <Card key={r.id}>
           <Text style={s.cardTitle}>{r.human_summary}</Text>
-          {can('ai.approve_actions') && <SmallBtn label="Execute now" onPress={() => void execute(r.id)} />}
+          <Text style={s.cardSub}>Approved and ready for a separate execution decision.</Text>
+          {can('ai.approve_actions') && <SmallBtn label="Execute now" icon={Play} onPress={() => confirmExecute(r)} />}
         </Card>
       ))}
 
@@ -360,14 +537,375 @@ function AiHQ({ can }: { can: (p: string) => boolean }) {
 }
 
 
+// ---------------------------------------------------------------- Seller Concierge
+function SellerConcierge({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [funnel, setFunnel] = useState<any | null>(null);
+  const [sel, setSel] = useState<any | null>(null);
+  const [drafts, setDrafts] = useState<any[]>([]);
+  const [sources, setSources] = useState<any[]>([]);
+  const [preparedAccess, setPreparedAccess] = useState<any | null>(null);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [room, setRoom] = useState<any | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [business, setBusiness] = useState('');
+  const [sellerName, setSellerName] = useState('');
+  const [email, setEmail] = useState('');
+  const [acquisitionSource, setAcquisitionSource] = useState('SELLER_CONCIERGE');
+  const [referralCode, setReferralCode] = useState('');
+  const [sourceText, setSourceText] = useState('');
+  const [images, setImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [accessPlan, setAccessPlan] = useState<GrantPlan>('grower');
+  const [accessDays, setAccessDays] = useState<number | null>(90);
+  const [accessReason, setAccessReason] = useState('FOUNDING_SELLER');
+  const [accessExplanation, setAccessExplanation] = useState('');
+  const [accessNote, setAccessNote] = useState('');
+
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const [{ data: cases, error }, { data: f }, { data: a }] = await Promise.all([
+      supabase.rpc('admin_concierge_cases'),
+      supabase.rpc('admin_seller_concierge_funnel'),
+      supabase.from('ai_agents').select('*').in('id', ['boon', 'gnome_hq']),
+    ]);
+    if (error) alertServerError(error);
+    setRows((cases as any[]) ?? []);
+    setFunnel(f ?? null);
+    setAgents((a as any[]) ?? []);
+    setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const open = async (item: any) => {
+    setSel(item);
+    const [{ data: d }, { data: src }, { data: access }] = await Promise.all([
+      supabase.from('seller_concierge_drafts').select('*').eq('case_id', item.id).order('candidate_index'),
+      supabase.from('seller_concierge_sources').select('*').eq('case_id', item.id).order('created_at', { ascending: false }),
+      supabase.from('seller_concierge_prepared_entitlements').select('*').eq('case_id', item.id)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    setDrafts((d as any[]) ?? []);
+    setSources((src as any[]) ?? []);
+    setPreparedAccess(access ?? null);
+  };
+
+  const create = async () => {
+    const newBusiness = business.trim();
+    const newEmail = email.trim();
+    if (newBusiness.length < 2) { Alert.alert('Business name required'); return; }
+    setBusy(true);
+    const { data, error } = await supabase.rpc('admin_create_concierge_case', {
+      p_business_name: newBusiness,
+      p_email: newEmail || null,
+      p_seller_name: sellerName.trim() || null,
+      p_market_profile: {},
+    });
+    if (error) { setBusy(false); alertServerError(error); return; }
+    const acquisition = await supabase.rpc('admin_set_concierge_acquisition', {
+      p_case: data, p_source: acquisitionSource, p_referral_code: referralCode.trim() || null,
+    });
+    setBusy(false);
+    if (acquisition.error) { alertServerError(acquisition.error); return; }
+    setBusiness(''); setSellerName(''); setEmail(''); setReferralCode(''); setAcquisitionSource('SELLER_CONCIERGE'); setCreating(false);
+    await load();
+    await open({ id: data, business_name: newBusiness, invited_email: newEmail, status: 'PREPARED' });
+  };
+
+  const pickImages = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: 4,
+      quality: 0.85, base64: true,
+    });
+    if (!result.canceled) setImages(result.assets.filter((a) => Boolean(a.base64)).slice(0, 4));
+  };
+
+  const extract = async () => {
+    if (!sel || (!sourceText.trim() && images.length === 0)) {
+      Alert.alert('Add seller material', 'Choose screenshots or paste inventory text first.'); return;
+    }
+    setBusy(true);
+    const { data, error } = await supabase.functions.invoke('market-import', {
+      body: {
+        text: sourceText.trim() || undefined,
+        images: images.map((a) => ({ image_base64: a.base64, media_type: a.mimeType ?? 'image/jpeg' })),
+      },
+    });
+    if (error || data?.error || !data?.extraction) {
+      setBusy(false);
+      Alert.alert('Boon could not read that source', data?.message ?? error?.message ?? 'Try a clearer screenshot or pasted text.');
+      return;
+    }
+    const saved = await supabase.rpc('admin_save_concierge_extraction', {
+      p_case: sel.id,
+      p_request: data.request_id,
+      p_source_type: images.length ? 'FACEBOOK_SCREENSHOT' : 'ADMIN_ENTERED',
+      p_source_label: images.length ? `${images.length} seller screenshot${images.length === 1 ? '' : 's'}` : 'Pasted seller inventory',
+      p_source_url: null,
+      p_extraction: data.extraction,
+    });
+    setBusy(false);
+    if (saved.error) { alertServerError(saved.error); return; }
+    setImages([]); setSourceText('');
+    await load();
+    const nextStatus = Number(saved.data?.needs_compliance) > 0 ? 'NEEDS_COMPLIANCE'
+      : Number(saved.data?.needs_info) > 0 ? 'NEEDS_INFO' : 'READY';
+    await open({ ...sel, status: nextStatus });
+    Alert.alert('Private draft set prepared', `${saved.data?.total ?? 0} product candidates are ready for seller review. Nothing was published.`);
+  };
+
+  const sendInvite = async () => {
+    const inviteEmail = String(sel?.invited_email ?? '').trim();
+    if (!inviteEmail) { Alert.alert('Seller email required', 'Create the case with the seller’s email before sending an invitation.'); return; }
+    Alert.alert('Send secure claim invitation?', `Gnome will email ${inviteEmail}. You will never see or set the seller’s password.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Send', onPress: async () => {
+        setBusy(true);
+        const { data, error } = await supabase.functions.invoke('seller-concierge', {
+          body: { action: 'send_invite', case_id: sel.id, email: inviteEmail },
+        });
+        setBusy(false);
+        if (error || data?.error) { Alert.alert('Invitation not sent', data?.message ?? error?.message ?? 'Try again.'); return; }
+        Alert.alert('Invitation sent', 'The seller must verify the invited email, complete account readiness, and review the private drafts before publishing.');
+        await load();
+        setSel({ ...sel, status: 'INVITED', invited_at: new Date().toISOString() });
+      } },
+    ]);
+  };
+
+  const prepareAccess = () => {
+    if (!sel?.invited_email) { Alert.alert('Seller email required', 'Add the invited email before preparing complimentary access.'); return; }
+    if (accessPlan === 'farm' && !isOwner) { Alert.alert('Owner approval required', 'Only the Gnome owner can prepare complimentary Farm access.'); return; }
+    if (accessReason === 'OTHER' && !accessExplanation.trim()) { Alert.alert('Explain the reason', 'A short explanation is required when Other is selected.'); return; }
+    const planLabel = accessPlan === 'grower' ? 'Pro' : 'Farm';
+    const durationLabel = accessDays == null ? 'no expiration' : `${accessDays} days beginning when the seller claims`;
+    Alert.alert(`Prepare complimentary ${planLabel}?`, `${durationLabel}. This remains inactive until the verified invited seller claims this Market. Stripe is not changed.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Prepare', onPress: async () => {
+        setBusy(true);
+        const { error } = await supabase.rpc('admin_prepare_concierge_entitlement', {
+          p_case: sel.id, p_plan: accessPlan, p_duration_days: accessDays,
+          p_reason_code: accessReason, p_reason_explanation: accessExplanation.trim() || null,
+          p_note: accessNote.trim() || null, p_approval_reference: null, p_source: 'ADMIN',
+        });
+        setBusy(false);
+        if (error) { alertServerError(error); return; }
+        setAccessExplanation(''); setAccessNote('');
+        await open(sel);
+        Alert.alert('Complimentary access prepared', `${planLabel} will activate only after the correct verified seller claims this invitation. No subscription was created.`);
+      } },
+    ]);
+  };
+
+  const cancelPreparedAccess = () => {
+    if (!preparedAccess || preparedAccess.status !== 'APPROVED') return;
+    Alert.alert('Cancel prepared access?', 'The seller can still claim their Market, but this complimentary access will not activate.', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Cancel access', style: 'destructive', onPress: async () => {
+        const { error } = await supabase.rpc('admin_cancel_concierge_entitlement', {
+          p_prepared: preparedAccess.id, p_reason: 'Cancelled from Seller Concierge',
+        });
+        if (error) alertServerError(error); else await open(sel);
+      } },
+    ]);
+  };
+
+  const chatWithBoon = async () => {
+    const title = sel ? `Boon · ${sel.business_name}` : 'Boon · Seller Concierge';
+    const { data: existing } = await supabase.from('ai_rooms').select('*')
+      .eq('title', title).eq('status', 'active').contains('agent_ids', ['boon']).limit(1).maybeSingle();
+    if (existing) {
+      if (sel && existing.context?.concierge_case_id !== sel.id) {
+        const { data: refreshed } = await supabase.from('ai_rooms')
+          .update({ context: { concierge_case_id: sel.id } }).eq('id', existing.id).select('*').single();
+        setRoom(refreshed ?? existing);
+      } else setRoom(existing);
+      return;
+    }
+    const { data: auth } = await supabase.auth.getUser();
+    const { data, error } = await supabase.from('ai_rooms').insert({
+      title, agent_ids: ['boon'], created_by: auth.user?.id,
+      context: sel ? { concierge_case_id: sel.id } : {},
+    }).select('*').single();
+    if (error) Alert.alert('Could not open Boon', error.message); else setRoom(data);
+  };
+
+  if (!can('markets.view')) {
+    return <Centered><Text style={s.deniedTitle}>Seller Concierge access is not enabled for your role.</Text></Centered>;
+  }
+  if (room) return <RoomView room={room} back={() => setRoom(null)} agents={agents} />;
+
+  if (sel) {
+    const missing = drafts.filter((d) => d.status === 'NEEDS_INFO');
+    const regulated = drafts.filter((d) => d.status === 'NEEDS_COMPLIANCE');
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <BackRow label="← Sellers" onPress={() => setSel(null)} />
+        <View style={s.conciergeHero}>
+          <View style={s.boonMark}><Store size={25} color="#FFFFFF" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardBig}>{sel.business_name}</Text>
+            <Text style={s.cardSub}>Boon prepares · seller reviews · compliance decides · seller publishes</Text>
+          </View>
+          <Text style={s.riskBadge}>{sel.is_qa ? 'QA · ' : ''}{sel.status}</Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 }}>
+          <SmallBtn icon={MessageCircle} label="Chat with Boon" onPress={() => void chatWithBoon()} />
+          {can('markets.edit') && !sel.claimed_at && <SmallBtn icon={Mail} label={busy ? 'Working…' : sel.invited_at ? 'Resend invitation' : 'Send invitation'} disabled={busy} onPress={() => void sendInvite()} />}
+        </View>
+
+        <Card>
+          <Text style={s.cardTitle}>Seller claim</Text>
+          <Text style={s.cardSub}>{sel.seller_name || 'Seller name not provided'} · {sel.invited_email || 'Email not provided'}</Text>
+          <Text style={s.cardSub}>
+            {sel.claimed_at ? `Claimed ${String(sel.claimed_at).slice(0, 10)}` : sel.invited_at ? `Invited ${String(sel.invited_at).slice(0, 10)}` : 'Not invited'}
+            {' · '}{sel.market_model ?? 'RESERVATION'} · {sel.location_mode ?? 'APPROXIMATE'}
+          </Text>
+          <Text style={s.cardSub}>No Market or listing becomes public through this workspace.</Text>
+        </Card>
+
+        {!sel.claimed_at && can('subscriptions.grant_complimentary') && (
+          <Card>
+            <Text style={s.cardTitle}>Prepared complimentary access</Text>
+            {preparedAccess ? (
+              <>
+                <Text style={s.cardText}>{promoPlanLabel(String(preparedAccess.plan))} · {preparedAccess.duration_days == null ? 'no expiration' : `${preparedAccess.duration_days} days from claim`}</Text>
+                <Text style={s.cardSub}>{String(preparedAccess.reason_code).replaceAll('_', ' ')} · {preparedAccess.status}</Text>
+                <Text style={s.cardSub}>{preparedAccess.invite_id ? 'Bound to the current secure invitation' : 'Will bind when the invitation is sent'} · Stripe untouched</Text>
+                {preparedAccess.status === 'APPROVED' && <SmallBtn icon={X} label="Cancel prepared access" danger onPress={cancelPreparedAccess} />}
+              </>
+            ) : (
+              <Text style={s.cardSub}>Prepare access now; it stays inactive until this exact invited email claims the Market.</Text>
+            )}
+            {(!preparedAccess || preparedAccess.status !== 'APPROVED') && (
+              <>
+                <Text style={s.h3}>Plan</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {GRANT_PLANS.map((p) => (
+                    <Pressable key={p.id} onPress={() => setAccessPlan(p.id)} disabled={p.id === 'farm' && !isOwner}
+                      style={[s.durationChoice, accessPlan === p.id && s.durationChoiceActive, p.id === 'farm' && !isOwner && { opacity: 0.45 }]}>
+                      <Text style={[s.durationText, accessPlan === p.id && s.durationTextActive]}>{p.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={s.h3}>Begins at claim</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {GRANT_DURATIONS.map((d) => (
+                    <Pressable key={d.label} onPress={() => setAccessDays(d.days)}
+                      style={[s.durationChoice, accessDays === d.days && s.durationChoiceActive]}>
+                      <Text style={[s.durationText, accessDays === d.days && s.durationTextActive]}>{d.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={s.h3}>Reason</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {GRANT_REASONS.map((r) => (
+                    <Pressable key={r.id} onPress={() => setAccessReason(r.id)}
+                      style={[s.durationChoice, accessReason === r.id && s.durationChoiceActive]}>
+                      <Text style={[s.durationText, accessReason === r.id && s.durationTextActive]}>{r.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {accessReason === 'OTHER' && <TextInput style={s.input} value={accessExplanation} onChangeText={setAccessExplanation} placeholder="Required explanation" placeholderTextColor={C.muted} />}
+                <TextInput style={s.input} value={accessNote} onChangeText={setAccessNote} placeholder="Internal note (optional)" placeholderTextColor={C.muted} />
+                <SmallBtn icon={Gift} label={busy ? 'Preparing…' : 'Prepare complimentary access'} disabled={busy || !sel.invited_email} onPress={prepareAccess} />
+              </>
+            )}
+          </Card>
+        )}
+
+        {!sel.claimed_at && can('markets.edit') && (
+          <Card>
+            <Text style={s.cardTitle}>Add seller material</Text>
+            <Text style={s.cardSub}>Screenshots are analyzed in memory. Only the structured extraction, provenance, and missing fields are retained.</Text>
+            <TextInput style={[s.input, { minHeight: 100, marginTop: 10 }]} multiline
+              placeholder="Paste inventory, prices, pickup details, or seller notes…" value={sourceText}
+              onChangeText={setSourceText} placeholderTextColor={C.muted} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <SmallBtn icon={ImagePlus} label={images.length ? `${images.length} selected` : 'Choose screenshots'} onPress={() => void pickImages()} />
+              <SmallBtn icon={Sparkles} label={busy ? 'Boon is reading…' : 'Prepare private drafts'} disabled={busy || (!sourceText.trim() && images.length === 0)} onPress={() => void extract()} />
+            </View>
+          </Card>
+        )}
+
+        <Text style={s.h2}>Prepared products ({drafts.length})</Text>
+        {drafts.length === 0 && <Card><Text style={s.cardSub}>Add seller material to prepare the first private draft set.</Text></Card>}
+        {drafts.map((d) => (
+          <Card key={d.id}>
+            <View style={s.rowBetween}>
+              <Text style={[s.cardTitle, { flex: 1 }]}>{d.candidate?.product_name ?? 'Product'}</Text>
+              <Text style={[s.riskBadge, { color: d.status === 'READY' ? C.green : C.gold }]}>{String(d.status).replaceAll('_', ' ')}</Text>
+            </View>
+            <Text style={s.cardSub}>
+              {d.candidate?.price_cents != null ? money(Number(d.candidate.price_cents)) : 'Price missing'}
+              {d.candidate?.unit ? ` / ${d.candidate.unit}` : ' · unit missing'} · source: {d.source_attribution}
+            </Text>
+            {d.candidate?.evidence ? <Text style={s.cardText}>Evidence: {d.candidate.evidence}</Text> : null}
+            {(d.missing_information ?? []).slice(0, 3).map((m: string) => <Text key={m} style={s.cardSub}>Needs seller: {m}</Text>)}
+          </Card>
+        ))}
+        {(missing.length > 0 || regulated.length > 0) && (
+          <Card><Text style={s.cardSub}>{missing.length} need seller information · {regulated.length} require compliance review. Neither can bypass normal publication gates.</Text></Card>
+        )}
+        {sources.length > 0 && <Text style={s.stamp}>{sources.length} source record{sources.length === 1 ? '' : 's'} retained with fingerprints and attribution.</Text>}
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.orange} />}>
+      <View style={s.conciergeHero}>
+        <View style={s.boonMark}><Store size={27} color="#FFFFFF" /></View>
+        <View style={{ flex: 1 }}><Text style={s.cardBig}>Seller Concierge</Text><Text style={s.cardSub}>Boon runs seller acquisition under Zordy’s operating controls.</Text></View>
+        <Pressable style={s.iconCommand} onPress={() => void chatWithBoon()}><MessageCircle size={20} color={C.orange} /></Pressable>
+      </View>
+      {funnel && (
+        <View style={s.statusStrip}>
+          {Object.entries(funnel).filter(([, v]) => typeof v === 'number').slice(0, 6).map(([k, v]) => (
+            <Text key={k} style={s.statusText}>{String(k).replaceAll('_', ' ')} {String(v)}</Text>
+          ))}
+        </View>
+      )}
+      {can('markets.edit') && (
+        <>
+          <SmallBtn icon={Store} label={creating ? 'Close new seller' : 'Prepare a seller'} onPress={() => setCreating((v) => !v)} />
+          {creating && (
+            <Card>
+              <TextInput style={s.input} placeholder="Business or stand name" value={business} onChangeText={setBusiness} placeholderTextColor={C.muted} />
+              <TextInput style={s.input} placeholder="Seller name (optional)" value={sellerName} onChangeText={setSellerName} placeholderTextColor={C.muted} />
+              <TextInput style={s.input} placeholder="Seller email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholderTextColor={C.muted} />
+              <TextInput style={s.input} placeholder="Acquisition source (for example MARKET_QR)" value={acquisitionSource} onChangeText={(v) => setAcquisitionSource(v.toUpperCase())} autoCapitalize="characters" placeholderTextColor={C.muted} />
+              <TextInput style={s.input} placeholder="Referral code (optional)" value={referralCode} onChangeText={(v) => setReferralCode(v.toUpperCase())} autoCapitalize="characters" placeholderTextColor={C.muted} />
+              <SmallBtn label={busy ? 'Preparing…' : 'Create private preparation'} disabled={busy || business.trim().length < 2} onPress={() => void create()} />
+            </Card>
+          )}
+        </>
+      )}
+      <Text style={s.h2}>Seller pipeline</Text>
+      {rows.map((r) => (
+        <Pressable key={r.id} onPress={() => void open(r)}>
+          <Card>
+            <View style={s.rowBetween}><Text style={[s.cardTitle, { flex: 1 }]}>{r.business_name}</Text><Text style={s.riskBadge}>{r.is_qa ? 'QA · ' : ''}{r.status}</Text></View>
+            <Text style={s.cardSub}>{r.total_drafts} products · {r.ready} ready · {r.needs_info} need info · {r.needs_compliance} compliance</Text>
+            <Text style={s.cardSub}>{r.invited_email || 'No seller email yet'}</Text>
+          </Card>
+        </Pressable>
+      ))}
+      {rows.length === 0 && <Card><Text style={s.cardSub}>No seller preparations yet.</Text></Card>}
+    </ScrollView>
+  );
+}
+
 // NULL from the allowance RPC means unlimited. It is never a number, and must never be coerced
 // into one — `allow.publishes_allowed ?? 0` would turn Farm's unlimited into a hard zero.
 const cap = (v: number | null | undefined) => (v === null || v === undefined ? 'Unlimited' : String(v));
 // ---------------------------------------------------------------- More (Users / Entitlements / Team / Audit)
-type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'moderation' | 'support' | 'stripe' | 'promos';
+type MoreView = 'menu' | 'users' | 'team' | 'audit' | 'inventory' | 'commercial' | 'seasons' | 'listings' | 'markets' | 'moderation' | 'support' | 'stripe' | 'promos' | 'growth' | 'executives';
 function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean }) {
   const [view, setView] = useState<MoreView>('menu');
-  if (view === 'users') return <Users back={() => setView('menu')} can={can} />;
+  if (view === 'users') return <Users back={() => setView('menu')} can={can} isOwner={isOwner} />;
   if (view === 'team') return <Team back={() => setView('menu')} can={can} isOwner={isOwner} />;
   if (view === 'audit') return <Audit back={() => setView('menu')} />;
   if (view === 'inventory') return <Inventory back={() => setView('menu')} can={can} />;
@@ -379,8 +917,11 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
   if (view === 'support') return <Support back={() => setView('menu')} can={can} />;
   if (view === 'stripe') return <BillingHealth back={() => setView('menu')} isOwner={isOwner} />;
   if (view === 'promos') return <PromoCampaigns back={() => setView('menu')} />;
+  if (view === 'growth') return <GrowthOperations back={() => setView('menu')} />;
+  if (view === 'executives') return <ExecutiveSystem back={() => setView('menu')} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
+      {can('ai.view') && <MenuRow label="🧭 Executive System" onPress={() => setView('executives')} />}
       {can('subscriptions.view') && <MenuRow label="💰 Revenue & Promotions" onPress={() => setView('commercial')} />}
       {can('seed_drop.view') && <MenuRow label="🌦 Seed Drop Seasons" onPress={() => setView('seasons')} />}
       {can('inventory.view') && <MenuRow label="🌱 Inventory" onPress={() => setView('inventory')} />}
@@ -391,6 +932,7 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
       {can('users.view') && <MenuRow label="👥 Users & Entitlements" onPress={() => setView('users')} />}
       {can('subscriptions.view') && <MenuRow label="💳 Billing Health" onPress={() => setView('stripe')} />}
       {can('subscriptions.view') && <MenuRow label="🎟 Promo Codes" onPress={() => setView('promos')} />}
+      {(can('marketing.view') || isOwner) && <MenuRow label="↗ Growth & Referrals" onPress={() => setView('growth')} />}
       {can('admins.view') && <MenuRow label="🛡 Admin Team" onPress={() => setView('team')} />}
       <MenuRow label="📜 Audit Log" onPress={() => setView('audit')} />
       <Card>
@@ -403,6 +945,155 @@ function More({ can, isOwner }: { can: (p: string) => boolean; isOwner: boolean 
         <Text style={s.btnText}>Sign out</Text>
       </Pressable>
       {isOwner && <Text style={s.stamp}>Signed in as OWNER — the highest-risk actions require this role.</Text>}
+    </ScrollView>
+  );
+}
+
+function ExecutiveSystem({ back }: { back: () => void }) {
+  const [dash, setDash] = useState<any | null>(null);
+  const [intel, setIntel] = useState<any | null>(null);
+  const [approvals, setApprovals] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const [{ data: d }, { data: i }, { data: a }, { data: h }] = await Promise.all([
+      supabase.rpc('admin_executive_dashboard'),
+      supabase.rpc('admin_company_intelligence'),
+      supabase.from('ai_action_requests').select('*').in('status', ['PENDING', 'APPROVED']).order('requested_at', { ascending: false }).limit(20),
+      supabase.from('admin_audit_log').select('action, actor_type, resource_type, resource_id, created_at').order('created_at', { ascending: false }).limit(20),
+    ]);
+    setDash(d ?? null);
+    setIntel(i ?? null);
+    setApprovals((a as any[]) ?? []);
+    setHistory((h as any[]) ?? []);
+    setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Executive System</Text>
+      {!dash && <Card><Text style={s.cardSub}>Executive dashboard data is unavailable until the migration is deployed.</Text></Card>}
+      {dash && (
+        <>
+          <Row2 items={[['Health', Number(dash.health_score ?? 0)], ['Attention', Number(dash.attention_count ?? 0)], ['Approvals', Number(dash.pending_approvals ?? 0)]]} />
+          <Text style={s.h2}>Agents</Text>
+          {((dash.agents ?? []) as any[]).map((a) => {
+            const meta = AGENT_PRESENTATION[a.id] ?? { label: a.name, role: a.title, color: C.primary, icon: Bot };
+            const counts = a.open_findings ?? {};
+            const open = Number(counts.critical ?? 0) + Number(counts.urgent ?? 0) + Number(counts.important ?? 0) + Number(counts.watch ?? 0);
+            return (
+              <Card key={a.id}>
+                <View style={s.rowBetween}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.cardTitle}>{meta.label}</Text>
+                    <Text style={s.cardSub}>{a.title} · {a.authority_level} · {a.data_classification}</Text>
+                  </View>
+                  <Text style={[s.riskBadge, open > 0 && { color: C.gold }]}>{open ? `${open} OPEN` : 'HEALTHY'}</Text>
+                </View>
+                <Text style={s.cardSub}>
+                  Last {a.last_analysis_at ? new Date(a.last_analysis_at).toLocaleString() : 'not analyzed'} · Next {a.next_check_at ? new Date(a.next_check_at).toLocaleString() : 'not scheduled'}
+                </Text>
+              </Card>
+            );
+          })}
+          <Text style={s.h2}>Findings</Text>
+          {((dash.findings ?? []) as any[]).length === 0 && <Card><Text style={s.cardSub}>No open findings.</Text></Card>}
+          {((dash.findings ?? []) as any[]).slice(0, 12).map((f) => (
+            <Card key={f.id}>
+              <View style={s.rowBetween}><Text style={s.riskBadge}>{f.severity}</Text><Text style={s.cardSub}>{f.agent_name}</Text></View>
+              <Text style={[s.cardTitle, { marginTop: 8 }]}>{f.title}</Text>
+              <Text style={s.cardSub}>{f.summary}</Text>
+            </Card>
+          ))}
+          <Text style={s.h2}>Schedules</Text>
+          {((dash.heartbeats ?? []) as any[]).length === 0 && <Card><Text style={s.cardSub}>No heartbeat runs recorded yet.</Text></Card>}
+          {((dash.heartbeats ?? []) as any[]).map((h) => (
+            <Card key={`${h.agent_id}-${h.created_at}`}><Text style={s.cardTitle}>{AGENT_PRESENTATION[h.agent_id]?.label ?? h.agent_id}</Text><Text style={s.cardSub}>{h.status} · {new Date(h.created_at).toLocaleString()}</Text></Card>
+          ))}
+        </>
+      )}
+      <Text style={s.h2}>Analytics</Text>
+      {intel ? (
+        <Card>
+          <Text style={s.cardSub}>Sample size: claims {intel.sample_size?.claims ?? 0} · orders {intel.sample_size?.market_orders ?? 0} · views {intel.sample_size?.listing_views_30d ?? 0}</Text>
+          <Text style={s.cardSub}>Confidence: {intel.confidence ?? 'DATA UNAVAILABLE'}</Text>
+          <Text style={s.cardSub}>Zero-result searches: {intel.search_demand?.zero_results_30d ?? 'NOT CURRENTLY TRACKED'}</Text>
+          <Text style={s.cardSub}>Seller GMV 30d: {money(Number(intel.finance?.seller_recorded_gmv?.gross_cents_30d ?? 0))}</Text>
+          <Text style={s.cardSub}>Gnome MRR: {money(Number(intel.finance?.gnome_revenue?.mrr_cents ?? 0))}</Text>
+        </Card>
+      ) : <Card><Text style={s.cardSub}>Company intelligence data unavailable.</Text></Card>}
+      <Text style={s.h2}>Approvals</Text>
+      {approvals.length === 0 && <Card><Text style={s.cardSub}>No yellow actions waiting.</Text></Card>}
+      {approvals.map((a) => <Card key={a.id}><Text style={s.cardTitle}>{a.human_summary}</Text><Text style={s.cardSub}>{a.agent_id} · {a.requested_action} · {a.status}</Text></Card>)}
+      <Text style={s.h2}>Action history</Text>
+      {history.map((h, i) => <Card key={`${h.created_at}-${i}`}><Text style={s.cardSub}>{h.action} · {h.actor_type} · {h.resource_type ?? 'system'} · {String(h.created_at).slice(0, 16).replace('T', ' ')}</Text></Card>)}
+    </ScrollView>
+  );
+}
+
+function GrowthOperations({ back }: { back: () => void }) {
+  const [summary, setSummary] = useState<any | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = useCallback(async () => {
+    setRefreshing(true); setError(null);
+    const [s1, s2] = await Promise.all([
+      supabase.rpc('admin_referral_growth_summary'),
+      supabase.rpc('admin_referral_growth_rows'),
+    ]);
+    if (s1.error || s2.error) {
+      setError(s1.error?.message ?? s2.error?.message ?? 'Growth data unavailable.');
+      setSummary(null); setRows([]);
+    } else {
+      setSummary(s1.data); setRows((s2.data as any[]) ?? []);
+    }
+    setRefreshing(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
+      <BackRow label="← More" onPress={back} />
+      <Text style={s.h2}>Growth & referrals</Text>
+      {error ? <Card><Text style={[s.cardSub, { color: C.red }]}>{error}</Text></Card> : null}
+      {!summary && !error ? <Card><ActivityIndicator color={C.primary} /></Card> : null}
+      {summary ? (
+        <>
+          <Row2 items={[
+            ['Attributed', Number(summary.attributed ?? 0)],
+            ['Qualified sellers', Number(summary.qualified ?? 0)],
+            ['Qualification %', Number(summary.qualification_rate ?? 0)],
+          ]} />
+          <Row2 items={[
+            ['Listing credits', Number(summary.listing_credits_issued ?? 0)],
+            ['Pro days', Number(summary.pro_days_issued ?? 0)],
+            ['Market boosts', Number(summary.market_boosts_issued ?? 0)],
+          ]} />
+          <Card>
+            <Text style={s.cardTitle}>Launch controls</Text>
+            <Text style={s.cardSub}>Buyer rewards deferred: {summary.buyer_rewards_deferred ?? 0}</Text>
+            <Text style={s.cardSub}>25 / 50 milestones tracked: {summary.milestone_25 ?? 0} / {summary.milestone_50 ?? 0}</Text>
+            <Text style={[s.cardSub, { color: summary.payments_live_enabled ? C.red : C.green }]}>Payments live: {summary.payments_live_enabled ? 'YES' : 'NO'}</Text>
+          </Card>
+        </>
+      ) : null}
+      <Text style={s.h2}>Referrers</Text>
+      {rows.map((r) => (
+        <Card key={r.referrer_id}>
+          <Text style={s.cardTitle}>{r.referrer_name ?? 'Gnome member'}</Text>
+          <Text style={s.cardSub}>{r.qualified_sellers} qualified · {r.pending_referrals} pending · {r.rewards_issued} rewards</Text>
+          {Number(r.deferred_rewards) > 0 ? <Text style={s.cardSub}>{r.deferred_rewards} buyer reward deferred until seller activation</Text> : null}
+        </Card>
+      ))}
+      {summary && rows.length === 0 ? <Card><Text style={s.cardSub}>No real referral activity yet.</Text></Card> : null}
+      <Card>
+        <Text style={s.cardTitle}>Ask the growth team</Text>
+        <Text style={s.cardSub}>Open Zordy and start a room with Gemma for operations or Marty for effectiveness analysis. Their data excludes QA and contains no fake metrics.</Text>
+      </Card>
     </ScrollView>
   );
 }
@@ -466,7 +1157,7 @@ function Markets({ back }: { back: () => void }) {
   }, []);
   useEffect(() => { void load(); }, [load]);
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       <Text style={s.h2}>Markets ({rows.length})</Text>
       {rows.map((m) => (
@@ -500,7 +1191,7 @@ function Support({ back, can }: { back: () => void; can: (p: string) => boolean 
     ]);
   };
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       <Text style={s.h2}>Open reports ({rows.length})</Text>
       {rows.map((r) => (
@@ -518,11 +1209,32 @@ function Support({ back, can }: { back: () => void; can: (p: string) => boolean 
 // ---------------------------------------------------------------- Billing Health
 function BillingHealth({ back, isOwner }: { back: () => void; isOwner: boolean }) {
   const [h, setH] = useState<any | null>(null);
+  const [providers, setProviders] = useState<any | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [stripeIdentity, setStripeIdentity] = useState<any | null>(null);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [refundLoadError, setRefundLoadError] = useState<string | null>(null);
+  const [refundBusy, setRefundBusy] = useState<string | null>(null);
   const load = useCallback(async () => {
     setRefreshing(true);
-    const { data } = await supabase.rpc('admin_billing_health');
-    setH(data as any); setRefreshing(false);
+    const [health, providerHealth, identity, recent] = await Promise.all([
+      supabase.rpc('admin_billing_health'),
+      supabase.rpc('admin_subscription_health'),
+      supabase.functions.invoke('billing-admin', { body: { action: 'identity' } }),
+      supabase.functions.invoke('billing-admin', { body: { action: 'recent_payments' } }),
+    ]);
+    setH(health.data as any);
+    setProviders(providerHealth.error ? null : providerHealth.data as any);
+    setStripeIdentity(identity.error ? null : identity.data);
+    const recentBody = recent.data as any;
+    if (recent.error || recentBody?.error) {
+      setPayments([]);
+      setRefundLoadError(recentBody?.message ?? recentBody?.detail ?? 'Could not load Stripe payments.');
+    } else {
+      setPayments(Array.isArray(recentBody?.payments) ? recentBody.payments : []);
+      setRefundLoadError(null);
+    }
+    setRefreshing(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -541,8 +1253,47 @@ function BillingHealth({ back, isOwner }: { back: () => void; isOwner: boolean }
        } }]);
   };
 
+  const refundPayment = (payment: any) => {
+    if (!stripeIdentity?.account_id) {
+      Alert.alert('Stripe account unavailable', 'Zordy could not verify the connected Stripe TEST account. No refund was attempted.');
+      return;
+    }
+    const amount = money(Number(payment.amount_total ?? 0));
+    const subscription = payment.mode === 'subscription' && !!payment.subscription_id;
+    const who = payment.customer_email ?? payment.customer_name ?? 'this customer';
+    Alert.alert(
+      `Refund ${amount}?`,
+      `${who}\n${String(payment.product_key ?? 'Gnome payment')}\n\nThe money returns to the original payment method.${subscription ? ' The TEST subscription will also be cancelled to prevent another renewal.' : ''}`,
+      [
+        { text: 'Keep payment', style: 'cancel' },
+        { text: 'Issue refund', style: 'destructive', onPress: async () => {
+          setRefundBusy(payment.session_id);
+          const { data, error } = await supabase.functions.invoke('billing-admin', {
+            body: {
+              action: 'refund_payment',
+              session_id: payment.session_id,
+              cancel_subscription: subscription,
+              confirm_account_id: stripeIdentity.account_id,
+            },
+          });
+          setRefundBusy(null);
+          const result = data as any;
+          if (error || result?.error || result?.ok !== true) {
+            Alert.alert('Refund failed', result?.message ?? result?.detail ?? 'Stripe did not issue a refund.');
+            return;
+          }
+          Alert.alert(
+            result.subscription_cancel_error ? 'Refund issued; cancellation needs attention' : 'Refund submitted',
+            `${money(Number(result.amount ?? payment.amount_total ?? 0))} is returning to the original payment method.${result.subscription_cancelled ? ' The subscription was cancelled.' : ''}${result.subscription_cancel_error ? ' Stripe could not cancel the subscription, so review it before the next renewal.' : ''}`,
+          );
+          void load();
+        } },
+      ],
+    );
+  };
+
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       <Card>
         <Text style={s.cardBig}>{live ? 'LIVE payments ON 🔴' : 'Test mode 🧪'}</Text>
@@ -552,10 +1303,61 @@ function BillingHealth({ back, isOwner }: { back: () => void; isOwner: boolean }
         {isOwner && h?.payments_live_enabled != null && (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
             <Text style={s.cardTitle}>Payments Live</Text>
-            <Switch value={live} onValueChange={toggleLive} trackColor={{ true: C.red }} />
+            <Switch value={live} onValueChange={toggleLive} disabled={!live} trackColor={{ true: C.red }} />
           </View>
         )}
+        {!live ? <Text style={s.cardSub}>Activation is locked here until Apple sandbox, Google license testing, Stripe reconciliation, and owner approval are all recorded.</Text> : null}
       </Card>
+
+      <Text style={s.h2}>Subscriptions by provider</Text>
+      <Card>
+        <Text style={s.cardTitle}>Verified entitlement ledger</Text>
+        <Text style={s.cardSub}>Production paying: Apple {providers?.counts_by_source?.APPLE ?? 0} · Google Play {providers?.counts_by_source?.GOOGLE_PLAY ?? 0} · Website {providers?.counts_by_source?.STRIPE ?? 0}</Text>
+        <Text style={s.cardSub}>Production trials {providers?.active_trial_total ?? 0} · Sandbox/test subscriptions {providers?.test_subscription_total ?? 0}</Text>
+        <Text style={s.cardSub}>Pro {providers?.counts_by_plan?.grower ?? 0} · Farm {providers?.counts_by_plan?.farm ?? 0} · Complimentary {providers?.complimentary_active ?? 0}</Text>
+        <Text style={s.cardSub}>Estimated gross monthly subscription value: {money(Number(providers?.estimated_gross_mrr_cents ?? 0))}. Store fees, taxes, refunds, and settlement timing are not netted here.</Text>
+      </Card>
+      {(providers?.subscriptions ?? []).map((sub:any,index:number)=>(
+        <Card key={`${sub.source}-${sub.user_id}-${index}`}>
+          <Text style={s.cardTitle}>{sub.user} · {promoPlanLabel(String(sub.plan))}</Text>
+          <Text style={s.cardSub}>{sub.source==='APPLE'?'Apple':sub.source==='GOOGLE_PLAY'?'Google Play':'Stripe website'} · {sub.status} · {sub.environment}</Text>
+          <Text style={s.cardSub}>Renewal/end: {sub.renewal?String(sub.renewal).slice(0,10):'not reported'} · verified {sub.last_verified?String(sub.last_verified).slice(0,16).replace('T',' '):'unverified'}</Text>
+          {sub.source!=='STRIPE'?<Text style={s.cardSub}>Refunds and cancellations are managed by {sub.source==='APPLE'?'Apple':'Google Play'}, not Stripe.</Text>:null}
+        </Card>
+      ))}
+
+      <Text style={s.h2}>Refunds</Text>
+      <Card>
+        <View style={s.rowBetween}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardTitle}>Recent Stripe payments</Text>
+            <Text style={s.cardSub}>Owner-confirmed TEST refunds only. Card details never enter Gnome Admin.</Text>
+          </View>
+          <RotateCcw size={20} color={C.primary} />
+        </View>
+        {refundLoadError ? <Text style={[s.cardSub, { color: C.red, marginTop: 8 }]}>{refundLoadError}</Text> : null}
+      </Card>
+      {payments.slice(0, 10).map((p) => (
+        <Card key={p.session_id}>
+          <View style={s.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.cardTitle}>{p.customer_email ?? p.customer_name ?? 'Stripe customer'}</Text>
+              <Text style={s.cardSub}>
+                {p.product_key ?? 'Gnome payment'} · {p.mode === 'subscription' ? 'subscription' : 'one-time'}
+              </Text>
+              <Text style={s.cardSub}>{money(Number(p.amount_total ?? 0))} · {new Date(Number(p.created ?? 0) * 1000).toLocaleDateString()}</Text>
+            </View>
+            {p.refunded ? <Text style={s.refundedBadge}>REFUNDED</Text> : null}
+          </View>
+          <SmallBtn icon={RotateCcw}
+            label={p.refunded ? 'Refunded' : refundBusy === p.session_id ? 'Refunding...' : 'Review refund'}
+            danger={!p.refunded} disabled={p.refunded || refundBusy !== null}
+            onPress={() => refundPayment(p)} />
+        </Card>
+      ))}
+      {!refundLoadError && payments.length === 0 ? (
+        <Card><Text style={s.cardSub}>No paid TEST sessions are available to refund.</Text></Card>
+      ) : null}
 
       <Text style={s.h2}>Product mapping</Text>
       {products.map((p) => (
@@ -586,7 +1388,29 @@ function BillingHealth({ back, isOwner }: { back: () => void; isOwner: boolean }
   );
 }
 
-function Users({ back, can }: { back: () => void; can: (p: string) => boolean }) {
+type GrantPlan = 'grower' | 'farm';
+const GRANT_PLANS: { id: GrantPlan; label: string; detail: string }[] = [
+  { id: 'grower', label: 'Pro', detail: 'Higher limits and seller tools' },
+  { id: 'farm', label: 'Farm', detail: 'Top sellable plan with unlimited listings' },
+];
+const GRANT_DURATIONS: { days: number | null; label: string }[] = [
+  { days: 30, label: '30 days' },
+  { days: 90, label: '90 days' },
+  { days: 365, label: '1 year' },
+  { days: null, label: 'No expiry' },
+];
+const GRANT_REASONS: { id: string; label: string }[] = [
+  { id: 'FOUNDING_SELLER', label: 'Founding seller' },
+  { id: 'SUPPORT_RESOLUTION', label: 'Support resolution' },
+  { id: 'INTERNAL_QA', label: 'Internal QA' },
+  { id: 'PARTNER', label: 'Partner' },
+  { id: 'PROMOTION', label: 'Promotion' },
+  { id: 'INFLUENCER_CREATOR', label: 'Creator' },
+  { id: 'COMMUNITY_PARTNER', label: 'Community partner' },
+  { id: 'OTHER', label: 'Other' },
+];
+
+function Users({ back, can, isOwner }: { back: () => void; can: (p: string) => boolean; isOwner: boolean }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<any[]>([]);
   const [sel, setSel] = useState<any | null>(null);
@@ -602,6 +1426,13 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   const [wantedState, setWantedState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
   const [qrInfo, setQr] = useState<any | null>(null);
   const [qrState, setQrState] = useState<'loading' | 'ok' | 'none' | 'error'>('loading');
+  const [grantPlan, setGrantPlan] = useState<GrantPlan>('grower');
+  const [grantDays, setGrantDays] = useState<number | null>(30);
+  const [grantReason, setGrantReason] = useState('FOUNDING_SELLER');
+  const [grantExplanation, setGrantExplanation] = useState('');
+  const [grantNote, setGrantNote] = useState('');
+  const [grantBusy, setGrantBusy] = useState(false);
+  const [billingMode, setBillingMode] = useState<'loading' | 'test' | 'live' | 'unknown'>('loading');
 
   const search = async () => {
     const { data } = await supabase.from('profiles')
@@ -612,11 +1443,18 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   const open = async (p: any) => {
     setSel(p); setEnt(null); setMkt(null); setPromo(null); setAllow(null); setAllowState('loading');
     setWanted(null); setWantedState('loading'); setQr(null); setQrState('loading');
+    setBillingMode(can('subscriptions.view') ? 'loading' : 'unknown');
+    if (can('subscriptions.view')) {
+      void supabase.rpc('admin_billing_health').then(({ data, error }) => {
+        if (error) setBillingMode('unknown');
+        else setBillingMode((data as any)?.payments_live_enabled === true ? 'live' : 'test');
+      });
+    }
     const { data: m } = await supabase.from('markets').select('id,name,plan').eq('owner_id', p.id).limit(1).maybeSingle();
     setMkt(m);
     if (m) {
       const [{ data: e }, { data: ps }, au] = await Promise.all([
-        supabase.rpc('admin_market_entitlements', { p_market: m.id }),
+        supabase.rpc('admin_market_entitlements_v2', { p_market: m.id }),
         supabase.rpc('market_promotion_status', { p_market: m.id }),
         // admin_market_allowance, NOT market_allowance_usage: the latter is revoked from
         // authenticated on purpose, because it takes a market id and would let any seller read any
@@ -624,6 +1462,9 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
         supabase.rpc('admin_market_allowance', { p_market: m.id }),
       ]);
       setEnt(e); setPromo(ps as any);
+      const effectivePlan = String((e as any)?.effective?.plan ?? m.plan);
+      setGrantPlan(effectivePlan === 'free' ? 'grower' : 'farm');
+      setGrantDays(30);
       const arow = Array.isArray(au.data) ? au.data[0] : au.data;
       if (au.error) { setAllow(null); setAllowState('error'); }
       else if (!arow) { setAllow(null); setAllowState('none'); }
@@ -651,23 +1492,54 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
       } },
     ]);
   };
-  const grant = (plan: 'grower' | 'farm', days: number | null, reason: string) => {
+  const grant = (plan: GrantPlan, days: number | null, overlap = 'CANCEL_NEW') => {
     if (!mkt) return;
+    if (plan === 'farm' && !isOwner) { Alert.alert('Owner approval required', 'Only the Gnome owner can grant complimentary Farm access.'); return; }
+    if (grantReason === 'OTHER' && !grantExplanation.trim()) { Alert.alert('Explain the reason', 'A short explanation is required when Other is selected.'); return; }
+    const label = plan === 'grower' ? 'Pro' : 'Farm';
+    const duration = days ? `${days} days` : 'no expiration';
     const expires = days ? new Date(Date.now() + days * 864e5).toISOString() : null;
-    Alert.alert(`Grant ${plan}?`, `${reason} — ${days ? days + ' days' : 'no expiration'}. This changes real entitlements.`, [
+    const execute = async () => {
+      setGrantBusy(true);
+      const { data, error } = await supabase.rpc('admin_grant_plan_v2', {
+        p_market: mkt.id, p_plan: plan, p_expires: expires,
+        p_reason_code: grantReason, p_reason_explanation: grantExplanation.trim() || null,
+        p_note: grantNote.trim() || null, p_approval_reference: null,
+        p_source: 'ADMIN', p_overlap_action: overlap,
+      });
+      setGrantBusy(false);
+      if (error) { alertServerError(error); return; }
+      if (data?.outcome === 'OVERLAP') {
+        const existing = `${promoPlanLabel(String(data.existing_plan))}${data.existing_expires_at ? ` until ${String(data.existing_expires_at).slice(0, 10)}` : ' with no expiration'}`;
+        Alert.alert('Complimentary access already exists', `${existing}. Choose exactly how to handle it.`, [
+          { text: 'Cancel', style: 'cancel' },
+          ...(data.existing_plan === plan && data.existing_expires_at
+            ? [{ text: 'Extend current', onPress: () => grant(plan, days, 'EXTEND_CURRENT') }]
+            : []),
+          { text: 'Replace current', style: 'destructive', onPress: () => grant(plan, days, 'REPLACE_CURRENT') },
+        ]);
+        return;
+      }
+      Alert.alert(`${label} access ${String(data?.outcome ?? 'granted').toLowerCase()}`, `${sel.name}'s paid subscription was not changed or charged.`);
+      setGrantNote(''); setGrantExplanation('');
+      void open(sel);
+    };
+    Alert.alert(`Grant complimentary ${label}?`, `${duration}. Reason: ${GRANT_REASONS.find((r) => r.id === grantReason)?.label}. This changes access but never creates or alters a Stripe subscription.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Grant', onPress: async () => {
-        const { error } = await supabase.rpc('admin_grant_plan',
-          { p_market: mkt.id, p_plan: plan, p_expires: expires, p_reason: reason });
-        if (error) Alert.alert('Failed', error.message); else void open(sel);
-      } },
+      { text: 'Grant', onPress: () => void execute() },
     ]);
+  };
+  const shareUpgrade = async () => {
+    await Share.share({
+      title: 'Gnome seller plans',
+      message: 'Choose the Gnome plan that fits your Market. Sign in with your Gnome account to continue securely: https://gnomefarmersmarket.com/pricing',
+    });
   };
   const revoke = (gid: string) => {
     Alert.alert('Revoke this grant?', 'The Market falls back to its next valid entitlement.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Revoke', style: 'destructive', onPress: async () => {
-        const { error } = await supabase.rpc('admin_revoke_grant', { p_grant: gid, p_reason: 'Revoked from Gnome Admin' });
+        const { error } = await supabase.rpc('admin_revoke_grant_v2', { p_grant: gid, p_reason: 'Revoked from Gnome Admin' });
         if (error) Alert.alert('Failed', error.message); else void open(sel);
       } },
     ]);
@@ -684,7 +1556,7 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
   };
 
   if (sel) {
-    const grants = (ent?.grants ?? []) as any[];
+    const grants = (ent?.history ?? []) as any[];
     const activeGrants = grants.filter((g) => g.status === 'ACTIVE' && (!g.expires_at || new Date(g.expires_at) > new Date()));
     return (
       <ScrollView contentContainerStyle={{ padding: 16 }}>
@@ -705,7 +1577,16 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
               Effective plan: {ent?.effective?.plan ?? '…'} · source: {ent?.effective?.source ?? '…'}
               {ent?.effective?.grant_expires ? ` · until ${String(ent.effective.grant_expires).slice(0, 10)}` : ''}
             </Text>
-            <Text style={s.cardSub}>Stripe/base plan: {ent?.base_plan ?? mkt.plan}</Text>
+            <Text style={s.cardSub}>
+              Paid access: {promoPlanLabel(String(ent?.paid?.plan ?? mkt.plan))} · {ent?.paid?.status ?? 'unknown'}
+              {ent?.paid?.livemode === false ? ' · Stripe TEST' : ''}
+            </Text>
+            {ent?.complimentary && (
+              <Text style={s.cardSub}>
+                Complimentary: {promoPlanLabel(String(ent.complimentary.plan))} · {ent.complimentary.reason}
+                {ent.complimentary.expires_at ? ` · until ${String(ent.complimentary.expires_at).slice(0, 10)}` : ' · no expiration'}
+              </Text>
+            )}
             {/* Sell allowance. Every figure is a field from admin_market_allowance — nothing here
                 adds, subtracts or derives one. In particular `actual` is NOT used+paid: that holds
                 on metered plans and is wrong on Farm, where all activity is funded='unlimited', so
@@ -813,16 +1694,88 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
             {can('promotions.grant') && (
               <SmallBtn label="Grant 3 promo credits" onPress={grantPromoCredits} />
             )}
-            {can('subscriptions.grant_complimentary') && (
-              <>
-                <Text style={s.h3}>Grant free subscription</Text>
-                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                  <SmallBtn label="Grower · 30d" onPress={() => grant('grower', 30, 'Founding Grower')} />
-                  <SmallBtn label="Grower · 1yr" onPress={() => grant('grower', 365, 'Founding Grower')} />
-                  <SmallBtn label="Farm · 90d" onPress={() => grant('farm', 90, 'Farm pilot')} />
-                  <SmallBtn label="Grower · ∞" onPress={() => grant('grower', null, 'Founding Grower')} />
+            {(can('subscriptions.grant_complimentary') || can('subscriptions.view')) && (
+              <View style={s.planManager}>
+                <View style={s.rowBetween}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.h3}>Manage plan</Text>
+                    <Text style={s.cardSub}>Help this seller upgrade without handling their payment details.</Text>
+                  </View>
+                  <Sparkles size={20} color={C.primary} />
                 </View>
-              </>
+
+                {can('subscriptions.grant_complimentary') && (
+                  <>
+                    <View style={s.planSectionTitle}>
+                      <Gift size={15} color={C.primary} />
+                      <Text style={s.planSectionText}>Complimentary access</Text>
+                    </View>
+                    <View style={s.planChoiceRow}>
+                      {GRANT_PLANS.filter((p) => {
+                        const current = String(ent?.effective?.plan ?? mkt.plan);
+                        return current === 'free' || current === p.id || p.id === 'farm';
+                      }).map((p) => (
+                        <Pressable key={p.id} onPress={() => setGrantPlan(p.id)} disabled={p.id === 'farm' && !isOwner}
+                          style={[s.planChoice, grantPlan === p.id && s.planChoiceActive, p.id === 'farm' && !isOwner && { opacity: 0.45 }]}>
+                          <Text style={[s.planChoiceName, grantPlan === p.id && s.planChoiceNameActive]}>{p.label}</Text>
+                          <Text style={[s.planChoiceDetail, grantPlan === p.id && s.planChoiceDetailActive]}>{p.detail}{p.id === 'farm' && !isOwner ? ' · owner only' : ''}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <View style={s.planSectionTitle}>
+                      <CalendarDays size={15} color={C.primary} />
+                      <Text style={s.planSectionText}>Duration</Text>
+                    </View>
+                    <View style={s.durationRow}>
+                      {GRANT_DURATIONS.map((d) => (
+                        <Pressable key={d.label} onPress={() => setGrantDays(d.days)}
+                          style={[s.durationChoice, grantDays === d.days && s.durationChoiceActive]}>
+                          <Text style={[s.durationText, grantDays === d.days && s.durationTextActive]}>{d.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <View style={s.planSectionTitle}>
+                      <ClipboardCheck size={15} color={C.primary} />
+                      <Text style={s.planSectionText}>Reason</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                      {GRANT_REASONS.map((r) => (
+                        <Pressable key={r.id} onPress={() => setGrantReason(r.id)}
+                          style={[s.durationChoice, grantReason === r.id && s.durationChoiceActive]}>
+                          <Text style={[s.durationText, grantReason === r.id && s.durationTextActive]}>{r.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    {grantReason === 'OTHER' && (
+                      <TextInput style={[s.input, { marginTop: 8 }]} placeholder="Required explanation" value={grantExplanation}
+                        onChangeText={setGrantExplanation} placeholderTextColor={C.muted} />
+                    )}
+                    <TextInput style={[s.input, { marginTop: 8 }]} placeholder="Internal note (optional)" value={grantNote}
+                      onChangeText={setGrantNote} placeholderTextColor={C.muted} />
+                    <SmallBtn icon={Gift} label={grantBusy ? 'Granting access...' : `Grant complimentary ${grantPlan === 'grower' ? 'Pro' : 'Farm'}`}
+                      disabled={grantBusy || (grantPlan === 'farm' && !isOwner) || (grantReason === 'OTHER' && !grantExplanation.trim())}
+                      onPress={() => grant(grantPlan, grantDays)} />
+                  </>
+                )}
+
+                {can('subscriptions.view') && (
+                  <View style={s.selfServePlan}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.planSectionText}>Customer-paid subscription</Text>
+                      <Text style={s.cardSub}>
+                        {billingMode === 'live'
+                          ? 'Share the secure plan page. The customer signs in and controls checkout.'
+                          : billingMode === 'test'
+                            ? 'Payments are in TEST mode. Share for plan review only; no real subscription will be created.'
+                            : billingMode === 'loading' ? 'Checking the current billing mode...'
+                              : 'Billing mode could not be verified. Share for plan review only.'}
+                      </Text>
+                    </View>
+                    <SmallBtn icon={Share2} label={billingMode === 'live' ? 'Share signup link' : 'Share plan page'}
+                      onPress={() => void shareUpgrade()} disabled={billingMode === 'loading'} />
+                  </View>
+                )}
+              </View>
             )}
             {activeGrants.length > 0 && (
               <>
@@ -830,12 +1783,24 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
                 {activeGrants.map((g) => (
                   <View key={g.id} style={{ marginTop: 6 }}>
                     <Text style={s.cardText}>
-                      {g.plan} · {g.reason} · {g.expires_at ? `until ${String(g.expires_at).slice(0, 10)}` : 'no expiration'}
+                      {promoPlanLabel(String(g.plan))} · {g.reason} · {g.expires_at ? `until ${String(g.expires_at).slice(0, 10)}` : 'no expiration'}
                     </Text>
+                    <Text style={s.cardSub}>Source: {g.source ?? 'ADMIN'} · granted by {g.granted_by ?? 'Gnome admin'}</Text>
                     {can('subscriptions.revoke_complimentary') && (
-                      <SmallBtn label="Revoke" danger onPress={() => revoke(g.id)} />
+                      <SmallBtn label="Revoke" danger disabled={g.plan === 'farm' && !isOwner} onPress={() => revoke(g.id)} />
                     )}
                   </View>
+                ))}
+              </>
+            )}
+            {grants.length > 0 && (
+              <>
+                <Text style={s.h3}>Complimentary history</Text>
+                {grants.slice(0, 8).map((g) => (
+                  <Text key={`history-${g.id}`} style={s.cardSub}>
+                    {String(g.created_at).slice(0, 10)} · {promoPlanLabel(String(g.plan))} · {g.status} · {g.reason_code ?? g.reason}
+                    {g.revoked_at ? ` · revoked ${String(g.revoked_at).slice(0, 10)}` : ''}
+                  </Text>
                 ))}
               </>
             )}
@@ -874,8 +1839,14 @@ function Users({ back, can }: { back: () => void; can: (p: string) => boolean })
 // billing-checkout decides whether a code is actually redeemable, so nothing rendered or saved
 // here can make FOUNDING3 valid for Max or Farm — the DB suite re-asserts that after every write
 // this screen can perform. Validation below is convenience; the server's answer is the answer.
-const PLAN_CHOICES: [string, string][] = [['free', 'Free'], ['grower', 'Pro'], ['farm', 'Max'], ['sponsor', 'Farm']];
-const promoPlanLabel = (p: string) => PLAN_CHOICES.find(([k]) => k === p)?.[1] ?? p;
+const PLAN_CHOICES: [string, string][] = [['grower', 'Pro'], ['farm', 'Farm']];
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Free',
+  grower: 'Pro',
+  farm: 'Farm',
+  sponsor: 'Legacy Farm',
+};
+const promoPlanLabel = (p: string) => PLAN_LABELS[p] ?? p;
 const promoDiscountLabel = (c: any) =>
   `${c.discount_type === 'percent' ? `${Number(c.discount_percent)}% off` : `${money(c.discount_amount_cents ?? 0)} off`} · ${
     c.duration === 'repeating' ? `${c.duration_in_months} months` : c.duration}`;
@@ -902,13 +1873,19 @@ function PromoCampaigns({ back }: { back: () => void }) {
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [reds, setReds] = useState<any[] | 'loading' | 'error'>('loading');
+  const [wiring, setWiring] = useState(false);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_promo_campaigns');
+    const [{ data, error }, { data: summary }] = await Promise.all([
+      supabase.rpc('admin_promo_campaigns'),
+      supabase.rpc('admin_promo_campaigns_v2'),
+    ]);
     // An RPC failure is NOT zero campaigns. FOUNDING3 exists; rendering an empty list on error
     // would invite an admin to recreate it.
     if (error) { setState('error'); return; }
-    setRows((data as any[]) ?? []); setState('ok');
+    const byId = new Map(((summary as any[]) ?? []).map((r) => [r.id, r]));
+    setRows(((data as any[]) ?? []).map((r) => ({ ...r, ...(byId.get(r.id) ?? {}) })));
+    setState('ok');
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -934,6 +1911,47 @@ function PromoCampaigns({ back }: { back: () => void }) {
     ]);
   };
 
+  const wireStripe = async (c: any) => {
+    setWiring(true);
+    const identity = await supabase.functions.invoke('billing-admin', { body: { action: 'identity' } });
+    setWiring(false);
+    const info = (identity.data ?? {}) as any;
+    if (identity.error || info.error) {
+      Alert.alert('Stripe check failed', info.message ?? 'Could not confirm the Stripe TEST account.');
+      return;
+    }
+    if (!info.configured) {
+      Alert.alert('Stripe TEST is not configured', info.message ?? 'Set STRIPE_SECRET_KEY_TEST first.');
+      return;
+    }
+    Alert.alert(
+      'Wire Stripe TEST code?',
+      `${c.code} will be created or refreshed in Stripe TEST for ${info.business_name ?? 'this account'} (${info.account_id}). Existing subscribers keep any old discount; new checkouts use the refreshed code.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Wire test code', onPress: async () => {
+          setWiring(true);
+          const { data, error } = await supabase.functions.invoke('billing-admin', {
+            body: {
+              action: 'ensure_promo_campaign',
+              campaign_id: c.id,
+              confirm_account_id: info.account_id,
+            },
+          });
+          setWiring(false);
+          const res = (data ?? {}) as any;
+          if (error || res.error) {
+            Alert.alert('Stripe refused', res.message ?? res.detail ?? res.error ?? 'The promotion code was not wired.');
+            return;
+          }
+          Alert.alert('Promo code wired', `${c.code} is ready for subscription checkout in TEST mode.`);
+          await load();
+          setSel(null);
+        } },
+      ],
+    );
+  };
+
   if (sel && !editing) {
     return (
       <View style={{ flex: 1, padding: 16 }}>
@@ -957,18 +1975,24 @@ function PromoCampaigns({ back }: { back: () => void }) {
               {sel.new_customers_only ? ' · new customers only' : ''}
             </Text>
             <Text style={s.cardSub}>
+              Remaining: {sel.remaining ?? 'uncapped'} · eligibility: {sel.eligibility ?? (sel.new_customers_only ? 'New customers only' : 'Eligible signed-in accounts')}
+            </Text>
+            <Text style={s.cardSub}>Created by {sel.created_by ?? 'Gnome admin'} · {String(sel.created_at).slice(0, 10)}</Text>
+            <Text style={s.cardSub}>
               Redeemed {sel.redeemed} · converted {sel.converted} · cancelled {sel.cancelled}
               {sel.revenue_after_promo_cents > 0 ? ` · ${money(Number(sel.revenue_after_promo_cents))} post-promo` : ''}
             </Text>
             {!sel.configured && (
               <Text style={[s.cardSub, { color: C.gold }]}>
-                ⚠️ No Stripe promotion code wired — checkout refuses this code (NOT_CONFIGURED) until
-                the setup script links one. Saving here cannot fix that, by design.
+                ⚠️ No Stripe TEST promotion code wired — checkout refuses this code (NOT_CONFIGURED)
+                until you wire it here.
               </Text>
             )}
             {sel.internal_notes ? <Text style={s.cardSub}>📝 {sel.internal_notes}</Text> : null}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <SmallBtn label="Edit" onPress={() => setEditing(true)} />
+              <SmallBtn label={wiring ? 'Wiring…' : sel.configured ? 'Refresh Stripe test code' : 'Wire Stripe test code'}
+                onPress={() => { if (!wiring) void wireStripe(sel); }} disabled={wiring} />
               <SmallBtn label={sel.active ? 'Deactivate' : 'Reactivate'} danger={sel.active}
                 onPress={() => toggleActive(sel)} />
             </View>
@@ -1027,8 +2051,9 @@ function PromoCampaigns({ back }: { back: () => void }) {
                 <Text style={s.cardSub}>
                   {(c.applicable_plans?.length ?? 0) === 0 ? 'All plans'
                     : c.applicable_plans.map((p: string) => promoPlanLabel(p)).join(', ')}
-                  {' · '}{promoDiscountLabel(c)} · {c.redeemed} redeemed
+                  {' · '}{c.benefit ?? promoDiscountLabel(c)} · {c.used ?? c.redeemed} used · {c.remaining ?? 'uncapped'} remaining
                 </Text>
+                <Text style={s.cardSub}>{c.eligibility ?? 'Eligible signed-in accounts'} · created by {c.created_by ?? 'Gnome admin'}</Text>
               </Card>
             </Pressable>
           ))}
@@ -1135,7 +2160,7 @@ function PromoForm({ campaign, back, onSaved }: { campaign: any | null; back: ()
           <TextInput style={s.input} placeholder="Per-user limit" value={maxPerUser}
             onChangeText={setMaxPerUser} keyboardType="number-pad" placeholderTextColor={C.muted} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 }}>
-            <Switch value={newOnly} onValueChange={setNewOnly} trackColor={{ true: C.green }} />
+            <Switch value={newOnly} onValueChange={setNewOnly} trackColor={{ true: C.primary }} />
             <Text style={s.cardSub}>New customers only</Text>
           </View>
           <TextInput style={s.input} placeholder="Internal notes (optional)" value={notes} onChangeText={setNotes}
@@ -1143,8 +2168,8 @@ function PromoForm({ campaign, back, onSaved }: { campaign: any | null; back: ()
           <SmallBtn label={saving ? 'Saving…' : campaign ? 'Save changes' : 'Create campaign'}
             onPress={() => { if (!saving) void save(); }} disabled={saving} />
           <Text style={[s.cardSub, { marginTop: 6 }]}>
-            Stripe objects are owned by the setup script, never created from here. A new campaign
-            shows ⚠️ until its Stripe promotion code is wired, and checkout refuses it until then.
+            Save the Gnome rules first, then wire the Stripe TEST code from the campaign detail
+            screen. Gnome still enforces plan, date, total-use, and per-account limits at checkout.
           </Text>
         </Card>
       </ScrollView>
@@ -1315,7 +2340,7 @@ function Team({ back, can, isOwner }: {
   const revoked = group('revoked');
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       {err && <ErrorCard e={err} />}
       {notice && (
@@ -1414,10 +2439,49 @@ function Audit({ back }: { back: () => void }) {
 
 // ---------------------------------------------------------------- Boardroom
 const ROOM_PRESETS: { title: string; agents: string[] }[] = [
-  { title: 'Daily Standup', agents: ['gnome_hq', 'operations', 'inventory', 'seeds'] },
-  { title: 'Growth Council', agents: ['gnome_hq', 'operations', 'security'] },
-  { title: 'Seed Drop Ops', agents: ['inventory', 'seeds'] },
+  { title: 'Morning President Brief', agents: ['gnome_hq', 'boon', 'gemma', 'marty', 'senior'] },
+  { title: 'Launch Readiness', agents: ['gnome_hq', 'junior', 'senior', 'debb', 'kay'] },
+  { title: 'Marketplace Health', agents: ['gnome_hq', 'boon', 'enzo', 'gemma', 'marty'] },
+  { title: 'Trust Review', agents: ['gnome_hq', 'kay', 'debb', 'senior', 'junior'] },
+  { title: 'Growth Campaign', agents: ['gnome_hq', 'gemma', 'reddy', 'gee', 'marty'] },
 ];
+
+function splitTechnicalDetails(content: string) {
+  const match = content.match(/^TECHNICAL DETAILS\s*$/im);
+  if (!match || match.index === undefined) return { simple: content, technical: '' };
+  return {
+    simple: content.slice(0, match.index).trim(),
+    technical: content.slice(match.index + match[0].length).trim(),
+  };
+}
+
+function BoardroomMessageText({ content, mine }: { content: string; mine: boolean }) {
+  const textStyle = mine ? s.bubbleTextMe : s.bubbleText;
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  return (
+    <View>
+      {lines.map((raw, idx) => {
+        const line = raw.trimEnd();
+        const key = `${idx}-${line}`;
+        if (!line.trim()) return <View key={key} style={s.messageBreak} />;
+        const heading = line.match(/^\*\*(.+?)\*\*:?$/);
+        if (heading) return <Text key={key} style={[textStyle, s.messageHeading]}>{heading[1]}</Text>;
+        const bullet = line.match(/^[-*]\s+(.+)$/);
+        if (bullet) return <Text key={key} style={[textStyle, s.messageLine]}>{'\u2022'} {stripInlineMarkdown(bullet[1])}</Text>;
+        const numbered = line.match(/^(\d+)[.)]\s+(.+)$/);
+        if (numbered) return <Text key={key} style={[textStyle, s.messageLine]}>{numbered[1]}. {stripInlineMarkdown(numbered[2])}</Text>;
+        return <Text key={key} style={[textStyle, s.messageLine]}>{stripInlineMarkdown(line)}</Text>;
+      })}
+    </View>
+  );
+}
+
+function stripInlineMarkdown(text: string) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1');
+}
 
 function NewBoardroom({ agents, back, created }: {
   agents: any[]; back: () => void; created: (room: any) => void;
@@ -1437,10 +2501,15 @@ function NewBoardroom({ agents, back, created }: {
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       <BackRow label="← AI HQ" onPress={back} />
       <Text style={s.h2}>New Boardroom</Text>
-      <Text style={s.cardSub}>Up to 5 agents. They answer you and can push back on each other for one bounded round; HQ wraps it up. Being in a room never expands what an agent may do.</Text>
+      <Text style={s.cardSub}>Choose up to five specialists. Zordy synthesizes the room without expanding anyone’s authority.</Text>
       {ROOM_PRESETS.map((p) => (
         <Pressable key={p.title} onPress={() => void create(p.title, p.agents.filter((id) => agents.some((a) => a.id === id)))}>
-          <Card><Text style={s.cardTitle}>⚡ {p.title}</Text><Text style={s.cardSub}>{p.agents.join(', ')}</Text></Card>
+          <Card>
+            <View style={s.rowBetween}>
+              <View style={{ flex: 1 }}><Text style={s.cardTitle}>{p.title}</Text><Text style={s.cardSub}>{p.agents.map((id) => AGENT_PRESENTATION[id]?.label ?? id).join(' · ')}</Text></View>
+              <ChevronRight size={19} color={C.muted} />
+            </View>
+          </Card>
         </Pressable>
       ))}
       <Text style={s.h3}>Or build your own</Text>
@@ -1448,7 +2517,12 @@ function NewBoardroom({ agents, back, created }: {
       {agents.map((a) => (
         <Pressable key={a.id} onPress={() => toggle(a.id)}>
           <Card>
-            <Text style={s.cardTitle}>{picked.includes(a.id) ? '☑' : '☐'} {a.name}</Text>
+            <View style={s.rowBetween}>
+              <View><Text style={s.cardTitle}>{agentDisplay(a).label}</Text><Text style={s.cardSub}>{agentDisplay(a).role}</Text></View>
+              <View style={[s.checkBox, picked.includes(a.id) && s.checkBoxActive]}>
+                {picked.includes(a.id) && <Check size={14} color="#FFFFFF" />}
+              </View>
+            </View>
           </Card>
         </Pressable>
       ))}
@@ -1460,10 +2534,16 @@ function NewBoardroom({ agents, back, created }: {
 }
 
 function RoomView({ room, back, agents }: { room: any; back: () => void; agents: any[] }) {
+  const listRef = useRef<FlatList<any>>(null);
   const [msgs, setMsgs] = useState<any[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const agentName = (id?: string | null) => agents.find((a) => a.id === id)?.name ?? id ?? 'Gnome';
+  const [detailMode, setDetailMode] = useState<'simple' | 'technical'>('simple');
+  const agentName = (id?: string | null) => {
+    if (id === 'gnome_hq') return 'Zordy';
+    const agent = agents.find((a) => a.id === id);
+    return agent ? agentDisplay(agent).label : id ?? 'Zordy';
+  };
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('ai_room_messages')
@@ -1487,27 +2567,71 @@ function RoomView({ room, back, agents }: { room: any; back: () => void; agents:
     setSending(false);
   };
 
+  const suggestions = [
+    'Give me the operational brief.',
+    'What needs my attention today?',
+    'Review launch security and compliance.',
+    'What would you change next?',
+  ];
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
       <View style={{ flex: 1, padding: 16 }}>
-        <BackRow label={`← ${room.title}`} onPress={back} />
+        <View style={s.chatHeader}>
+          <Pressable style={s.backIcon} onPress={back} accessibilityLabel="Back to Zordy Ops"><ArrowLeft size={21} color={C.text} /></Pressable>
+          <Image source={ZORDY} style={s.chatAvatar} accessibilityLabel="Zordy" />
+          <View style={{ flex: 1, minWidth: 0 }}><Text style={s.chatTitle}>{room.title}</Text><Text style={s.chatStatus}>Simple by default · details available</Text></View>
+          <View style={s.modeToggle}>
+            {(['simple', 'technical'] as const).map((mode) => (
+              <Pressable key={mode} style={[s.modeChoice, detailMode === mode && s.modeChoiceActive]}
+                onPress={() => setDetailMode(mode)} accessibilityLabel={`${mode} boardroom mode`}>
+                <Text style={[s.modeChoiceText, detailMode === mode && s.modeChoiceTextActive]}>{mode === 'simple' ? 'Simple' : 'Technical'}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
         <FlatList
+          ref={listRef}
           data={msgs}
           keyExtractor={(m, i) => String(m.id ?? i)}
-          renderItem={({ item }) => (
-            <View style={[s.bubble, item.sender_type === 'admin' ? s.bubbleMe : item.sender_type === 'system' ? s.bubbleSys : s.bubbleAgent]}>
-              {item.sender_type === 'agent' && <Text style={s.bubbleWho}>{agentName(item.sender_agent_id)}</Text>}
-              <Text style={item.sender_type === 'admin' ? s.bubbleTextMe : s.bubbleText}>{item.content}</Text>
+          contentContainerStyle={s.messageList}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+          renderItem={({ item }) => {
+            const split = splitTechnicalDetails(String(item.content ?? ''));
+            const hasTechnical = Boolean(split.technical);
+            const content = detailMode === 'technical' || !hasTechnical ? String(item.content ?? '') : split.simple;
+            return (
+              <View style={[s.messageRow, item.sender_type === 'admin' && { justifyContent: 'flex-end' }]}>
+                {item.sender_type === 'agent' && item.sender_agent_id === 'gnome_hq' && <Image source={ZORDY} style={s.messageAvatar} />}
+	                <View style={[s.bubble, item.sender_type === 'admin' ? s.bubbleMe : item.sender_type === 'system' ? s.bubbleSys : s.bubbleAgent]}>
+	                  {item.sender_type === 'agent' && <Text style={s.bubbleWho}>{agentName(item.sender_agent_id)}</Text>}
+	                  <BoardroomMessageText content={content} mine={item.sender_type === 'admin'} />
+                  {hasTechnical && detailMode === 'simple' && (
+                    <Pressable style={s.techDetailsButton} onPress={() => setDetailMode('technical')} accessibilityLabel="Show technical details">
+                      <Text style={s.techDetailsButtonText}>SHOW TECHNICAL DETAILS</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            );
+          }}
+          ListEmptyComponent={(
+            <View style={s.emptyChat}>
+              <Image source={ZORDY} style={s.emptyChatAvatar} />
+              <Text style={s.emptyChatTitle}>What are we working on?</Text>
+              <Text style={s.emptyChatSub}>Ask for a read, a recommendation, or an approved operational action.</Text>
+              {suggestions.map((prompt) => <Pressable key={prompt} style={s.promptChip} onPress={() => setDraft(prompt)}><Text style={s.promptChipText}>{prompt}</Text></Pressable>)}
             </View>
           )}
-          ListEmptyComponent={<Text style={s.cardSub}>Ask anything — agents answer with real Gnome numbers.</Text>}
         />
-        {sending && <Text style={s.cardSub}>The room is thinking…</Text>}
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+        {sending && <Text style={s.thinkingText}>Zordy is coordinating the room…</Text>}
+        <View style={s.composer}>
           <TextInput style={[s.input, { flex: 1, marginBottom: 0, minWidth: 0 }]} placeholder="Message the room…"
             value={draft} onChangeText={setDraft} multiline placeholderTextColor={C.muted} />
-          <Pressable style={[s.btn, { marginTop: 0, opacity: sending ? 0.5 : 1 }]} onPress={() => void send()} disabled={sending}>
-            <Text style={s.btnText}>↑</Text>
+          <Pressable style={[s.sendButton, sending && { opacity: 0.5 }]} onPress={() => void send()} disabled={sending} accessibilityLabel="Send message">
+            <Send size={19} color="#FFFFFF" />
           </Pressable>
         </View>
       </View>
@@ -1604,7 +2728,7 @@ function Fulfill({ can }: { can: (p: string) => boolean }) {
   if (order) {
     const shipTo = order.ship ?? order.profile_snapshot?.ship ?? null;
     return (
-      <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshOrder(order.id)} tintColor={C.green} />}>
+      <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshOrder(order.id)} tintColor={C.primary} />}>
         <BackRow label="← Queue" onPress={() => setOrder(null)} />
         <Card>
           <Text style={s.cardBig}>{order.customer ?? 'Seed Drop order'}</Text>
@@ -1652,7 +2776,7 @@ function Fulfill({ can }: { can: (p: string) => boolean }) {
       <FlatList
         data={lanes[lane]}
         keyExtractor={(o) => o.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}
         renderItem={({ item }) => (
           <Pressable onPress={() => setOrder(item)}>
             <Card>
@@ -1927,7 +3051,7 @@ function Commercial({ back, can }: { back: () => void; can: (p: string) => boole
   })();
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       <Text style={s.h2}>Plans & revenue</Text>
       <Card>
@@ -2029,7 +3153,7 @@ function Seasons({ back, can }: { back: () => void; can: (p: string) => boolean 
 
   const today = new Date().toISOString().slice(0, 10);
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       <Text style={s.h2}>Seasonal calendar</Text>
       <Card><Text style={s.cardSub}>One personalized Drop per season, up to 4/year. Join after a window’s cutoff → first Drop moves to the next season. $24.99/season (Stripe charge step pending owner config).</Text></Card>
@@ -2157,7 +3281,7 @@ function Moderation({ back, can, isOwner }: {
   const filtered = fClass != null || fStateOn != null || fDays != null || fSeller != null;
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.green} />}>
+    <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={C.primary} />}>
       <BackRow label="← More" onPress={back} />
       {err && <ErrorCard e={err} />}
 
@@ -2181,7 +3305,7 @@ function Moderation({ back, can, isOwner }: {
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
               <Text style={s.cardTitle}>Screening enabled</Text>
               {settings != null && (
-                <Switch value={enabled} onValueChange={toggleScreening} trackColor={{ true: C.green }} />
+                <Switch value={enabled} onValueChange={toggleScreening} trackColor={{ true: C.primary }} />
               )}
             </View>
             <TextInput style={[s.input, { marginTop: 8, marginBottom: 8 }]} value={cfgReason} onChangeText={setCfgReason}
@@ -2549,12 +3673,13 @@ function Row2({ items, money0 }: { items: [string, number][]; money0?: boolean }
     </View>
   );
 }
-function SmallBtn({ label, onPress, danger, disabled }: {
-  label: string; onPress: () => void; danger?: boolean; disabled?: boolean;
+function SmallBtn({ label, onPress, danger, disabled, icon: Icon }: {
+  label: string; onPress: () => void; danger?: boolean; disabled?: boolean; icon?: LucideIcon;
 }) {
   return (
     <Pressable style={[s.smallBtn, danger && { backgroundColor: C.red }, disabled && { opacity: 0.4 }]}
       onPress={onPress} disabled={disabled}>
+      {Icon && <Icon size={14} color="#FFFFFF" />}
       <Text style={s.smallBtnText}>{label}</Text>
     </Pressable>
   );
@@ -2609,72 +3734,149 @@ function alertServerError(e: { message?: string } | null | undefined) {
 function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable style={s.menuRow} onPress={onPress}>
-      <Text style={s.menuText}>{label}</Text><Text style={{ color: C.muted }}>›</Text>
+      <Text style={s.menuText}>{label}</Text><ChevronRight size={19} color={C.muted} />
     </Pressable>
   );
 }
 function BackRow({ label, onPress }: { label: string; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={{ marginBottom: 10 }}><Text style={{ color: C.green, fontWeight: '700', fontSize: 15 }}>{label}</Text></Pressable>;
+  return <Pressable onPress={onPress} style={s.backRow}><ArrowLeft size={19} color={C.primary} /><Text style={s.backText}>{label.replace(/^←\s*/, '')}</Text></Pressable>;
 }
 
 const s = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 28, gap: 10 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
-  brand: { fontSize: 20, fontWeight: '800', color: C.green },
-  role: { fontSize: 11, fontWeight: '800', color: C.gold, letterSpacing: 0.5 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 9, borderBottomWidth: 1, borderColor: C.border },
+  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  headerAvatar: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, borderColor: C.primarySoft },
+  brand: { fontSize: 17, fontWeight: '800', color: C.text },
+  brandSub: { fontSize: 9.5, fontWeight: '800', color: C.primary, letterSpacing: 0 },
+  roleBadge: { backgroundColor: C.primarySoft, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999 },
+  role: { fontSize: 10, fontWeight: '800', color: C.primary, letterSpacing: 0 },
   tabbar: { flexDirection: 'row', borderTopWidth: 1, borderColor: C.border, backgroundColor: C.surface },
-  tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 12 },
-  tabBtnActive: { borderTopWidth: 2, borderColor: C.green },
-  tabText: { fontSize: 13, fontWeight: '600', color: C.muted },
-  tabTextActive: { color: C.green, fontWeight: '800' },
-  h2: { fontSize: 15, fontWeight: '800', color: C.green, marginTop: 14, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.4 },
+  tabBtn: { flex: 1, alignItems: 'center', gap: 3, paddingTop: 8, paddingBottom: 7, borderTopWidth: 2, borderTopColor: 'transparent' },
+  tabText: { fontSize: 11.5, fontWeight: '600', color: C.muted },
+  h2: { fontSize: 13, fontWeight: '800', color: C.text, marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0 },
   h3: { fontSize: 13, fontWeight: '800', color: C.mid, marginTop: 12, marginBottom: 6 },
-  card: { backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: C.border },
-  cardBig: { fontSize: 22, fontWeight: '800', color: C.green },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: C.green },
+  card: { backgroundColor: C.surface, borderRadius: 8, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: C.border },
+  cardBig: { fontSize: 22, fontWeight: '800', color: C.text },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: C.text },
   cardSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
   cardText: { fontSize: 13.5, color: C.mid, marginTop: 4 },
   mono: { fontSize: 11, color: C.muted, marginTop: 6, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   stamp: { fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 14 },
   input: {
-    backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.green, width: '100%', marginBottom: 10, minWidth: 260,
+    backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.muted, borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: C.text, width: '100%', marginBottom: 10, minWidth: 260,
   },
-  btn: { backgroundColor: C.green, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 28, marginTop: 6 },
+  btn: { backgroundColor: C.primary, borderRadius: 8, paddingVertical: 13, paddingHorizontal: 28, marginTop: 6 },
   btnText: { color: '#fff', fontWeight: '800', fontSize: 15, textAlign: 'center' },
-  smallBtn: { backgroundColor: C.green, borderRadius: 9, paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginTop: 8 },
+  smallBtn: { backgroundColor: C.primary, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'flex-start', marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
   smallBtnText: { color: '#fff', fontWeight: '700', fontSize: 12.5 },
   menuRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: C.border,
+    backgroundColor: C.surface, borderRadius: 8, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: C.border,
   },
-  menuText: { fontSize: 15, fontWeight: '700', color: C.green },
+  menuText: { fontSize: 15, fontWeight: '700', color: C.text },
   chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  chipActive: { backgroundColor: C.green, borderColor: C.green },
+  chipActive: { backgroundColor: C.primary, borderColor: C.primary },
   chipText: { fontSize: 13, fontWeight: '700', color: C.muted },
   chipTextActive: { color: '#fff' },
-  signTitle: { fontSize: 26, fontWeight: '800', color: C.green },
+  signAvatar: { width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: C.primarySoft, marginBottom: 4 },
+  signTitle: { fontSize: 26, fontWeight: '800', color: C.primary },
   lane: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  laneActive: { backgroundColor: C.green, borderColor: C.green },
+  laneActive: { backgroundColor: C.primary, borderColor: C.primary },
   laneText: { fontSize: 12.5, fontWeight: '700', color: C.muted },
   laneTextActive: { color: '#fff' },
-  bubble: { borderRadius: 14, padding: 12, marginBottom: 8, maxWidth: '92%' },
-  bubbleMe: { backgroundColor: C.green, alignSelf: 'flex-end' },
-  bubbleAgent: { backgroundColor: C.surface, alignSelf: 'flex-start', borderWidth: 1, borderColor: C.border },
+  bubble: { borderRadius: 8, padding: 12, marginBottom: 8, maxWidth: '92%', flexShrink: 1 },
+  bubbleMe: { backgroundColor: C.primary, alignSelf: 'flex-end' },
+  bubbleAgent: { backgroundColor: C.surfaceMuted, alignSelf: 'flex-start' },
   bubbleSys: { backgroundColor: 'transparent', alignSelf: 'center' },
-  bubbleWho: { fontSize: 11, fontWeight: '800', color: C.gold, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
-  bubbleText: { fontSize: 14, color: C.green, lineHeight: 20 },
+  bubbleWho: { fontSize: 11, fontWeight: '800', color: C.primary, marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0 },
+  bubbleText: { fontSize: 14, color: C.text, lineHeight: 20 },
   bubbleTextMe: { fontSize: 14, color: '#fff', lineHeight: 20 },
-  pickCard: { backgroundColor: C.surface, borderRadius: 16, padding: 18, marginBottom: 10, borderWidth: 2, borderColor: C.green },
+  messageList: { paddingTop: 10, paddingBottom: 18 },
+  messageLine: { flexShrink: 1 },
+  messageHeading: { fontWeight: '800', marginTop: 4, marginBottom: 2 },
+  messageBreak: { height: 8 },
+  pickCard: { backgroundColor: C.surface, borderRadius: 8, padding: 18, marginBottom: 10, borderWidth: 2, borderColor: C.orange },
   pickBin: { fontSize: 30, fontWeight: '900', color: C.gold },
-  pickName: { fontSize: 22, fontWeight: '800', color: C.green, marginTop: 4 },
+  pickName: { fontSize: 22, fontWeight: '800', color: C.text, marginTop: 4 },
   pickLot: { fontSize: 15, color: C.muted, marginTop: 2 },
-  pickTap: { fontSize: 13, fontWeight: '800', color: C.mid, marginTop: 10, letterSpacing: 0.6 },
-  errBox: { backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: C.red },
+  pickTap: { fontSize: 13, fontWeight: '800', color: C.mid, marginTop: 10, letterSpacing: 0 },
+  errBox: { backgroundColor: '#FEF2F2', borderRadius: 8, padding: 14, marginBottom: 8, borderWidth: 1.5, borderColor: C.red },
   errTitle: { fontSize: 15, fontWeight: '800', color: C.red },
-  scopeBox: { backgroundColor: C.bg, borderRadius: 10, padding: 12, marginTop: 8, borderWidth: 1, borderColor: C.border },
-  modPhoto: { width: 96, height: 96, borderRadius: 10, marginRight: 8, backgroundColor: C.bg },
-  deniedEmoji: { fontSize: 40 },
-  deniedTitle: { fontSize: 18, fontWeight: '800', color: C.green, textAlign: 'center' },
+  scopeBox: { backgroundColor: C.surfaceMuted, borderRadius: 8, padding: 12, marginTop: 8, borderWidth: 1, borderColor: C.border },
+  modPhoto: { width: 96, height: 96, borderRadius: 8, marginRight: 8, backgroundColor: C.bg },
+  deniedIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2' },
+  deniedTitle: { fontSize: 18, fontWeight: '800', color: C.text, textAlign: 'center' },
   deniedSub: { fontSize: 13.5, color: C.muted, textAlign: 'center', lineHeight: 19 },
+
+  zordyHero: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: C.primarySoft, borderRadius: 8, padding: 14, borderWidth: 1, borderColor: '#E6D7F5' },
+  zordyHeroAvatar: { width: 84, height: 84, borderRadius: 8 },
+  zordyEyebrow: { fontSize: 10, fontWeight: '800', color: C.primary, letterSpacing: 0 },
+  zordyTitle: { fontSize: 24, fontWeight: '900', color: C.text, marginTop: 1 },
+  zordySub: { fontSize: 12.5, color: C.muted, lineHeight: 17, marginTop: 2 },
+  zordyButton: { flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start', backgroundColor: C.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, marginTop: 10 },
+  zordyButtonText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' },
+  conciergeHero: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFF7ED', borderRadius: 8, padding: 14, borderWidth: 1, borderColor: '#FED7AA' },
+  boonMark: { width: 48, height: 48, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: C.orange },
+  statusStrip: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 2 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { fontSize: 11.5, color: C.muted, fontWeight: '700' },
+  statusDivider: { color: C.border },
+  agentGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  agentCard: { width: '48.8%', minHeight: 148, borderWidth: 1, borderColor: C.border, borderRadius: 8, padding: 12, backgroundColor: C.surface },
+  agentIcon: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 9 },
+  agentName: { fontSize: 14, fontWeight: '800', color: C.text },
+  agentRole: { fontSize: 11.5, color: C.muted, lineHeight: 16, marginTop: 3, flex: 1 },
+  agentChatRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  agentChatText: { fontSize: 11.5, fontWeight: '800' },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  iconCommand: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 6 },
+  iconCommandText: { color: C.primary, fontSize: 12.5, fontWeight: '800' },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  riskBadge: { fontSize: 10, fontWeight: '900', color: C.gold, backgroundColor: '#FFF7ED', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  refundedBadge: { fontSize: 10, fontWeight: '900', color: C.green, backgroundColor: '#ECFDF3', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
+  planManager: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderColor: C.border },
+  planSectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14, marginBottom: 7 },
+  planSectionText: { fontSize: 13, fontWeight: '800', color: C.text },
+  planChoiceRow: { flexDirection: 'row', gap: 8 },
+  planChoice: { flex: 1, minHeight: 76, borderWidth: 1, borderColor: C.border, borderRadius: 8, padding: 11, backgroundColor: C.surface },
+  planChoiceActive: { borderWidth: 2, borderColor: C.primary, backgroundColor: C.primarySoft, padding: 10 },
+  planChoiceName: { fontSize: 15, fontWeight: '800', color: C.text },
+  planChoiceNameActive: { color: C.primary },
+  planChoiceDetail: { fontSize: 11.5, color: C.muted, lineHeight: 15, marginTop: 3 },
+  planChoiceDetailActive: { color: C.primaryDark },
+  durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  durationChoice: { borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: C.surface },
+  durationChoiceActive: { borderColor: C.primary, backgroundColor: C.primary },
+  durationText: { fontSize: 11.5, fontWeight: '700', color: C.muted },
+  durationTextActive: { color: '#FFFFFF' },
+  selfServePlan: { marginTop: 15, paddingTop: 14, borderTopWidth: 1, borderColor: C.border },
+  checkBox: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, borderColor: C.muted, alignItems: 'center', justifyContent: 'center' },
+  checkBoxActive: { backgroundColor: C.primary, borderColor: C.primary },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, alignSelf: 'flex-start' },
+  backText: { color: C.primary, fontWeight: '700', fontSize: 15 },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingBottom: 10, borderBottomWidth: 1, borderColor: C.border },
+  backIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  chatAvatar: { width: 40, height: 40, borderRadius: 20 },
+  chatTitle: { fontSize: 15, fontWeight: '800', color: C.text },
+  chatStatus: { fontSize: 11, color: C.muted, marginTop: 2 },
+  modeToggle: { flexDirection: 'row', borderWidth: 1, borderColor: C.border, borderRadius: 8, overflow: 'hidden' },
+  modeChoice: { paddingHorizontal: 8, paddingVertical: 7, backgroundColor: C.surface },
+  modeChoiceActive: { backgroundColor: C.primary },
+  modeChoiceText: { fontSize: 11, fontWeight: '800', color: C.muted },
+  modeChoiceTextActive: { color: '#FFFFFF' },
+  messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7, marginBottom: 8 },
+  messageAvatar: { width: 28, height: 28, borderRadius: 14, marginBottom: 8 },
+  emptyChat: { alignItems: 'center', paddingVertical: 28, paddingHorizontal: 12 },
+  emptyChatAvatar: { width: 72, height: 72, borderRadius: 36 },
+  emptyChatTitle: { fontSize: 18, fontWeight: '800', color: C.text, marginTop: 10 },
+  emptyChatSub: { fontSize: 12.5, color: C.muted, textAlign: 'center', lineHeight: 18, marginTop: 4, marginBottom: 12 },
+  promptChip: { width: '100%', borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6, backgroundColor: C.surface },
+  promptChipText: { fontSize: 12.5, fontWeight: '700', color: C.text },
+  thinkingText: { fontSize: 11.5, color: C.primary, fontWeight: '700', marginBottom: 6 },
+  composer: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', paddingTop: 10, borderTopWidth: 1, borderColor: C.border },
+  sendButton: { width: 46, height: 46, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary },
+  techDetailsButton: { alignSelf: 'flex-start', marginTop: 9, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  techDetailsButtonText: { fontSize: 10.5, fontWeight: '900', color: C.primary, letterSpacing: 0 },
 });

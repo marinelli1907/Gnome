@@ -26,6 +26,10 @@ import {
 } from '../components/NativeAppVisitMarker';
 
 type Mode = 'test' | 'live';
+type PromoPreview = {
+  mode: Mode; renewal_price_cents: number;
+  promo: { code: string; campaign_name: string; discount_percent: number | null; duration: string; duration_in_months: number | null; conversion_behavior: 'AUTO_RENEW' | 'NO_AUTO_CONVERSION'; payment_method_required: boolean };
+};
 
 const FRIENDLY: Record<string, string> = {
   NO_MARKET: 'Post something once to create your Market, then you can upgrade.',
@@ -35,6 +39,9 @@ const FRIENDLY: Record<string, string> = {
   PRICE_MISSING: 'This plan has no price configured yet. Nothing was charged.',
   CHECKOUT_FAILED: 'Stripe could not start checkout. Nothing was charged.',
   NOT_YOUR_LISTING: 'That listing is not yours.',
+  PROMO_REJECTED: 'That code could not be applied.',
+  PROMO_NOT_APPLICABLE: 'That code does not apply to this purchase.',
+  PROMO_NO_AUTO_PATH_REQUIRED: 'This no-renewal offer cannot use subscription checkout. No card was requested.',
 };
 
 const UNAVAILABLE = 'Checkout is unavailable right now. Nothing was charged.';
@@ -46,10 +53,12 @@ export default function PricingCTA({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState('');
   // Holds a created-but-not-yet-opened checkout URL while the test-mode warning
   // is on screen. Non-null means "we told them, and they have not continued".
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [androidAppVisit, setAndroidAppVisit] = useState(false);
+  const [promoPreview, setPromoPreview] = useState<PromoPreview | null>(null);
 
   const cls = `btn ${primary ? 'btn-primary' : 'btn-secondary'}`;
 
@@ -74,18 +83,25 @@ export default function PricingCTA({
   }
 
   async function go() {
+    if (promoCode.trim() && promoPreview?.promo.code !== promoCode.trim().toUpperCase()) {
+      await previewPromo();
+      return;
+    }
     setBusy(true);
     setErr(null);
     setNote(null);
     try {
       const { data, error } = await supabaseBrowser().functions.invoke('billing-checkout', {
-        body: { product_key: productKey },
+        body: {
+          product_key: productKey,
+          promo_code: promoCode.trim() || undefined,
+        },
       });
       // A non-2xx from an edge function surfaces as `error`, but the server's own
       // JSON body still arrives in `data` — read the specific code first so the
       // seller gets the real reason rather than a shrug.
       const code = (data as { error?: string } | null)?.error;
-      if (code) { setErr(FRIENDLY[code] ?? UNAVAILABLE); return; }
+      if (code) { setErr((data as { message?: string } | null)?.message ?? FRIENDLY[code] ?? UNAVAILABLE); return; }
       if (error) { setErr(UNAVAILABLE); return; }
 
       const { url, mode } = (data ?? {}) as { url?: string; mode?: Mode };
@@ -118,11 +134,44 @@ export default function PricingCTA({
     }
   }
 
+  async function previewPromo() {
+    if (!promoCode.trim()) return;
+    setBusy(true); setErr(null); setPromoPreview(null);
+    const { data, error } = await supabaseBrowser().functions.invoke('billing-checkout', {
+      body: { action: 'preview_promo', product_key: productKey, promo_code: promoCode.trim(), platform: 'web' },
+    });
+    setBusy(false);
+    const body = (data ?? {}) as PromoPreview & { error?: string; message?: string };
+    if (error || body.error || !body.promo) setErr(body.message ?? 'That code could not be applied.');
+    else setPromoPreview(body);
+  }
+
   return (
     <>
       <button className={cls} onClick={go} disabled={busy}>
         {busy ? 'Opening checkout…' : label}
       </button>
+      <input
+        className="input"
+        value={promoCode}
+        onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoPreview(null); setErr(null); }}
+        placeholder="Promo code"
+        autoCapitalize="characters"
+        autoCorrect="off"
+        style={{ marginTop: 8 }}
+      />
+      <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={busy || !promoCode.trim()} onClick={() => void previewPromo()}>
+        {busy ? 'Checking…' : 'Apply promo code'}
+      </button>
+      {promoPreview ? (
+        <div className="notice-inline" style={{ marginTop: 8 }}>
+          <strong>{promoPreview.promo.code}: $0 today.</strong>{' '}
+          {promoPreview.promo.duration === 'repeating' ? `Pro free for ${promoPreview.promo.duration_in_months} months. ` : ''}
+          {promoPreview.promo.conversion_behavior === 'AUTO_RENEW'
+            ? `Then $${(promoPreview.renewal_price_cents / 100).toFixed(2)}/month unless canceled.${promoPreview.promo.payment_method_required ? ' A payment method is required.' : ''}`
+            : 'No card required. Access ends without converting to paid billing.'}
+        </div>
+      ) : null}
       {note && <p className="notice-inline" style={{ marginTop: 8 }}>{note}</p>}
       {pendingUrl && (
         <button

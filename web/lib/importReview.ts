@@ -183,10 +183,9 @@ export function allowanceSummary(a: ImportAllowance, opts?: PurchaseCopyOptions)
 // ---------------------------------------------------------------------------
 
 export function importLimitCopy(message?: string | null): string {
-  // The server message already carries the right cap for the caller's plan; fall back to the
-  // Free number, never to a raw token.
-  if (message && /\d/.test(message)) return message;
-  return 'You’ve used your 3 Gnome Market imports for today. Try again tomorrow.';
+  // The server message already carries the right Zordy allowance for the caller's plan.
+  if (message && /zordy/i.test(message)) return message;
+  return 'You’ve used today’s Zordy requests. They reset tomorrow.';
 }
 
 // ---------------------------------------------------------------------------

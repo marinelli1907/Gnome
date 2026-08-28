@@ -46,6 +46,7 @@ type Body = {
   listing_id?: string; // GNOME_LISTING_PROMOTION, and the overage keys
   quantity?: number;   // GNOME_PICKUP_LOCATION_ADDON
   promo_code?: string; // subscription keys only
+  action?: 'checkout' | 'preview_promo' | 'portal';
   // 'app' asks for the mobile deep-link return pair instead of the web URLs. The VALUES are
   // server constants either way — the client chooses between two fixed pairs and can never
   // supply a URL of its own, so checkout cannot be pointed anywhere Gnome does not control.
@@ -127,8 +128,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+  let promoReservationId: string | null = null;
+  // The untyped client factory has incompatible generic defaults when its
+  // return type is named outside this block. Keep only the two cleanup methods
+  // needed after a thrown checkout error.
+  let reservationAdmin: { rpc: (name: string, args: Record<string, unknown>) => PromiseLike<unknown> } | null = null;
   try {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    reservationAdmin = admin;
     const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
     const { data: u } = await admin.auth.getUser(token);
     const uid = u?.user?.id;
@@ -195,17 +202,82 @@ Deno.serve(async (req: Request) => {
     const { data: cfg } = await admin.from('billing_config').select('payments_live_enabled').limit(1).maybeSingle();
     const live = cfg?.payments_live_enabled === true;
     const mode = live ? 'live' : 'test';
+
+    // Same authoritative decision checkout uses, without creating a Stripe
+    // session or entitlement. The account-scoped attempt budget keeps this
+    // authenticated endpoint from becoming a practical code-enumeration oracle.
+    if (body.action === 'preview_promo') {
+      const plan = PLAN_FOR_KEY[key];
+      const rawPromo = String(body.promo_code ?? '').trim();
+      if (!plan || !rawPromo) {
+        return json(400, { error: 'PROMO_NOT_APPLICABLE', message: 'Choose a paid plan and enter a promo code.' });
+      }
+      const { data: allowed } = await admin.rpc('promo_preview_reserve', { p_user: uid });
+      if (allowed !== true) {
+        return json(429, { error: 'PROMO_RATE_LIMITED', message: 'Too many code attempts. Try again later.' });
+      }
+      const { data: v } = await admin.rpc('promo_validate', { p_code: rawPromo, p_plan: plan, p_user: uid });
+      const res = Array.isArray(v) ? v[0] : v;
+      if (!res || res.ok !== true) {
+        const reason = String(res?.reason ?? 'INVALID_CODE');
+        return json(400, { error: 'PROMO_REJECTED', reason, message: PROMO_MESSAGE[reason] ?? PROMO_MESSAGE.INVALID_CODE });
+      }
+      const { data: campaign } = await admin.from('promotion_campaigns')
+        .select('code,campaign_name,discount_type,discount_percent,discount_amount_cents,duration,duration_in_months,conversion_behavior,payment_method_required')
+        .eq('id', res.campaign_id).maybeSingle();
+      if (!campaign) return json(400, { error: 'PROMO_REJECTED', message: PROMO_MESSAGE.INVALID_CODE });
+      return json(200, {
+        ok: true, mode, product_key: key, plan,
+        renewal_price_cents: Number(product.unit_amount_cents ?? 0),
+        currency: String(product.currency ?? 'usd'),
+        checkout_configured: !!(live ? product.stripe_price_id_live : product.stripe_price_id_test),
+        promo: campaign,
+      });
+    }
+
+    // Native apps use Apple / Google Play for new digital plan purchases. The
+    // portal action remains available to manage an existing WEBSITE-billed
+    // Stripe subscription without offering a second subscription.
+    if (body.platform === 'app' && PLAN_FOR_KEY[key] && body.action !== 'portal') {
+      return json(409, { error: 'NATIVE_STORE_REQUIRED', message: 'Subscribe with your device app store.' });
+    }
+    if (body.platform !== 'app' && PLAN_FOR_KEY[key] && market) {
+      const { data: otherProvider } = await admin.from('market_subscriptions')
+        .select('plan,billing_source,status,expires_at').eq('market_id', market.id).eq('kind', 'plan')
+        .neq('billing_source', 'STRIPE').in('status', ['active','trialing','grace_period','canceled','cancelled'])
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`).limit(1).maybeSingle();
+      if (otherProvider) {
+        const source = otherProvider.billing_source === 'APPLE' ? 'Apple' : 'Google Play';
+        return json(409, { error: 'EXISTING_OTHER_PROVIDER', source: otherProvider.billing_source,
+          message: `You already have a paid Gnome plan through ${source}. Manage it there instead of paying twice.` });
+      }
+    }
+
     const secretKey = (live ? Deno.env.get('STRIPE_SECRET_KEY_LIVE') : Deno.env.get('STRIPE_SECRET_KEY_TEST'))?.trim();
-    const priceId = live ? product.stripe_price_id_live : product.stripe_price_id_test;
     if (!secretKey) return json(503, { error: 'STRIPE_KEY_MISSING', message: `STRIPE_SECRET_KEY_${mode.toUpperCase()} not set — owner config required.` });
-    if (!priceId) return json(503, { error: 'PRICE_MISSING', message: `No ${mode} price configured for ${key}.` });
 
     const base = (Deno.env.get('GNOME_PUBLIC_URL') ?? 'https://gnomefarmersmarket.com').replace(/\/$/, '');
+    if (body.action === 'portal') {
+      if (!market) return json(403, { error: 'NO_MARKET' });
+      const { data: subscription } = await admin.from('market_subscriptions').select('customer_id')
+        .eq('market_id', market.id).eq('kind', 'plan').eq('billing_source', 'STRIPE')
+        .eq('stripe_livemode', live).not('customer_id', 'is', null).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      if (!subscription?.customer_id) return json(404, { error: 'NO_STRIPE_SUBSCRIPTION', message: 'No website-billed subscription was found.' });
+      const stripe = new Stripe(secretKey);
+      const portal = await stripe.billingPortal.sessions.create({ customer: subscription.customer_id, return_url: `${base}/my` });
+      return json(200, { url: portal.url, mode });
+    }
+
+    const priceId = live ? product.stripe_price_id_live : product.stripe_price_id_test;
+    if (!priceId) return json(503, { error: 'PRICE_MISSING', message: `No ${mode} price configured for ${key}.` });
+
     const meta: Record<string, string> = { gnome_user_id: uid, product_key: key, mode };
     let clientRef = '';
     const checkoutMode: 'subscription' | 'payment' = SUBSCRIPTION_KEYS.has(key) ? 'subscription' : 'payment';
     const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = { price: priceId, quantity: 1 };
     const discounts: Stripe.Checkout.SessionCreateParams.Discount[] = [];
+    let promoBehavior: 'AUTO_RENEW' | 'NO_AUTO_CONVERSION' | null = null;
+    let promoPaymentMethodRequired = false;
 
     if (key === 'GNOME_LISTING_PROMOTION') {
       const listingId = String(body.listing_id ?? '');
@@ -238,8 +310,8 @@ Deno.serve(async (req: Request) => {
       if (!plan) {
         return json(400, { error: 'PROMO_NOT_APPLICABLE', message: 'That code doesn’t apply to this purchase.' });
       }
-      const { data: v } = await admin.rpc('promo_validate', {
-        p_code: rawPromo, p_plan: plan, p_user: uid,
+      const { data: v } = await admin.rpc('promo_reserve_checkout', {
+        p_code: rawPromo, p_plan: plan, p_user: uid, p_market: market!.id,
       });
       const res = Array.isArray(v) ? v[0] : v;
       if (!res || res.ok !== true) {
@@ -253,8 +325,21 @@ Deno.serve(async (req: Request) => {
       // together with allow_promotion_codes, which is a second reason stacking
       // cannot happen even if a future edit tries to allow both.
       discounts.push({ promotion_code: String(res.stripe_promotion_code_id) });
+      promoReservationId = String(res.reservation_id);
       meta.promo_campaign_id = String(res.campaign_id);
       meta.promo_code = String(rawPromo).toUpperCase();
+      meta.promo_reservation_id = promoReservationId;
+      const { data: campaign } = await admin.from('promotion_campaigns')
+        .select('conversion_behavior,payment_method_required').eq('id', res.campaign_id).maybeSingle();
+      promoBehavior = campaign?.conversion_behavior === 'NO_AUTO_CONVERSION' ? 'NO_AUTO_CONVERSION' : 'AUTO_RENEW';
+      promoPaymentMethodRequired = campaign?.payment_method_required === true;
+      if (promoBehavior === 'NO_AUTO_CONVERSION') {
+        await admin.rpc('promo_release_checkout', { p_reservation: promoReservationId });
+        return json(409, {
+          error: 'PROMO_NO_AUTO_PATH_REQUIRED',
+          message: 'This offer does not renew automatically and cannot be sent through subscription checkout. No card was requested and nothing was charged.',
+        });
+      }
     }
 
     const stripe = new Stripe(secretKey);
@@ -267,6 +352,9 @@ Deno.serve(async (req: Request) => {
       // webhook can still attribute a redemption on later invoice events, when
       // the original session is long gone.
       ...(checkoutMode === 'subscription' ? { subscription_data: { metadata: meta } } : {}),
+      ...(checkoutMode === 'subscription' && promoBehavior
+        ? { payment_method_collection: promoPaymentMethodRequired ? 'always' : 'if_required' }
+        : {}),
       // /account does not exist and never has — a customer who paid landed on a
       // 404 the instant the charge went through. /my is the seller dashboard and
       // the only page where the thing they just bought becomes visible.
@@ -275,8 +363,12 @@ Deno.serve(async (req: Request) => {
             // The Expo client opens checkout in an auth session that closes on this scheme.
             // Return is a SIGNAL, never proof: the app reconciles by re-asking the server
             // whether payment is still owed before publishing anything.
-            success_url: 'gnome://checkout-success',
-            cancel_url: 'gnome://checkout-cancelled',
+            success_url: checkoutMode === 'subscription'
+              ? 'gnome://checkout-success?kind=plan'
+              : 'gnome://checkout-success',
+            cancel_url: checkoutMode === 'subscription'
+              ? 'gnome://checkout-cancelled?kind=plan'
+              : 'gnome://checkout-cancelled',
           }
         : {
             success_url: `${base}/my?checkout=success`,
@@ -295,10 +387,22 @@ Deno.serve(async (req: Request) => {
       // A $0.99 payment must expire rather than linger: an abandoned session
       // that could be completed days later would authorize a publish long after
       // the seller's allowance had already reset.
-      ...(checkoutMode === 'payment'
+      ...(checkoutMode === 'payment' || promoReservationId
         ? { expires_at: Math.floor(Date.now() / 1000) + 30 * 60 }
         : {}),
     });
+
+    if (promoReservationId) {
+      const { data: attached } = await admin.rpc('promo_attach_checkout', {
+        p_reservation: promoReservationId, p_session: session.id,
+      });
+      if (attached !== true) {
+        await stripe.checkout.sessions.expire(session.id).catch(() => undefined);
+        await admin.rpc('promo_release_checkout', { p_reservation: promoReservationId });
+        promoReservationId = null;
+        return json(409, { error: 'PROMO_RESERVATION_FAILED', message: 'That code could not be reserved. No checkout was opened.' });
+      }
+    }
 
     // The pending authorization is written BEFORE the customer pays, keyed on
     // the session. That is what makes a delayed webhook safe — confirmation
@@ -341,6 +445,11 @@ Deno.serve(async (req: Request) => {
 
     return json(200, { url: session.url, mode, product_key: key, intent: overageIntent });
   } catch (e) {
+    if (promoReservationId && reservationAdmin) {
+      try {
+        await reservationAdmin.rpc('promo_release_checkout', { p_reservation: promoReservationId });
+      } catch { /* best-effort release; the reservation also expires after 30 minutes */ }
+    }
     console.error('billing-checkout:', e);
     return json(500, { error: 'CHECKOUT_FAILED', detail: String(e).slice(0, 200) });
   }

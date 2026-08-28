@@ -15,7 +15,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, EmptyState, ErrorState, Field } from '@/components/ui';
 import { OrderStatusBadge, orderWindow } from '@/components/orders/OrderStatus';
@@ -46,7 +46,6 @@ const CANCELLABLE = ['REQUESTED', 'TIME_PROPOSED', 'CONFIRMED', 'READY'] as cons
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { userId } = useAuth();
   const order = useOrder(id);
   const myMarket = useMyMarket(userId ?? undefined);
@@ -55,6 +54,7 @@ export default function OrderDetailScreen() {
   const o = order.data;
   const isBuyer = !!o && !!userId && o.buyer_id === userId;
   const isSeller = !!o && !!myMarket.data && myMarket.data.id === o.market_id;
+  const isVisit = o?.request_kind === 'VISIT';
   const marketName = o?.market?.name ?? myMarket.data?.name ?? 'the market';
 
   const isDelivery = o?.fulfillment_type === 'delivery';
@@ -109,7 +109,7 @@ export default function OrderDetailScreen() {
   }
 
   const win = orderWindow(o);
-  const winWord = isDelivery ? 'delivery' : 'pickup';
+  const winWord = isVisit ? 'visit' : isDelivery ? 'delivery' : 'pickup';
   const winLabel =
     win.kind === 'confirmed'
       ? `Confirmed ${winWord}`
@@ -185,6 +185,10 @@ export default function OrderDetailScreen() {
   };
 
   const openComplete = () => {
+    if (isVisit) {
+      void runAction({ kind: 'complete', recordPayment: false });
+      return;
+    }
     setPayReceived(null);
     setPayMethod('cash');
     setPayAmount(((o.subtotal_cents + (o.delivery_fee_cents ?? 0)) / 100).toFixed(2));
@@ -225,7 +229,7 @@ export default function OrderDetailScreen() {
         {/* Header: market + status */}
         <View style={styles.headRow}>
           <Text style={styles.marketName} numberOfLines={1}>
-            {isBuyer ? marketName : isDelivery ? 'Delivery order' : 'Pickup order'}
+            {isBuyer ? marketName : isVisit ? 'Market visit' : isDelivery ? 'Delivery order' : 'Pickup order'}
           </Text>
           <OrderStatusBadge status={o.status} />
         </View>
@@ -266,7 +270,9 @@ export default function OrderDetailScreen() {
         ) : null}
 
         {/* Items */}
-        <Text style={styles.sectionTitle}>Items</Text>
+        {!isVisit ? <Text style={styles.sectionTitle}>Items</Text> : null}
+        {!isVisit ? (
+          <>
         {(o.items ?? []).map((it) => (
           <View key={it.id} style={styles.itemRow}>
             <View style={{ flex: 1 }}>
@@ -298,6 +304,8 @@ export default function OrderDetailScreen() {
             </View>
           </>
         ) : null}
+          </>
+        ) : null}
 
         {/* Delivery address: buyer always; seller once confirmed (the RPC
             withholds it before then — city + distance only). */}
@@ -317,7 +325,7 @@ export default function OrderDetailScreen() {
         {/* Buyer note / decline reason */}
         {o.buyer_note ? (
           <View style={styles.noteCard}>
-            <Text style={styles.noteLabel}>Buyer note</Text>
+            <Text style={styles.noteLabel}>{isVisit ? 'Visit note' : 'Buyer note'}</Text>
             <Text style={styles.noteText}>{o.buyer_note}</Text>
           </View>
         ) : null}
@@ -333,7 +341,7 @@ export default function OrderDetailScreen() {
         {/* Buyer: pickup details + arrival + payment */}
         {showBuyerPickupCard ? (
           <>
-            <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Pickup details</Text>
+            <Text style={[styles.sectionTitle, { marginTop: 18 }]}>{isVisit ? 'Visit details' : 'Pickup details'}</Text>
             {pickup.isLoading ? (
               <ActivityIndicator color={Colors.primary} style={{ marginTop: 8 }} />
             ) : pickup.data ? (
@@ -368,8 +376,12 @@ export default function OrderDetailScreen() {
               ) : null}
             </View>
 
-            <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Pay seller</Text>
-            <PayMethodsList marketId={o.market_id} amountCents={o.subtotal_cents} />
+            {!isVisit ? (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Pay seller</Text>
+                <PayMethodsList marketId={o.market_id} amountCents={o.subtotal_cents} />
+              </>
+            ) : null}
           </>
         ) : null}
 
@@ -388,7 +400,7 @@ export default function OrderDetailScreen() {
         {/* Buyer: cancel */}
         {isBuyer && (CANCELLABLE as readonly string[]).includes(o.status) ? (
           <Button
-            label="Cancel order"
+            label={isVisit ? 'Cancel visit request' : 'Cancel order'}
             variant="danger"
             onPress={confirmCancel}
             disabled={act.isPending}
@@ -401,7 +413,7 @@ export default function OrderDetailScreen() {
           <View style={{ marginTop: 20 }}>
             {o.status === 'REQUESTED' ? (
               <View style={{ gap: 10 }}>
-                <Button label="Confirm order" onPress={() => void runAction({ kind: 'confirm' })} loading={act.isPending} />
+                <Button label={isVisit ? 'Confirm visit' : 'Confirm order'} onPress={() => void runAction({ kind: 'confirm' })} loading={act.isPending} />
                 <Button label="Suggest a different time" variant="secondary" onPress={() => setProposeOpen(true)} disabled={act.isPending} />
                 <Button label="Decline" variant="danger" onPress={() => setDeclineOpen(true)} disabled={act.isPending} />
               </View>
@@ -416,9 +428,9 @@ export default function OrderDetailScreen() {
                 {isDelivery ? (
                   <Button label="Out for delivery 🚚" onPress={() => void runAction({ kind: 'out_for_delivery' })} loading={act.isPending} />
                 ) : (
-                  <Button label="Mark ready" onPress={() => void runAction({ kind: 'ready' })} loading={act.isPending} />
+                  isVisit ? null : <Button label="Mark ready" onPress={() => void runAction({ kind: 'ready' })} loading={act.isPending} />
                 )}
-                <Button label="Complete order" variant="secondary" onPress={openComplete} disabled={act.isPending} />
+                <Button label={isVisit ? 'Mark visit complete' : 'Complete order'} variant="secondary" onPress={openComplete} disabled={act.isPending} />
               </View>
             ) : null}
             {o.status === 'READY' ? (
@@ -493,7 +505,7 @@ export default function OrderDetailScreen() {
       <Modal visible={declineOpen} transparent animationType="fade" onRequestClose={() => setDeclineOpen(false)}>
         <View style={styles.backdrop}>
           <View style={styles.dialogCard}>
-            <Text style={styles.sectionTitle}>Decline this order?</Text>
+            <Text style={styles.sectionTitle}>Decline this {isVisit ? 'visit' : 'order'}?</Text>
             <Text style={styles.mutedText}>The buyer sees your reason and the slot is released.</Text>
             <Field
               label="Reason"

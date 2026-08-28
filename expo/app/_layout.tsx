@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
-import { Text as RNText, TextInput as RNTextInput } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -78,8 +77,16 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', title: 'Sign In', ...headerStyle }}
               />
               <Stack.Screen
+                name="auth-callback"
+                options={{ headerShown: false, gestureEnabled: false }}
+              />
+              <Stack.Screen
                 name="listing/[id]"
                 options={{ title: 'Listing', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="listing-performance/[id]"
+                options={{ title: 'Listing performance', ...headerStyle }}
               />
               <Stack.Screen
                 name="chat/[claimId]"
@@ -98,12 +105,20 @@ export default function RootLayout() {
                 options={{ title: 'Name your Market', ...headerStyle }}
               />
               <Stack.Screen
+                name="market/assistance"
+                options={{ title: 'Gnome assistance', ...headerStyle }}
+              />
+              <Stack.Screen
                 name="request/[listingId]"
                 options={{ presentation: 'modal', title: 'Send a request', ...headerStyle }}
               />
               <Stack.Screen
                 name="upgrade"
                 options={{ presentation: 'modal', title: 'Your plan', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="referrals"
+                options={{ title: 'Referrals & rewards', ...headerStyle }}
               />
               <Stack.Screen
                 name="promote/[listingId]"
@@ -116,6 +131,14 @@ export default function RootLayout() {
               <Stack.Screen
                 name="profile/edit"
                 options={{ title: 'Edit profile', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="account-ready"
+                options={{ presentation: 'modal', title: 'Account update', ...headerStyle }}
+              />
+              <Stack.Screen
+                name="claim-market"
+                options={{ title: 'Claim your Market', ...headerStyle }}
               />
               <Stack.Screen
                 name="garden"
@@ -175,7 +198,7 @@ export default function RootLayout() {
               />
               <Stack.Screen
                 name="ai-listing"
-                options={{ title: 'Gnome AI', ...headerStyle }}
+                options={{ title: 'Zordy listing helper', ...headerStyle }}
               />
               <Stack.Screen
                 name="import"

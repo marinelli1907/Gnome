@@ -7,6 +7,7 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { formatPrice } from '@/lib/listingType';
 import { useIncomingClaims, useUpdateClaim } from '@/lib/db';
+import { METHOD_LABEL } from '@/lib/marketops';
 import type { Claim } from '@/types';
 
 // Owner-facing summary of an incoming request, by type.
@@ -16,8 +17,13 @@ function summarize(c: Claim): { verb: string; context: string | null; note: stri
       return { verb: 'offers a trade for', context: c.trade_offer_text ?? null, note: c.buyer_note ?? null };
     case 'purchase_request':
       return {
-        verb: 'wants to buy',
-        context: c.agreed_price_cents != null ? formatPrice(c.agreed_price_cents) : null,
+        verb: 'wants to reserve',
+        context: [
+          c.quantity_requested ? `${c.quantity_requested} × ${c.listing?.title ?? 'item'}` : null,
+          c.agreed_price_cents != null ? `Estimated total: ${formatPrice(c.agreed_price_cents)}` : null,
+          c.pickup_start && c.pickup_end ? `Pickup: ${fmtWindow(c.pickup_start, c.pickup_end)}` : null,
+          c.payment_method ? `Payment: ${METHOD_LABEL[c.payment_method]}` : null,
+        ].filter(Boolean).join('\n') || null,
         note: c.buyer_note ?? null,
       };
     case 'wanted_response':
@@ -42,7 +48,7 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
   const pending = claims.filter((c) => c.status === 'pending');
   const approved = claims.filter((c) => c.status === 'approved');
 
-  const act = (claimId: string, status: 'approved' | 'declined', title?: string) => {
+  const act = (claimId: string, status: 'approved' | 'declined' | 'completed', title?: string) => {
     updateClaim.mutate(
       { claimId, status, title },
       { onError: (e: any) => Alert.alert('Error', e?.message ?? 'Try again.') },
@@ -72,7 +78,7 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
       <EmptyState
         emoji="🤝"
         title="No requests yet"
-        subtitle="When a neighbor requests something you shared, it shows up here for you to approve."
+        subtitle="When someone wants to buy, trade, or reserve one of your listings, you'll see it here."
       />
     );
   }
@@ -94,7 +100,7 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
               </View>
               <Badge label="Pending" color={Colors.warning} />
             </View>
-            {s.context ? <Text style={styles.context}>“{s.context}”</Text> : null}
+            {s.context ? <Text style={styles.context}>{s.context}</Text> : null}
             {s.note ? <Text style={styles.note}>Note: {s.note}</Text> : null}
             <View style={styles.actions}>
               <Button label="Approve" onPress={() => act(c.id, 'approved', c.listing?.title)} style={{ flex: 1 }} />
@@ -121,6 +127,16 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
             <Pressable onPress={() => router.push(`/chat/${c.id}`)} hitSlop={6}>
               <Text style={styles.link}>Message</Text>
             </Pressable>
+            {c.claim_type === 'purchase_request' && (
+              <Pressable
+                onPress={() => act(c.id, 'completed', c.listing?.title)}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Mark picked up"
+              >
+                <Text style={styles.link}>Mark picked up</Text>
+              </Pressable>
+            )}
             {c.claim_type === 'plot_reservation' && (
               <Pressable
                 onPress={() => router.push(`/growlog/${c.id}`)}
@@ -136,6 +152,14 @@ export default function ClaimsToReview({ uid }: { uid: string }) {
       ))}
     </View>
   );
+}
+
+function fmtWindow(startIso: string, endIso: string): string {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  const day = s.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const time = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${day} ${time(s)}-${time(e)}`;
 }
 
 function timeAgo(iso: string): string {

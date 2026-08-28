@@ -10,17 +10,19 @@
     "newArchEnabled": true,
     "owner": "marinelli1907",
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/images/gnome-logo-full-hq.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
+      "buildNumber": "18",
       "supportsTablet": false,
       "bundleIdentifier": "app.boonesystems.gnome",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Gnome uses your location to show surplus produce listings near you.",
         "NSPhotoLibraryUsageDescription": "Gnome needs access to your photos so you can add pictures to your listings.",
+        "NSCameraUsageDescription": "Gnome uses your camera when you take photos for listings or Zordy.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
@@ -124,6 +126,7 @@
       }
     },
     "android": {
+      "versionCode": 17,
       "package": "app.boonesystems.gnome",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -131,6 +134,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
+        "android.permission.CAMERA",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
@@ -161,13 +165,23 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Gnome needs access to your photos so you can add pictures to your listings.",
-          "cameraPermission": false,
+          "photosPermission": "Gnome uses your photo library when you choose photos for listings or Zordy.",
+          "cameraPermission": "Gnome uses your camera when you take photos for listings or Zordy.",
           "microphonePermission": false
         }
       ],
       "expo-notifications",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ],
+      "./plugins/withFmtXcode26Fix",
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true
@@ -182,7 +196,10 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/b84fe5e3-5446-45dd-b078-9db076159143"
+      "url": "https://u.expo.dev/b84fe5e3-5446-45dd-b078-9db076159143",
+      "assetPatternsToBeBundled": [
+        "assets/images/**"
+      ]
     }
   }
 }

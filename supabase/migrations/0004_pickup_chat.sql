@@ -120,7 +120,7 @@ create policy "claim_messages_insert_party" on public.claim_messages
   for insert with check (
     sender_id = auth.uid()
     and public.is_claim_party(claim_id)
-    and public.claim_status_of(claim_id) = 'approved'
+    and public.claim_status_of(claim_id)::text = 'approved'
   );
 
 -- Reports: either party may file; reporter must be themselves. No read policy

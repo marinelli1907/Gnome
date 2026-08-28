@@ -24,6 +24,7 @@ import {
   parseServerError,
   useTaxonomy,
 } from '@/lib/taxonomy';
+import { todayIsoDate, validateHarvestDateInput } from '@/lib/harvestDate';
 import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
 
 export default function EditListingScreen() {
@@ -38,6 +39,7 @@ export default function EditListingScreen() {
 
   const [title, setTitle] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [harvestDate, setHarvestDate] = useState(todayIsoDate());
   const [description, setDescription] = useState('');
   // Legacy listings keep their backfilled node untouched unless the seller
   // deliberately re-categorizes (changing the node re-runs the server gate).
@@ -50,6 +52,7 @@ export default function EditListingScreen() {
     if (listing && !seeded) {
       setTitle(listing.title);
       setQuantity(listing.quantity ?? '');
+      setHarvestDate(listing.harvest_date ?? todayIsoDate());
       setDescription(listing.description ?? '');
       setTaxNodeId(listing.taxonomy_node_id ?? null);
       setSeeded(true);
@@ -70,10 +73,22 @@ export default function EditListingScreen() {
 
   const selectedNode = index && taxNodeId ? index.byId.get(taxNodeId) ?? null : null;
   const isPlot = listing.listing_type === 'plot';
+  const needsHarvestDate = ['sale', 'free', 'trade'].includes(listing.listing_type);
 
   const save = () => {
     if (!title.trim()) {
       Alert.alert('Add a title', 'A listing needs a title.');
+      return;
+    }
+    if (needsHarvestDate && !harvestDate.trim()) {
+      Alert.alert('Add picked date', 'Every fresh listing needs the day it was picked.');
+      return;
+    }
+    const harvest = needsHarvestDate
+      ? validateHarvestDateInput(harvestDate)
+      : { value: null as string | null };
+    if (harvest.error) {
+      Alert.alert('Check picked date', harvest.error);
       return;
     }
     update.mutate(
@@ -82,6 +97,7 @@ export default function EditListingScreen() {
         title: title.trim(),
         description: description.trim(),
         quantity: quantity.trim(),
+        harvestDate: harvest.value,
         category:
           nodeTouched && selectedNode && index
             ? legacyCategoryFor(index, selectedNode)
@@ -102,7 +118,12 @@ export default function EditListingScreen() {
         onError: (e: any) => {
           if (alertListingWriteError(e?.message)) return;
           const err = parseServerError(e?.message);
-          if (err?.code === 'COMPLIANCE_BLOCKED') {
+          if (err?.code === 'ACCOUNT_NOT_READY') {
+            Alert.alert(err.title, err.message, [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Finish setup', onPress: () => router.push('/account-ready' as never) },
+            ]);
+          } else if (err?.code === 'COMPLIANCE_BLOCKED') {
             Alert.alert(err.title, err.message);
           } else {
             Alert.alert('Could not save', safeErrorText(e?.message, 'Try again.'));
@@ -117,6 +138,15 @@ export default function EditListingScreen() {
       <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
         <Field label="Title" value={title} onChangeText={setTitle} placeholder="Cherry tomatoes" />
         <Field label="Quantity" value={quantity} onChangeText={setQuantity} placeholder="About 2 lbs / a full basket" />
+        {needsHarvestDate ? (
+          <Field
+            label="Picked / harvest date"
+            value={harvestDate}
+            onChangeText={setHarvestDate}
+            placeholder="YYYY-MM-DD"
+            keyboardType="numbers-and-punctuation"
+          />
+        ) : null}
         {!isPlot && (
           <>
             <Text style={styles.label}>Category</Text>

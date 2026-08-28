@@ -730,7 +730,7 @@ function DoneView({ result, ackedDups, onAckDup, onViewListing, onViewPlans, onR
 
       <Button label="Review Drafts" onPress={onReviewDrafts} style={{ marginTop: 20 }} />
       <Text style={styles.doneFootnote}>
-        Drafts wait in Gnome AI until you review them — nothing is live yet.
+        Drafts wait with Zordy until you review them — nothing is live yet.
       </Text>
     </ScrollView>
   );

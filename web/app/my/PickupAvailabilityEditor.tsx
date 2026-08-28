@@ -45,7 +45,7 @@ const fmtMinute = (min: number) => {
   return `${h12}:${String(mm).padStart(2, '0')} ${h >= 12 && h < 24 ? 'PM' : 'AM'}`;
 };
 
-export default function PickupAvailabilityEditor({ marketId }: { marketId: string }) {
+export default function PickupAvailabilityEditor({ marketId, marketPlan }: { marketId: string; marketPlan: string }) {
   const [settings, setSettings] = useState<SettingsForm | null>(null);
   const [priv, setPriv] = useState({ pickup_address: '', pickup_instructions: '', instructions_public: false });
   const [hours, setHours] = useState<HourRow[]>([]);
@@ -189,6 +189,11 @@ export default function PickupAvailabilityEditor({ marketId }: { marketId: strin
       <strong>Pickup availability</strong>
       <p className="authhint" style={{ margin: '6px 0 0' }}>
         Buyers pick from open slots generated inside your weekly windows.
+      </p>
+      <p className="authhint" style={{ margin: '6px 0 0', fontWeight: 700 }}>
+        {marketPlan === 'free'
+          ? 'Pickup ordering still uses these hours. Pro and Farm also show them on your public Market and let neighbors request a visit.'
+          : 'These hours appear on your public Market in the app and website, where neighbors can request a visit.'}
       </p>
       {error && <p className="autherror">{error}</p>}
 

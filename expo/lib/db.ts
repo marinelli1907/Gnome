@@ -59,6 +59,7 @@ import type {
 export const keys = {
   listings: (filters?: unknown) => ['listings', filters] as const,
   listing: (id: string) => ['listing', id] as const,
+  listingPerformance: (id?: string) => ['listingPerformance', id] as const,
   myListings: (uid?: string) => ['myListings', uid] as const,
   myClaims: (uid?: string) => ['myClaims', uid] as const,
   incomingClaims: (uid?: string) => ['incomingClaims', uid] as const,
@@ -99,7 +100,7 @@ export const keys = {
 // revoked on purpose. Do not add them.
 const LISTING_FIELDS =
   'id,owner_id,market_id,kind,listing_type,fulfilled_by_listing_id,title,description,' +
-  'category,taxonomy_node_id,quantity,photos,price_cents,currency,trade_for,unit,inventory_count,' +
+  'category,taxonomy_node_id,quantity,harvest_date,photos,price_cents,currency,trade_for,unit,inventory_count,' +
   'fulfillment_type,approx_lat,approx_lng,is_featured,featured_until,is_demo,status,created_at,expires_at,' +
   'request_options,allow_custom_request,screening_status,screening_reason,is_bundle';
 // The ONLY profile shape other users ever receive. Reads go through the
@@ -273,13 +274,80 @@ export function useMyListings(uid?: string) {
     queryKey: keys.myListings(uid),
     enabled: isSupabaseConfigured && !!uid,
     queryFn: async (): Promise<Listing[]> => {
-      const { data, error } = await supabase
+      const query = () => supabase
         .from('listings')
         .select(LISTING_SELECT)
         .eq('owner_id', uid as string)
         .order('created_at', { ascending: false });
+
+      let { data, error } = await query().is('archived_at', null);
+      if (error?.code === '42703' && error.message.includes('archived_at')) {
+        ({ data, error } = await query());
+      }
       if (error) throw error;
       return (data ?? []).map(shapeListing);
+    },
+  });
+}
+
+export interface ListingPerformance {
+  listing_id: string;
+  status: string;
+  posted_at: string;
+  expires_at: string;
+  archived_at: string | null;
+  analytics_started_at: string | null;
+  views_tracked: boolean;
+  views: number | null;
+  unique_viewers: number | null;
+  requests: number;
+  reservations: number;
+  completed_requests: number;
+  reserved_quantity: number;
+  completed_sales: number;
+  quantity_sold: number;
+  recorded_revenue_cents: number;
+  manual_revenue_cents: number;
+  request_revenue_cents: number;
+  payment_breakdown: Array<{ method: string; revenue_cents: number; sales: number }>;
+  paid_promotions: number;
+  included_promotions: number;
+  promotion_spend_known: boolean;
+  promotion_spend_cents: number | null;
+  net_after_promotion_cents: number | null;
+  promotion_periods: Array<{
+    id: string;
+    source: string;
+    status: string;
+    starts_at: string;
+    ends_at: string | null;
+    seller_paid_cents: number | null;
+    views_during: number | null;
+    requests_during: number;
+    recorded_sales_during: number;
+  }>;
+  conversion_rate: number | null;
+  conversion_basis: 'completed_requests_per_unique_signed_in_viewer';
+  conversion_minimum_viewers: number;
+  days_listed: number;
+  renewal_count: number;
+  repost_count: number | null;
+  last_activity_at: string;
+  quantity_remaining: number | null;
+  unit: string | null;
+}
+
+/** Aggregate listing analytics. The RPC returns data only to the listing owner. */
+export function useListingPerformance(listingId?: string, isOwner = false) {
+  return useQuery({
+    queryKey: keys.listingPerformance(listingId),
+    enabled: isSupabaseConfigured && !!listingId && isOwner,
+    queryFn: async (): Promise<ListingPerformance> => {
+      const { data, error } = await supabase.rpc('my_listing_performance', {
+        p_listing: listingId,
+      });
+      if (error) throw error;
+      return data as ListingPerformance;
     },
   });
 }
@@ -331,6 +399,7 @@ export interface NewListing {
   description: string;
   category: string;
   quantity: string;
+  harvestDate?: string | null;
   photos: string[];
   coords: Coords | null;
   /** Taxonomy node the seller picked. Required by the mobile UI for new
@@ -379,6 +448,7 @@ export function useCreateListing(uid?: string) {
           taxonomy_node_id: input.taxonomyNodeId ?? null,
           ...(input.status ? { status: input.status } : {}),
           quantity: input.quantity || null,
+          harvest_date: input.harvestDate ?? null,
           photos: input.photos,
           price_cents: input.priceCents ?? null,
           unit: input.unit || null,
@@ -428,6 +498,10 @@ export interface NewClaim {
   buyerNote?: string | null;
   tradeOfferText?: string | null;
   agreedPriceCents?: number | null;
+  quantityRequested?: number | null;
+  paymentMethod?: 'cash' | 'venmo' | 'cashapp' | 'paypal' | 'zelle' | 'other' | null;
+  pickupStart?: string | null;
+  pickupEnd?: string | null;
   paymentStatus?: 'none' | 'external';
   /** Structured choice (Wanted/Plot). */
   selectedOptionLabel?: string | null;
@@ -447,6 +521,10 @@ export function useClaimListing(uid?: string) {
         buyer_note: input.buyerNote || null,
         trade_offer_text: input.tradeOfferText || null,
         agreed_price_cents: input.agreedPriceCents ?? null,
+        quantity_requested: input.quantityRequested ?? null,
+        payment_method: input.paymentMethod ?? null,
+        pickup_start: input.pickupStart ?? null,
+        pickup_end: input.pickupEnd ?? null,
         payment_status: input.paymentStatus ?? 'none',
         selected_option_label: input.selectedOptionLabel || null,
         selected_taxonomy_node_id: input.selectedTaxonomyNodeId || null,
@@ -492,7 +570,7 @@ export function useUpdateClaim(uid?: string) {
   return useMutation({
     mutationFn: async (input: {
       claimId: string;
-      status: 'approved' | 'declined' | 'cancelled';
+      status: 'approved' | 'declined' | 'cancelled' | 'completed';
       title?: string;
     }): Promise<void> => {
       const { data, error } = await supabase
@@ -566,6 +644,26 @@ export function useUpdateListingStatus(uid?: string) {
   });
 }
 
+/** Seller-facing Delete is always a recoverable soft archive on the server. */
+export function useArchiveListing(uid?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (listingId: string): Promise<void> => {
+      if (!uid) throw new Error('Sign in first.');
+      const { data, error } = await supabase.rpc('archive_listing', { p_listing: listingId });
+      if (error) throw error;
+      if (data !== true) throw new Error('That listing could not be deleted.');
+    },
+    onSuccess: (_data, listingId) => {
+      qc.removeQueries({ queryKey: keys.listingPerformance(listingId) });
+      qc.invalidateQueries({ queryKey: keys.myListings(uid) });
+      qc.invalidateQueries({ queryKey: keys.listing(listingId) });
+      qc.invalidateQueries({ queryKey: ['listings'] });
+      qc.invalidateQueries({ queryKey: ['featured'] });
+    },
+  });
+}
+
 /** Edit a listing's editable fields (owner only, enforced by RLS). */
 export function useUpdateListing(uid?: string) {
   const qc = useQueryClient();
@@ -575,6 +673,7 @@ export function useUpdateListing(uid?: string) {
       title: string;
       description: string;
       quantity: string;
+      harvestDate?: string | null;
       category: string;
       /** undefined = leave the node untouched (legacy listings keep their
        *  backfilled node); a value re-points it and re-runs the server gate. */
@@ -592,6 +691,9 @@ export function useUpdateListing(uid?: string) {
           title: input.title,
           description: input.description || null,
           quantity: input.quantity || null,
+          ...(input.harvestDate !== undefined
+            ? { harvest_date: input.harvestDate }
+            : {}),
           category: input.category,
           ...(input.taxonomyNodeId !== undefined
             ? { taxonomy_node_id: input.taxonomyNodeId }
@@ -717,6 +819,29 @@ export function useMarket(id?: string) {
         .maybeSingle();
       if (error) throw error;
       return data as PublicMarket | null;
+    },
+  });
+}
+
+export type MarketStorefrontStats = {
+  follower_count: number;
+  scheduling_enabled: boolean;
+};
+
+/** Public storefront aggregates only. Follower identities, entitlement source,
+ * and exact pickup details never leave the server-safe view. */
+export function useMarketStorefrontStats(id?: string) {
+  return useQuery({
+    queryKey: ['marketStorefrontStats', id],
+    enabled: isSupabaseConfigured && !!id,
+    queryFn: async (): Promise<MarketStorefrontStats | null> => {
+      const { data, error } = await supabase
+        .from('public_markets')
+        .select('follower_count,scheduling_enabled')
+        .eq('id', id as string)
+        .maybeSingle();
+      if (error) throw error;
+      return data as MarketStorefrontStats | null;
     },
   });
 }
@@ -928,12 +1053,18 @@ export function useUpdateMarket(uid?: string) {
       name: string;
       description: string;
       avatar_url?: string | null;
+      banner_url?: string | null;
+      tagline?: string | null;
+      theme?: string | null;
     }): Promise<void> => {
       const patch: Record<string, unknown> = {
         name: input.name,
         description: input.description || null,
       };
       if (input.avatar_url !== undefined) patch.avatar_url = input.avatar_url;
+      if (input.banner_url !== undefined) patch.banner_url = input.banner_url;
+      if (input.tagline !== undefined) patch.tagline = input.tagline?.trim() || null;
+      if (input.theme !== undefined) patch.theme = input.theme;
       if (!uid) throw new Error('You must be signed in to edit your Market.');
       const { data, error } = await supabase
         .from('markets')
@@ -1742,10 +1873,10 @@ export function useToggleFollow(uid?: string) {
     mutationFn: async ({ marketId, follow }: { marketId: string; follow: boolean }) => {
       if (!uid) throw new Error('Not signed in.');
       if (follow) {
-        // Canonical visibility decides followability at WRITE time — a market
-        // that went non-public since the tap is simply not followable.
+        // Canonical public visibility decides followability at WRITE time — a
+        // market that went non-public since the tap is simply not followable.
         const { data: mkt } = await supabase
-          .from('markets').select('id').eq('id', marketId).eq('status', 'active').maybeSingle();
+          .from('public_markets').select('id').eq('id', marketId).maybeSingle();
         if (!mkt) throw new Error('MARKET_UNAVAILABLE');
         // Idempotent: unique (market_id, follower_id) + ignoreDuplicates means
         // a doubled tap or a race can never create a second relationship.
@@ -1881,17 +2012,20 @@ export function useFollowedListings(uid?: string, marketIds?: string[]) {
     queryKey: [...keys.followedListings(uid), marketIds] as const,
     enabled: isSupabaseConfigured && !!uid && !!marketIds && marketIds.length > 0,
     queryFn: async (): Promise<Listing[]> => {
-      const { data, error } = await supabase
-        .from('listings')
-        .select(LISTING_SELECT)
-        .in('market_id', marketIds as string[])
-        .eq('status', 'active')
-        .in('listing_type', LAUNCH_LISTING_TYPES as unknown as string[])
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(30);
+      const [{ data, error }, blocked] = await Promise.all([
+        supabase
+          .from('listings')
+          .select(LISTING_SELECT)
+          .in('market_id', marketIds as string[])
+          .eq('status', 'active')
+          .in('listing_type', LAUNCH_LISTING_TYPES as unknown as string[])
+          .gt('expires_at', new Date().toISOString())
+          .order('created_at', { ascending: false })
+          .limit(30),
+        fetchMyBlockedSet(),
+      ]);
       if (error) throw error;
-      return dropUnavailableBundles((data ?? []).map(shapeListing));
+      return dropUnavailableBundles((data ?? []).map(shapeListing).filter((l) => !blocked.has(l.owner_id)));
     },
   });
 }

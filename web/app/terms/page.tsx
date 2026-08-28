@@ -177,7 +177,7 @@ export default function TermsPage() {
       <p>
         Gnome is free to use, and sharing your surplus always will be. Sellers
         who want more included listings each month, more pickup locations,
-        delivery controls, plots, and higher AI limits can subscribe to a paid
+        delivery controls, plots, and higher daily Zordy request limits can subscribe to a paid
         plan. Paying us never
         changes §9 — we still take no cut of what you sell to a neighbor.
       </p>

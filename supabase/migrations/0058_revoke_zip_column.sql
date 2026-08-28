@@ -1,10 +1,12 @@
--- 0058/0059: make profiles.zip_code private for real (applied live).
+-- 0058: make ZIP privacy structural, not a client convention.
 --
--- 0058 revoked the COLUMN grant and did nothing: profiles carries a
--- TABLE-level SELECT grant which covers every column. Verified live — a
--- cross-user ZIP read still returned 200 afterwards. 0059 does it properly:
---   revoke select on public.profiles from anon, authenticated;
---   grant select (<every column except zip_code>) ... to anon, authenticated;
+-- profiles.zip_code was always meant to be private, but the column-level
+-- SELECT grant let any authenticated account read every user's ZIP through
+-- the raw API. The revoke was deliberately deferred until the deployed web
+-- app stopped selecting the column directly; that shipped today (LoginClient
+-- now reads its own row through my_profile()), so it is finally safe.
+--
 -- Owner reads keep working through my_profile() (SECURITY DEFINER, pinned to
--- auth.uid()); UPDATE is untouched so the profile editor still saves a ZIP.
--- This was gated on the web deploy that moved LoginClient onto my_profile().
+-- auth.uid()) on both web and mobile. UPDATE is untouched, so saving a ZIP
+-- from the profile editor still works.
+revoke select (zip_code) on public.profiles from anon, authenticated;

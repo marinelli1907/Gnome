@@ -7,6 +7,7 @@
 // view with sign out.
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import AccountReadinessPanel from '../components/AccountReadinessPanel';
 import { SignInCard, useSession } from '../components/auth';
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'reset' | 'code';
@@ -26,6 +27,11 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  async function signOut() {
+    await supabaseBrowser().auth.signOut();
+    window.location.reload();
+  }
 
   useEffect(() => {
     // my_profile() is pinned to auth.uid() server-side and keeps working after
@@ -117,6 +123,11 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
     <div className="authcard">
       <h2>Your account</h2>
       <p className="sub">{email}</p>
+      <div style={{ marginTop: 10 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => void signOut()}>
+          Switch account
+        </button>
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '10px 0' }}>
         <div className="avatar lg" style={{ overflow: 'hidden', flex: 'none' }}>
@@ -143,13 +154,13 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
       <div className="field" style={{ marginTop: 8 }}><label>Email for notifications</label>
         <input type="email" value={contactEmail} placeholder="you@example.com"
           onChange={(e) => setContactEmail(e.target.value)} /></div>
-      <div className="field" style={{ marginTop: 8 }}><label>Mobile (optional)</label>
+      <div className="field" style={{ marginTop: 8 }}><label>Mobile</label>
         <input inputMode="tel" value={phone} placeholder="For pickup and delivery coordination"
           onChange={(e) => setPhone(e.target.value)} /></div>
       <p className="authhint" style={{ marginTop: 6 }}>
         Neighbors only ever see <strong>{name || 'your first name and last initial'}</strong>.
-        Your full last name, email and phone stay private — neighbors reach you
-        through Gnome messaging.
+        Your full last name, email and phone stay private. A verified mobile number is required
+        before posting, requests, messages, and Market setup unlock.
       </p>
       <div style={{ marginTop: 8 }}>
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void saveDetails()}>
@@ -172,8 +183,8 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void saveProfile()}>Save profile</button>
         <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
-        <button className="btn btn-secondary btn-sm"
-          onClick={async () => { await supabaseBrowser().auth.signOut(); window.location.reload(); }}>
+        <a className="btn btn-secondary btn-sm" href="/referrals">Referrals &amp; rewards</a>
+        <button className="btn btn-secondary btn-sm" onClick={() => void signOut()}>
           Sign out
         </button>
       </div>
@@ -182,6 +193,7 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
         Want a password (or a new one)?{' '}
         <button className="linkbtn" onClick={onSetPassword}>Set password</button>
       </p>
+      <AccountReadinessPanel email={email} />
     </div>
   );
 }

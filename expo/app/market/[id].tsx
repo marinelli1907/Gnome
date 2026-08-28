@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Modal, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Avatar, Button, EmptyState, ErrorState } from '@/components/ui';
+import { CalendarDays, Users } from 'lucide-react-native';
+import { Avatar, Button, EmptyState, ErrorState, Field } from '@/components/ui';
+import SlotPicker from '@/components/orders/SlotPicker';
 import { FeedSkeleton } from '@/components/Skeleton';
 import ListingCard from '@/components/ListingCard';
 import Reputation from '@/components/Reputation';
@@ -11,12 +14,16 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
   consumePendingFollow, logEvent, setPendingFollow, useBlockUser, useIsFollowing,
-  useMarket, useMarketListings, useMarketReputation, useReport, useSetDropAlerts,
+  useMarket, useMarketListings, useMarketReputation, useMarketStorefrontStats,
+  useReport, useSetDropAlerts,
   useToggleFollow,
 } from '@/lib/db';
 import { ensurePushPermission } from '@/lib/notifications';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
-import { usePickupSettings } from '@/lib/marketops';
+import {
+  fmtWindow, useCreateVisitRequest, usePickupHours, usePickupSettings, usePickupSlots,
+  type PickupSlot,
+} from '@/lib/marketops';
 import { useDeliverySettings } from '@/lib/delivery';
 import { marketShareUrl } from '@/lib/links';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +36,23 @@ const fmtDropWindow = (startsAt: string, endsAt: string) => {
   const t = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
   return `${day}, ${t(s)} – ${t(e)}`;
 };
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const THEME_COLORS: Record<string, string> = {
+  garden: Colors.gardenGreen,
+  harvest: Colors.marketOrange,
+  herb: Colors.gardenGreenInteractive,
+  farm_stand: Colors.gnomeRed,
+  minimal: Colors.backgroundSecondary,
+};
+
+function fmtMinute(minutes: number): string {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const clockHour = hour % 12 || 12;
+  return `${clockHour}${minute ? `:${String(minute).padStart(2, '0')}` : ''} ${period}`;
+}
 
 /**
  * A Market's distance: buyer's transient foreground fix vs the median of the
@@ -66,12 +90,15 @@ export default function MarketScreen() {
     id: string; title: string; description: string | null;
     starts_at: string; ends_at: string; phase: string; available_items: number;
   }[]>([]);
+  const [featuredUntil, setFeaturedUntil] = React.useState<string | null>(null);
   React.useEffect(() => {
     let alive = true;
     void (async () => {
-      const { data } = await supabase.from('public_market_drops')
-        .select('id,title,description,starts_at,ends_at,phase,available_items')
-        .eq('market_id', id).order('starts_at', { ascending: true }).limit(12);
+      const [{ data }, boost] = await Promise.all([
+        supabase.from('public_market_drops').select('id,title,description,starts_at,ends_at,phase,available_items')
+          .eq('market_id', id).order('starts_at', { ascending: true }).limit(12),
+        supabase.from('public_active_market_boosts').select('featured_until').eq('market_id', id).maybeSingle(),
+      ]);
       // Live first, then upcoming, then just-ended — a run of recently-ended
       // Drops never crowds a live one off the screen.
       const rank = (phase: string) => (phase === 'live' ? 0 : phase === 'upcoming' ? 1 : 2);
@@ -79,13 +106,21 @@ export default function MarketScreen() {
         (a, b) => rank(a.phase) - rank(b.phase) || Date.parse(a.starts_at) - Date.parse(b.starts_at),
       );
       if (alive) setDrops(rows);
+      if (alive) setFeaturedUntil(boost.data?.featured_until ?? null);
     })();
     return () => { alive = false; };
   }, [id]);
   const report = useReport(userId ?? undefined);
   const block = useBlockUser(userId ?? undefined);
+  const storefront = useMarketStorefrontStats(id);
   const pickupSettings = usePickupSettings(id);
+  const pickupHours = usePickupHours(id);
+  const pickupSlots = usePickupSlots(id, 14);
   const deliverySettings = useDeliverySettings(id);
+  const createVisit = useCreateVisitRequest(userId ?? undefined);
+  const [visitOpen, setVisitOpen] = useState(false);
+  const [visitSlot, setVisitSlot] = useState<PickupSlot | null>(null);
+  const [visitNote, setVisitNote] = useState('');
 
   // Follow / Unfollow (0005 market_follows, self-scoped RLS). A signed-out tap
   // remembers this market, opens sign-in, and completes on return — but the
@@ -156,11 +191,12 @@ export default function MarketScreen() {
     });
   };
 
+  const viewedMarketId = market.data?.id;
   useEffect(() => {
-    if (market.data) {
-      void logEvent('market_viewed', { userId: userId ?? null, metadata: { market_id: market.data.id } });
+    if (viewedMarketId) {
+      void logEvent('market_viewed', { userId: userId ?? null, metadata: { market_id: viewedMarketId } });
     }
-  }, [market.data?.id, userId]);
+  }, [viewedMarketId, userId]);
 
   if (market.isLoading) {
     return (
@@ -255,12 +291,59 @@ export default function MarketScreen() {
     ]);
   };
 
+  const openVisit = () => {
+    if (!userId) {
+      router.push('/sign-in');
+      return;
+    }
+    setVisitOpen(true);
+  };
+
+  const submitVisit = async () => {
+    if (!visitSlot) {
+      Alert.alert('Choose a time', 'Pick one of the Market’s available times.');
+      return;
+    }
+    try {
+      const orderId = await createVisit.mutateAsync({ marketId: id, slot: visitSlot, note: visitNote });
+      setVisitOpen(false);
+      setVisitSlot(null);
+      setVisitNote('');
+      Alert.alert('Visit requested', `${m.name} can confirm this time or suggest another one.`, [
+        { text: 'View request', onPress: () => router.push(`/order/${orderId}`) },
+      ]);
+    } catch (e: any) {
+      const message = String(e?.message ?? '');
+      Alert.alert(
+        'Couldn’t request this visit',
+        message.includes('SLOT_UNAVAILABLE')
+          ? 'That time was just taken. Refresh the available times and choose another.'
+          : message.includes('SUBSCRIPTION_REQUIRED')
+            ? 'Visit scheduling is not available for this Market right now.'
+            : 'Check your connection and try again.',
+      );
+    }
+  };
+
   const mktMiles = marketDistance(myCoords, listings.data ?? []);
+  const hoursByDay = new Map<number, typeof pickupHours.data>();
+  for (let day = 0; day < 7; day++) hoursByDay.set(day, []);
+  for (const window of pickupHours.data ?? []) {
+    const dayWindows = hoursByDay.get(window.weekday) ?? [];
+    dayWindows.push(window);
+    hoursByDay.set(window.weekday, dayWindows);
+  }
+  const schedulingEnabled = storefront.data?.scheduling_enabled === true;
 
   const Header = (
     <View style={styles.header}>
-      <Avatar uri={m.avatar_url} name={m.name} size={72} />
-      <Text style={styles.name}>{m.name}</Text>
+      <View style={[styles.cover, { backgroundColor: THEME_COLORS[m.theme ?? 'garden'] ?? Colors.gardenGreen }]}>
+        {m.banner_url ? <Image source={{ uri: m.banner_url }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+      </View>
+      <View style={styles.identity}>
+        <View style={styles.avatarFrame}><Avatar uri={m.avatar_url} name={m.name} size={84} /></View>
+        <Text style={styles.name}>{m.name}</Text>
+      {featuredUntil ? <View style={styles.featuredBadge}><Text style={styles.featuredText}>Featured Market</Text></View> : null}
       {mktMiles != null ? (
         <Text style={styles.distanceLabel}>
           📍 {fmtDistance(mktMiles) === 'Nearby' ? 'Nearby' : `${fmtDistance(mktMiles)} away`}
@@ -268,9 +351,17 @@ export default function MarketScreen() {
       ) : null}
       {m.tagline ? <Text style={styles.tagline}>“{m.tagline}”</Text> : null}
       {m.description ? <Text style={styles.desc}>{m.description}</Text> : null}
+      {storefront.data ? (
+        <View style={styles.followerLine}>
+          <Users size={15} color={Colors.textSecondary} />
+          <Text style={styles.followerText}>
+            {storefront.data.follower_count} {storefront.data.follower_count === 1 ? 'follower' : 'followers'}
+          </Text>
+        </View>
+      ) : null}
       {isOwner && (
         <Button
-          label="Name your Market"
+          label="Customize Market"
           variant="secondary"
           onPress={() => router.push(`/market/edit/${m.id}`)}
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
@@ -292,6 +383,45 @@ export default function MarketScreen() {
           style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 28 }}
         />
       )}
+      {schedulingEnabled && !isOwner ? (
+        <Button
+          label="Request a visit"
+          variant="secondary"
+          onPress={openVisit}
+          style={{ marginTop: 10, alignSelf: 'center', paddingHorizontal: 28 }}
+        />
+      ) : null}
+      </View>
+      {schedulingEnabled ? (
+        <View style={styles.hoursSection}>
+          <View style={styles.hoursTitleRow}>
+            <CalendarDays size={19} color={Colors.marketOrangeInteractive} />
+            <Text style={styles.hoursTitle}>Stand hours</Text>
+          </View>
+          {WEEKDAYS.map((day, dayIndex) => {
+            const windows = hoursByDay.get(dayIndex) ?? [];
+            return (
+              <View key={day} style={styles.hoursRow}>
+                <Text style={styles.hoursDay}>{day.slice(0, 3)}</Text>
+                <Text style={styles.hoursTime}>
+                  {windows.length
+                    ? windows.map((window) => `${fmtMinute(window.start_minute)}–${fmtMinute(window.end_minute)}`).join(', ')
+                    : 'Closed'}
+                </Text>
+              </View>
+            );
+          })}
+          {(pickupSlots.data ?? []).length > 0 ? (
+            <View style={styles.nextOpening}>
+              <Text style={styles.nextOpeningLabel}>Next available</Text>
+              <Text style={styles.nextOpeningValue}>
+                {fmtWindow(pickupSlots.data![0].slot_start, pickupSlots.data![0].slot_end)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={styles.identity}>
       {drops.map((d) => (
         <View key={d.id} style={styles.dropCard}>
           <Text style={styles.dropTitle}>
@@ -333,6 +463,7 @@ export default function MarketScreen() {
           </>
         )}
       </View>
+      </View>
     </View>
   );
 
@@ -358,6 +489,61 @@ export default function MarketScreen() {
           )
         }
       />
+      <Modal
+        visible={visitOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setVisitOpen(false)}
+      >
+        <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
+          <View style={styles.visitHeader}>
+            <View>
+              <Text style={styles.visitTitle}>Visit {m.name}</Text>
+              <Text style={styles.visitSubtitle}>Choose a time for the seller to confirm.</Text>
+            </View>
+            <Pressable
+              onPress={() => setVisitOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close visit request"
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeText}>Close</Text>
+            </Pressable>
+          </View>
+          <FlatList
+            data={[]}
+            renderItem={() => null}
+            contentContainerStyle={styles.visitBody}
+            ListHeaderComponent={
+              <>
+                <SlotPicker
+                  slots={pickupSlots.data ?? []}
+                  loading={pickupSlots.isLoading}
+                  isError={pickupSlots.isError}
+                  onRetry={() => pickupSlots.refetch()}
+                  selected={visitSlot}
+                  onSelect={setVisitSlot}
+                />
+                <Field
+                  label="Note (optional)"
+                  value={visitNote}
+                  onChangeText={setVisitNote}
+                  placeholder="We’d love to stop by and see what’s available."
+                  multiline
+                  maxLength={500}
+                  style={styles.visitNote}
+                />
+                <Button
+                  label="Send visit request"
+                  onPress={() => void submitVisit()}
+                  loading={createVisit.isPending}
+                  disabled={!visitSlot}
+                />
+              </>
+            }
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -373,13 +559,37 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   center: { alignItems: 'center', justifyContent: 'center' },
   list: { paddingBottom: 32 },
-  header: { alignItems: 'center', padding: 20, gap: 6 },
+  header: { alignItems: 'stretch' },
+  cover: { width: '100%', height: 176, overflow: 'hidden' },
+  identity: { alignItems: 'center', paddingHorizontal: 20, gap: 6 },
+  avatarFrame: {
+    width: 92, height: 92, borderRadius: 46, backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center', marginTop: -46,
+    borderWidth: 4, borderColor: Colors.surface,
+  },
   name: { fontSize: 25, fontFamily: fonts.displayBold, color: Colors.text, textAlign: 'center' },
+  featuredBadge: { borderRadius: 6, backgroundColor: Colors.accent, paddingHorizontal: 9, paddingVertical: 4 },
+  featuredText: { fontSize: 12, fontFamily: fonts.bold, color: Colors.text },
   desc: { fontSize: 15, fontFamily: fonts.regular, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginTop: 2 },
   // Brand red #E53935 is 4.23:1 on white and this is 14px body text; the
   // interactive cut #E32C27 measures 4.51:1.
   tagline: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.marketOrangeInteractive, textAlign: 'center', fontStyle: 'italic', marginTop: 2 },
   distanceLabel: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary, textAlign: 'center', marginTop: 2 },
+  followerLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  followerText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
+  hoursSection: {
+    marginTop: 20, paddingHorizontal: 20, paddingVertical: 18,
+    borderTopWidth: 1, borderBottomWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.backgroundSecondary,
+  },
+  hoursTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  hoursTitle: { fontSize: 17, fontFamily: fonts.bold, color: Colors.text },
+  hoursRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 3 },
+  hoursDay: { width: 42, fontSize: 13, fontFamily: fonts.bold, color: Colors.textSecondary },
+  hoursTime: { flex: 1, fontSize: 13, lineHeight: 18, fontFamily: fonts.regular, color: Colors.text },
+  nextOpening: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border },
+  nextOpeningLabel: { fontSize: 11.5, fontFamily: fonts.bold, color: Colors.marketOrangeInteractive, textTransform: 'uppercase' },
+  nextOpeningValue: { fontSize: 14, fontFamily: fonts.semibold, color: Colors.text, marginTop: 2 },
   countLine: { fontSize: 13, color: Colors.textTertiary, marginTop: 14, fontFamily: fonts.semibold },
   repWrap: { alignSelf: 'stretch', marginTop: 16 },
   actionsRow: { flexDirection: 'row', gap: 14, alignItems: 'center' },
@@ -387,4 +597,14 @@ const styles = StyleSheet.create({
   reportText: { fontSize: 13, fontFamily: fonts.medium, color: Colors.textTertiary },
   shareText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.marketOrangeInteractive },
   cardWrap: { paddingHorizontal: 16 },
+  visitHeader: {
+    minHeight: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  visitTitle: { fontSize: 20, fontFamily: fonts.displayBold, color: Colors.text },
+  visitSubtitle: { fontSize: 12.5, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2 },
+  closeButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  closeText: { fontSize: 14, fontFamily: fonts.bold, color: Colors.primary },
+  visitBody: { padding: 18, paddingBottom: 40 },
+  visitNote: { minHeight: 82, textAlignVertical: 'top' },
 });

@@ -18,6 +18,25 @@ import { unregisterPushToken } from '@/lib/notifications';
 // Dismiss the auth browser tab if it's left dangling (web/dev safety).
 void WebBrowser.maybeCompleteAuthSession();
 
+// Android can deliver the same OAuth callback through both Linking and
+// openAuthSessionAsync. Share the in-flight exchange so the PKCE verifier is
+// consumed exactly once and both callers observe the same result.
+const authCodeExchanges = new Map<string, Promise<void>>();
+
+function exchangeAuthCodeOnce(code: string): Promise<void> {
+  const existing = authCodeExchanges.get(code);
+  if (existing) return existing;
+
+  const exchange = supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+    if (error) throw error;
+  });
+  authCodeExchanges.set(code, exchange);
+
+  const forget = () => setTimeout(() => authCodeExchanges.delete(code), 60_000);
+  void exchange.then(forget, forget);
+  return exchange;
+}
+
 interface AuthContextValue {
   session: Session | null;
   userId: string | null;
@@ -87,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const code = Linking.parse(url).queryParams?.code;
       if (typeof code !== 'string' || !code) return;
       try {
-        await supabase.auth.exchangeCodeForSession(code);
+        await exchangeAuthCodeOnce(code);
       } catch {
         // Used/expired code — the sign-in screen's normal flows still work.
       }
@@ -141,6 +160,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const verifyEmailCode = useCallback(async (email: string, code: string) => {
     const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
     if (error) throw error;
+    const { error: proofError } = await supabase.rpc('record_my_verified_email_otp');
+    if (proofError) throw proofError;
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
@@ -163,8 +184,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const code = Linking.parse(result.url).queryParams?.code;
     if (typeof code !== 'string') throw new Error('Google sign-in did not return a code.');
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-    if (exchangeError) throw exchangeError;
+    await exchangeAuthCodeOnce(code);
+    const { error: proofError } = await supabase.rpc('record_my_verified_email_provider');
+    if (proofError) throw proofError;
   }, []);
 
   const signInWithApple = useCallback(async () => {
@@ -189,6 +211,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       nonce: rawNonce,
     });
     if (error) throw error;
+    const { error: proofError } = await supabase.rpc('record_my_verified_email_provider');
+    if (proofError) throw proofError;
 
     // Apple shares the name only on the FIRST authorization; the profile trigger
     // has no metadata to use, so persist it now (best-effort).

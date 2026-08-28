@@ -205,3 +205,23 @@ export function timeLeft(expiresAt: string): string {
   const hours = Math.max(1, Math.floor(ms / 3_600_000));
   return `${hours} hour${hours === 1 ? '' : 's'} left`;
 }
+
+export function pickedDateLabel(value?: string | null): string | null {
+  if (!value) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, (month || 1) - 1, day || 1);
+  if (
+    !Number.isFinite(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((today.getTime() - date.getTime()) / 86_400_000);
+  if (diffDays === 0) return 'Picked today';
+  if (diffDays === 1) return 'Picked yesterday';
+  return `Picked ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}

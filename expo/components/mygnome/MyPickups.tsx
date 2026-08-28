@@ -37,8 +37,8 @@ export default function MyPickups({ uid }: { uid: string }) {
     return (
       <EmptyState
         emoji="🧺"
-        title="No pickups yet"
-        subtitle="When you claim something from a neighbor, you'll track it here."
+        title="No pickups scheduled"
+        subtitle="Approved reservations and pickup times will appear here."
       />
     );
   }

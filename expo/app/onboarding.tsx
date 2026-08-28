@@ -39,7 +39,7 @@ export default function OnboardingScreen() {
   const [form, setForm] = useState({ first: '', last: '', email: '', phone: '' });
   const [formError, setFormError] = useState<string | null>(null);
 
-  const finish = useCallback(() => router.replace('/(tabs)'), [router]);
+  const finish = useCallback(() => router.replace('/account-ready' as never), [router]);
 
   const send = useCallback(async (history: Msg[]) => {
     setBusy(true);
@@ -165,13 +165,14 @@ export default function OnboardingScreen() {
           <ScrollView style={styles.flex} contentContainerStyle={styles.form}>
             <Text style={styles.formIntro}>
               Just a few details so neighbors know who they’re trading with. Only your
-              first name and last initial are shown publicly — your email and phone stay private.
+              first name and last initial are shown publicly. Your email and mobile stay private,
+              and mobile verification unlocks posting, requests, messages, and Market setup.
             </Text>
             <FormField label="First name" value={form.first} onChange={(v) => setForm({ ...form, first: v })} />
             <FormField label="Last name" value={form.last} onChange={(v) => setForm({ ...form, last: v })} />
             <FormField label="Email" value={form.email} onChange={(v) => setForm({ ...form, email: v })}
               keyboardType="email-address" autoCapitalize="none" />
-            <FormField label="Mobile (optional)" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })}
+            <FormField label="Mobile" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })}
               keyboardType="phone-pad" />
             {formError && <Text style={styles.error}>{formError}</Text>}
             <Button label={busy ? 'Saving…' : 'Save and continue'} onPress={saveForm} disabled={busy} />

@@ -5,7 +5,8 @@ Updated 2026-08-20 against `727abba` plus the current working tree.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
-(the conditions for ever taking real money).
+(the conditions for ever taking real money), and `../ops/SELLER_CONCIERGE.md`
+(claim state, disposable QA retention, and approval-gated cleanup).
 
 ---
 

@@ -24,6 +24,7 @@ export default function MarketCard({ market }: { market: WebMarket }) {
           <div className="title" style={{ marginBottom: 0 }}>
             {market.name} {market.verified ? '✓' : ''}
           </div>
+          {market.featured_until ? <div className="tag" style={{ marginTop: 4 }}>Featured Market</div> : null}
           <div className="meta">
             {areaLabel(market.city, market.state)} · {market.active_listing_count} active
           </div>

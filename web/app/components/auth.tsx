@@ -54,8 +54,11 @@ export function SignInCard({ title, blurb }: { title?: string; blurb?: string })
       token: code.trim(),
       type: 'email',
     });
+    const proofResult = error
+      ? null
+      : await supabaseBrowser().rpc('record_my_verified_email_otp');
     setBusy(false);
-    if (error) setError('That code didn’t work — check it and try again.');
+    if (error || proofResult?.error) setError('That code didn’t work — check it and try again.');
     // On success onAuthStateChange flips the page; nothing else to do here.
   }
 
@@ -91,7 +94,7 @@ export function SignInCard({ title, blurb }: { title?: string; blurb?: string })
             inputMode="numeric"
             autoComplete="one-time-code"
             placeholder="6-digit code"
-            maxLength={8}
+            maxLength={6}
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
@@ -102,8 +105,7 @@ export function SignInCard({ title, blurb }: { title?: string; blurb?: string })
       )}
       {stage === 'code' && (
         <p className="authhint">
-          Sent to <strong>{email}</strong> — enter the code, or just tap the sign-in
-          link in the email.{' '}
+          Sent to <strong>{email}</strong> — enter the six-digit code from the email.{' '}
           <button className="linkbtn" onClick={() => { setStage('email'); setCode(''); }}>
             Use a different email
           </button>

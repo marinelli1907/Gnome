@@ -18,42 +18,45 @@ import {
 } from './providers.ts';
 
 // --- Cost gate: real signed-in users only, capped per day. -----------------
-// verify_jwt has already validated the signature; we only read the claims.
-// The anon key's JWT has no `sub`, so bare anon-key calls are rejected — every
-// model call is attributable to an account and counted against a daily cap.
+// Verify the caller through Supabase Auth before service-role reads or metering;
+// decoded JWT claims are never trusted as identity on this legacy endpoint.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-function userIdFrom(req: Request): string | null {
-  try {
-    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof payload.sub === 'string' && payload.sub.length > 10 ? payload.sub : null;
-  } catch {
-    return null;
-  }
+async function verifiedUserIdFrom(req: Request): Promise<string | null> {
+  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  if (!token) return null;
+  const authClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } },
+  );
+  const { data, error } = await authClient.auth.getUser(token);
+  if (error || !data.user?.id) return null;
+  return data.user.id;
 }
 
-// Caps by plan: free users get a real taste; paid Markets get the full
-// allowance (a concrete subscription perk alongside listings + boosts).
-async function underDailyCap(
-  userId: string, feature: string, freeCap: number, paidCap: number,
-): Promise<boolean> {
+// Shared Zordy allowance: this legacy listing-draft endpoint consumes the same
+// daily bucket as the main assistant.
+async function underDailyCap(userId: string): Promise<boolean> {
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
-  const { data: market } = await admin
-    .from('markets').select('plan').eq('owner_id', userId).limit(1).maybeSingle();
-  const paid = !!market?.plan && market.plan !== 'free';
-  const { data, error } = await admin.rpc('ai_usage_increment', {
-    p_user: userId, p_feature: feature, p_cap: paid ? paidCap : freeCap,
-  });
+  const { data, error } = await admin.rpc('zordy_reserve_request', { p_user: userId });
   if (error) {
-    // Fail open: a broken usage table shouldn't take the feature down.
-    console.error('ai_usage_increment error:', error);
-    return true;
+    console.error('zordy_reserve_request error:', error);
+    return false;
   }
-  return data !== false;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row?.allowed !== false;
+}
+
+async function releaseDailyCap(userId: string): Promise<void> {
+  const admin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+  await admin.rpc('zordy_release_request', { p_user: userId }).then(() => {}, () => {});
 }
 
 
@@ -107,8 +110,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
   }
+  let reservedUser: string | null = null;
   try {
-    const userId = userIdFrom(req);
+    const userId = await verifiedUserIdFrom(req);
     if (!userId) {
       return json({ error: 'Sign in to use AI drafting.' }, 401);
     }
@@ -127,10 +131,6 @@ Deno.serve(async (req: Request) => {
     if (!chain.length) {
       return json({ error: 'AI drafting is not configured yet.' }, 503);
     }
-    if (!(await underDailyCap(userId, 'draft', 5, 25))) {
-      return json({ error: "You've used today's free AI drafts. Paid plans (Pro and Farm) get 25 a day — or fill the form by hand, it works great." }, 429);
-    }
-
     const { imageBase64, mediaType, listingType } = await req.json();
     if (typeof imageBase64 !== 'string' || imageBase64.length < 100) {
       return json({ error: 'imageBase64 required' }, 400);
@@ -140,6 +140,10 @@ Deno.serve(async (req: Request) => {
     }
     const media = ALLOWED_MEDIA.includes(mediaType) ? mediaType : 'image/jpeg';
     const type = ['free', 'trade', 'sale', 'wanted'].includes(listingType) ? listingType : 'free';
+    if (!(await underDailyCap(userId))) {
+      return json({ error: "You've used today's Zordy requests. Come back tomorrow or upgrade for more." }, 429);
+    }
+    reservedUser = userId;
 
     const t0 = Date.now();
     const r = await callWithFallback(chain, {
@@ -159,6 +163,7 @@ Deno.serve(async (req: Request) => {
       maxTokens: 1024, json: true,
     });
     if (!r.text.trim()) {
+      await releaseDailyCap(userId);
       return json({ error: 'No draft produced — try again.' }, 502);
     }
     const parsed = JSON.parse(r.text.replace(/^```json?\s*|\s*```$/g, ''));
@@ -173,7 +178,10 @@ Deno.serve(async (req: Request) => {
         ? Math.max(0, Math.min(100000, Math.round(Number(parsed.suggested_price_cents)))) : null,
       suggested_unit: typeof parsed.suggested_unit === 'string' ? parsed.suggested_unit.slice(0, 20) : null,
     };
-    if (!draft.title) return json({ error: 'No draft produced — try again.' }, 502);
+    if (!draft.title) {
+      await releaseDailyCap(userId);
+      return json({ error: 'No draft produced — try again.' }, 502);
+    }
 
     await cfgClient.from('ai_usage_log').insert({
       feature: 'draft', user_id: userId, provider: r.provider, model: r.model, images: 1,
@@ -186,8 +194,9 @@ Deno.serve(async (req: Request) => {
 
     return json({ draft });
   } catch (e) {
+    if (reservedUser) await releaseDailyCap(reservedUser);
     if (e instanceof RateLimitedError) {
-      return json({ error: 'Gnome AI is temporarily busy. Try again shortly.' }, 503);
+      return json({ error: 'Zordy is temporarily busy. Try again shortly.' }, 503);
     }
     console.error('draft-listing error:', e);
     // Surface the upstream cause during beta — invaluable for debugging,

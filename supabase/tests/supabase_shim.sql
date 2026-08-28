@@ -36,7 +36,26 @@ create table if not exists auth.users (
   raw_user_meta_data jsonb default '{}'::jsonb,
   created_at timestamptz default now(),
   -- public_markets and 0015's trust layer both derive "verified email" from this.
-  email_confirmed_at timestamptz
+  email_confirmed_at timestamptz,
+  -- Account-readiness migrations mirror the current Supabase Auth verification
+  -- columns. Values remain test-only in this local shim.
+  confirmed_at timestamptz,
+  phone text,
+  phone_confirmed_at timestamptz
+);
+
+-- Identity-level verification is distinct from auth.users confirmation
+-- timestamps. In particular, hosted Auth can auto-confirm an email without
+-- proving mailbox control, leaving identity_data.email_verified false.
+create table if not exists auth.identities (
+  id uuid primary key default gen_random_uuid(),
+  provider_id text not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  identity_data jsonb not null default '{}'::jsonb,
+  provider text not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (provider_id, provider)
 );
 
 -- PostgREST sets request.jwt.claims per request; these read it exactly as
@@ -62,6 +81,10 @@ create table if not exists storage.objects (
   created_at timestamptz default now()
 );
 alter table storage.objects enable row level security;
+-- Supabase Storage owns these base grants; project migrations add RLS policies.
+-- Mirror that managed layer so local policy tests are not vacuous.
+grant select, insert, update, delete on storage.objects to authenticated;
+grant all on storage.objects to service_role;
 create or replace function storage.foldername(name text) returns text[]
   language sql immutable as $$ select string_to_array(name, '/') $$;
 
@@ -81,3 +104,12 @@ returns bigint language sql as $$
 $$;
 create or replace function cron.unschedule(job_name text) returns boolean
   language sql as $$ delete from cron.job where jobname = job_name returning true $$;
+
+-- Supabase creates this publication before project migrations run.
+do $$
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+end
+$$;
