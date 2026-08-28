@@ -3,7 +3,6 @@ import Link from 'next/link';
 import AppLink from '../../components/AppLink';
 import FollowButton from '../../components/FollowButton';
 import ListingCard from '../../components/ListingCard';
-import ReferralCapture from '../../components/ReferralCapture';
 import VisitRequestButton from './VisitRequestButton';
 import { areaLabel, LAUNCH_LISTING_TYPES, TYPE_LABEL } from '@/lib/format';
 import {
@@ -58,7 +57,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function MarketPage({ params, searchParams }: Params & {
-  searchParams?: Promise<{ drop?: string; ref?: string; source?: string; source_market?: string }>;
+  searchParams?: Promise<{ drop?: string }>;
 }) {
   const { slug } = await params;
   const m = await getMarketBySlug(slug);
@@ -98,7 +97,6 @@ export default async function MarketPage({ params, searchParams }: Params & {
 
   return (
     <main className="container market-head">
-      {query?.ref ? <ReferralCapture code={query.ref} source={query.source === 'market_qr' ? 'MARKET_QR' : 'WEB_LINK'} marketId={query.source_market} /> : null}
       {m.banner_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img className="banner" src={m.banner_url} alt={m.name} />

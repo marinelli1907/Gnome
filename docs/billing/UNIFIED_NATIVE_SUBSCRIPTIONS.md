@@ -1,10 +1,29 @@
 # Gnome unified paid subscriptions
 
-Status: backend deployed and release binaries uploaded for internal processing;
-provider credentials and end-to-end sandbox billing remain incomplete. Payments
-are not live and neither store has been submitted for public review.
+Status: Apple sandbox billing is proven end to end. The required Apple and
+Google provider secret names are present in Supabase server-side secret storage,
+and the Edge Functions read them only through `Deno.env`. Google runtime billing
+remains unverified without a physical Android test device; the Android 1.1.0
+release intentionally exposes no digital purchase UI under owner decision D1.
+Payments are not live and neither store has been submitted for public review.
 
-## Verification checkpoint - 2026-08-25
+## Release checkpoint - 2026-08-28
+
+- Apple sandbox: product load, purchase, server verification, paid entitlement,
+  and restore passed on the paired iPhone.
+- Apple `FOUNDING3`: the StoreKit confirmation sheet showed the intended
+  three-month introductory trial without changing the monthly business terms.
+- Fail-closed protection passed in the live QA path: a completed StoreKit
+  purchase did not unlock a plan while server verification was failing; access
+  appeared only after the server accepted the verified transaction.
+- Supabase secret presence is configured for Apple verification and Google
+  Android Publisher/Pub/Sub verification. Secret values are not stored in the
+  repository or client bundles.
+- Google Play purchase/restore is unverified. This is not presented as a pass,
+  and Android launch code has no purchase or restore surface.
+- `payments_live_enabled` remains `false`; Stripe remains TEST-only.
+
+## Historical verification checkpoint - 2026-08-25
 
 - Production migration `20260825204308_unified_native_subscriptions.sql` is
   applied. `subscription-sync`, `subscription-webhook`, `billing-checkout`,

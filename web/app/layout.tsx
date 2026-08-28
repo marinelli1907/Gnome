@@ -79,7 +79,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <a className="nav-ai" href="#gnome-ai">✦ Zordy</a>
                 <Link className="nav-market" href="/my">Market</Link>
                 <Link href="/pricing">Pricing</Link>
-                <Link href="/referrals">Referrals</Link>
                 <AuthNavLink />
               </span>
               <a className="btn btn-secondary btn-sm nav-app-cta" href={IOS}>Get the app</a>
@@ -120,7 +119,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <li><Link href="/sell">Sell on Gnome</Link></li>
                   <li><Link href="/my">My Market</Link></li>
                   <li><Link href="/pricing">Pricing &amp; boosts</Link></li>
-                  <li><Link href="/referrals">Referrals &amp; rewards</Link></li>
                   <li><Link href="/support">Support</Link></li>
                   <li><Link href="/trust">Trust &amp; Safety</Link></li>
                   <li><a href={IOS}>Get the app</a></li>

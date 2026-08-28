@@ -117,10 +117,6 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', title: 'Your plan', ...headerStyle }}
               />
               <Stack.Screen
-                name="referrals"
-                options={{ title: 'Referrals & rewards', ...headerStyle }}
-              />
-              <Stack.Screen
                 name="promote/[listingId]"
                 options={{ presentation: 'modal', title: 'Feature listing', ...headerStyle }}
               />

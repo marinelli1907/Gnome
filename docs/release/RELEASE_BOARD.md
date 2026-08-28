@@ -1,7 +1,8 @@
-# Gnome 1.1.0 — Android release board
+# Gnome 1.1.0 — release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-20 against `727abba` plus the current working tree.
+Updated 2026-08-28 against release commit `acd25b0` plus the reviewed
+deferred-referrals removal now in the working tree.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -14,20 +15,32 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 
 | Blocker | Status | Owner | Next action |
 |---|---|---|---|
-| **B1** Google Maps | **CLOSED — re-verified 2026-08-19** | — | Re-verify after first upload with the Play signing SHA-1 (§3) |
-| **B2** FCM push | **CONFIGURED / NOT PROVEN** | Daniel + Claude | Physical Android run (§2) |
+| **B1** Google Maps | **CLOSED ON EMULATOR / PLAY INSTALL RECHECK REQUIRED** | Daniel | Re-verify Map from the final Play internal-test install (§3) |
+| **B2** FCM push | **CONFIGURED / PHYSICAL ANDROID PROOF MISSING** | Daniel | Physical Android run (§2); this cannot be closed on an emulator |
 | **B3** Deletion URL + contact | **CLOSED** | — | — |
-| **B4** Purchase posture | **DECIDED — D1** | — | Gate shipped (`ffb2d28`); Android copy leaks fixed in working tree, see §9 |
+| **B4** Purchase posture | **CLOSED — D1 VERIFIED** | — | Android has no digital purchase UI or Stripe link-out |
 | **§4.3b** Gemini data safety | **OWNER ACTION** | **Daniel** | See `GEMINI_DATA_SAFETY_DECISION.md`: paid Gemini key, or declare Shared = Yes |
-| Website ↔ app parity | **CLOSED** (3 fixes, `90b7c36`) | — | Live web re-probed 2026-08-20; two owner items in §8 |
+| Website ↔ app parity | **FIXED LOCALLY / DEPLOY PENDING** | Codex | Deploy the actual release-app screenshot and deferred-referrals removal, then probe live |
 | `/pricing` test-mode redirect | **DEPLOYED / VERIFIED** (`9945b24`) | — | Live `/pricing` re-probed 2026-08-20 |
-| **App icon + feature graphic** | **FIXED IN WORKING TREE** | — | §10 — generated + mechanically verified |
-| **D1 copy leaks** | **FIXED IN WORKING TREE** | — | §9.1 — gated copy + focused tests |
-| Reviewer notes (Play + iOS) | **FIXED IN WORKING TREE** | — | §9.2 — Play/iOS notes match code; iOS overage ships with explicit 3.1.1 risk disclosure |
-| iOS priced dead-end purchase copy | **FIXED IN WORKING TREE** | — | `/upgrade` is informational; no priced "coming soon" promotion/plan buttons |
-| Store assets | **DRAFTED** (`8714ca4`) | Claude + Daniel | Screenshots from the final RC |
-| **Final AAB** | **READY AFTER REVIEW** | Claude | Cut from this working tree once committed; B2 still needs physical proof after build |
-| **Play upload** | **HOLD** | Daniel | Blocked on final AAB |
+| **App icon + feature graphic** | **READY / MECHANICALLY VERIFIED** | — | Google assets are in `artifacts/store/google/` |
+| **D1 copy leaks** | **CLOSED / REGRESSION TESTED** | — | Android price and checkout surfaces are gated |
+| Reviewer notes (Play + iOS) | **READY** | — | Notes match the release behavior and payment posture |
+| iOS native subscriptions | **SANDBOX PASS** | — | Pro/Farm verification and restore were proven; live payments remain disabled |
+| Deferred rewards/referrals | **REMOVED FROM CUSTOMER SURFACES** | — | Static release guard prevents routes or links from returning |
+| Store assets | **GOOGLE READY / APPLE SCREENSHOTS PENDING** | Codex | Capture final iOS screenshots from the release UI |
+| **Final iOS artifact** | **REBUILD REQUIRED** | Codex | Build after the deferred-referrals removal commit; build 19 is signed but superseded |
+| **Final AAB** | **BLOCKED BY EAS HOSTED QUOTA** | Daniel / Codex | Hosted quota resets 2026-09-01, or Daniel approves an EAS plan upgrade |
+| **Play upload key** | **ROTATION PREPARED / RESET NOT SUBMITTED** | Daniel / Codex | Submit the prepared public-certificate reset in Play Console; never use the replacement private key locally |
+| **Production migrations** | **OWNER ACTION — 5 REVIEWED FILES PENDING** | Daniel | Apply only the ordered files in `PRODUCTION_MIGRATION_HANDOFF.md`; Codex then verifies read-only |
+| **Public store submission** | **HOLD BY DESIGN** | Daniel | Prepare internal/TestFlight artifacts only; do not submit publicly without a separate owner action |
+
+Current verification: Expo typecheck and lint pass, all 51 Node/static tests
+pass, the Next.js production build passes, Expo Doctor is 18/18, Edge function
+typechecks have zero failures, the clean-room billing/entitlement suites pass,
+and production still reports `payments_live_enabled = false`.
+
+The detailed sections below preserve historical evidence. Where a dated detail
+conflicts with the current board above, the current board is authoritative.
 
 ### Remodel sprint — landed 2026-08-18/19
 
@@ -104,7 +117,7 @@ Android identity is settled and verified in the merged manifest of a real build:
 | Version | `1.1.0` |
 | versionCode | remote + autoIncrement (last: vc4) |
 | Signing | EAS-managed upload keystore; Play App Signing at upload |
-| Maps key | `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` injects `android.config.googleMaps.apiKey` at build time. **Restricted 2026-08-20** to Android apps / `app.boonesystems.gnome` with BOTH the EAS upload SHA-1 `DA:F1:79:50:…:0C:13` and the Play App Signing SHA-1 `3F:2D:F0:FF:…:02:67`. Until that date this row claimed a restriction that did not exist — Application restrictions were `None` and the table was empty, while the key shipped inside the AAB |
+| Maps key | `EXPO_ANDROID_GOOGLE_MAPS_API_KEY` injects `android.config.googleMaps.apiKey` at build time. The runtime restriction for Play installs must use the Play App Signing certificate, not an upload certificate. The upload key is being rotated, so no upload-key fingerprint in this historical document should be copied into a new restriction. |
 | Firebase | `android.googleServicesFile: ./google-services.json`, project `gnome-farmers-market-70414` |
 | Blocked perms | `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` |
 
@@ -201,10 +214,9 @@ find out.
 1. Play Console → your app → **Setup → App signing**
 2. Copy the **App signing key certificate** SHA-1
 3. Google Cloud Console → project `Gnome Farmers Market` → **APIs & Services →
-   Credentials** → the Android Maps key → **add** that SHA-1 alongside the
-   existing upload fingerprint (`DA:F1:79:50:49:38:5F:41:DA:E0:37:C4:EB:06:D4:B1:20:75:0C:13`).
-   Both entries coexist: the upload key covers internal builds and local QA, the
-   Play key covers real installs
+   Credentials** → the Android Maps key → verify the Play App Signing SHA-1 is
+   registered for `app.boonesystems.gnome`. Do not use the upload certificate
+   for this Play-installed runtime check.
 4. Install the app **from the Play internal-test track** (not the sideloaded APK)
 5. Open the Map tab: tiles render, market pins plot, Google attribution shows
 6. Confirm no `API key not found` and no ReactInstance teardown:

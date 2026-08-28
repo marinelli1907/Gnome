@@ -177,9 +177,6 @@ export default function MobileNav({ iosUrl }: { iosUrl: string }) {
             <Link className={`mn-item${isHere('/pricing') ? ' is-here' : ''}`} href="/pricing">
               Pricing
             </Link>
-            <Link className={`mn-item${isHere('/referrals') ? ' is-here' : ''}`} href="/referrals">
-              Referrals &amp; rewards
-            </Link>
             <Link className={`mn-item${isHere('/my') ? ' is-here' : ''}`} href="/my">
               My Market
             </Link>

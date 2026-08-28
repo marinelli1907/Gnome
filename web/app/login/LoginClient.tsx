@@ -183,7 +183,6 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
         <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void saveProfile()}>Save profile</button>
         <a className="btn btn-secondary btn-sm" href="/my">My Market</a>
-        <a className="btn btn-secondary btn-sm" href="/referrals">Referrals &amp; rewards</a>
         <button className="btn btn-secondary btn-sm" onClick={() => void signOut()}>
           Sign out
         </button>
