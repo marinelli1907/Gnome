@@ -185,6 +185,22 @@ export default function GnomeAssistant() {
   }, []);
 
   useEffect(() => {
+    const openFromLink = (event: MouseEvent) => {
+      const target = event.target instanceof Element
+        ? event.target.closest<HTMLAnchorElement>('a[href="#gnome-ai"]')
+        : null;
+      if (!target) return;
+
+      event.preventDefault();
+      setOpen(true);
+      logWeb('gnome_opened', { page: pathname, source: 'link' });
+    };
+
+    document.addEventListener('click', openFromLink);
+    return () => document.removeEventListener('click', openFromLink);
+  }, [pathname]);
+
+  useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [turns, busy]);
 

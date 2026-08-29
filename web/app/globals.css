@@ -451,6 +451,35 @@ img { display: block; }
 /* The header keeps Sell + the menu button on a phone; "Get the app" is one
    tap in, so the bar doesn't have three controls fighting for 375px. */
 @media (max-width: 560px) { .nav-app-cta { display: none; } }
+@media (max-width: 560px) {
+  .site-header .inner {
+    min-height: 96px;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 10px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .site-header .inner::before {
+    content: '';
+    grid-column: 1;
+    width: 44px;
+    height: 44px;
+  }
+  .site-header .brand {
+    grid-column: 2;
+    min-width: 0;
+    justify-self: center;
+  }
+  .site-header .brand-logo-full {
+    width: min(218px, 100%);
+  }
+  .site-header .nav-cta {
+    grid-column: 3;
+    justify-self: end;
+    gap: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) { .nav-toggle-icon span { transition: none; } }
 
 /* ---------- Sell + Garden planner (interactive pages) ---------- */
