@@ -1,7 +1,7 @@
 # Gnome 1.1.0 — release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-28 against release commit `668ccf3`.
+Updated 2026-08-28 against the current release branch and signed iOS build 19.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -561,31 +561,27 @@ Additional local verification on 2026-08-20:
 
 ---
 
-## 10. Store and launcher art — fixed in working tree
+## 10. Store, launcher, and splash art — release assets ready
 
-This was the critical path; it is now a working-tree fix. The old
-dark-green/cream raster set has been replaced with an identity-v4 interim mark
-that uses a red-hat Gnome mascot, white canvas, charcoal outline and the five
-semantic hues in the basket. Final commissioned character art can fast-follow,
-but Play no longer lacks required graphics.
+The interim raster set was replaced in `acd25b0` by the approved high-resolution
+Gnome wordmark and mascot system used on Browse and the website. The release
+configuration now points at the same visual family across the launcher,
+adaptive icon, splash, web favicon, and store assets.
 
-Generated / updated:
-- `expo/assets/images/gnome-mark.svg` — source mark.
-- `expo/assets/images/icon.png` — 1024 × 1024 RGBA.
-- `expo/assets/images/adaptive-icon.png` — 1024 × 1024 RGBA, padded foreground.
-- `expo/assets/images/splash-icon.png` — 512 × 512 RGBA.
-- `expo/assets/images/badge.png` — 192 × 192 RGBA.
-- `expo/assets/images/favicon.png` — 16 × 16 RGBA.
-- `docs/release/play-icon-512.png` — 512 × 512 RGBA, 57 KB.
-- `docs/release/play-feature-graphic.png` — 1024 × 500 RGB/no alpha, 49 KB.
+Current release assets:
+- `expo/assets/images/icon.png` — 1024 × 1024 app icon.
+- `expo/assets/images/adaptive-icon.png` — 1024 × 1024 Android foreground.
+- `expo/assets/images/gnome-logo-full-hq.png` — 1762 × 892 opaque splash
+  wordmark, referenced directly by `app.json`.
+- `artifacts/store/google/icon-512.png` — Play icon.
+- `artifacts/store/google/feature-graphic-1024x500.png` — Play feature graphic.
+- `artifacts/store/apple/*.jpg` — four opaque 1320 × 2868 release screenshots.
 
-`app.json` now sets both `android.adaptiveIcon.backgroundColor` and
-`splash.backgroundColor` to `#FFFFFF`.
-
-Verification: `sips` confirmed dimensions and alpha/no-alpha state; `file`
-confirmed PNG color model; visual inspection was done for app icon, adaptive
-foreground and feature graphic. A rebuilt-device launcher/splash check and Map
-regression still need to happen with the final AAB because `app.json` changed.
+`app.json` sets both `android.adaptiveIcon.backgroundColor` and
+`splash.backgroundColor` to `#FFFFFF`. The release-mode iOS simulator cold-launch
+sequence visually showed the high-resolution logo on white before Browse. The
+final Play-install launcher and Android cold-start checks remain coupled to the
+quota-blocked final hosted AAB.
 
 ### 10.1 Also found, not blocking — the map is blank for the first ~90 seconds on a cold device
 

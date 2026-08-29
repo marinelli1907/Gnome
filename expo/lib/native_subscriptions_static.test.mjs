@@ -42,3 +42,19 @@ assert.match(
   /if \(!canBuyDigitalInApp\) return;/,
   'the checkout function must refuse Android even if a hidden call site regresses',
 );
+assert.match(
+  upgrade,
+  /native\.products\[productId\]\?\.displayPrice/,
+  'the subscription screen must prefer StoreKit-localized prices',
+);
+assert.match(upgrade, />Restore purchases</, 'the subscription screen must keep a restore control');
+assert.match(
+  upgrade,
+  /nativeWebUrl\('\/terms'\)[\s\S]*>Terms of Use</,
+  'the subscription screen must link to the Terms of Use',
+);
+assert.match(
+  upgrade,
+  /nativeWebUrl\('\/privacy'\)[\s\S]*>Privacy Policy</,
+  'the subscription screen must link to the Privacy Policy',
+);

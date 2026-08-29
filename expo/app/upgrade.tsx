@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Check, CreditCard, RefreshCw, Settings, TicketPercent } from 'lucide-react-native';
@@ -11,12 +11,13 @@ import { useMyListingAllowance, useMyMarket, usePlanLimits } from '@/lib/db';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { listingsMeter, planDisplay, renewalsMeter, resetLabel } from '@/lib/allowance';
 import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
+import { nativeWebUrl } from '@/lib/links';
 import {
   createPlanCheckout, finishPlanCheckout, openStripeSubscriptionPortal, previewPlanPromo,
   type PlanCheckoutSession, type PlanProductKey, type PlanPromoPreview,
 } from '@/lib/billing';
 import type { MarketPlan, PlanLimit } from '@/types';
-import { useNativeSubscriptions } from '@/lib/nativeSubscriptions';
+import { NATIVE_PRODUCT_FOR_PLAN, useNativeSubscriptions } from '@/lib/nativeSubscriptions';
 
 // Tier copy derives from plan_limits' 0104 columns. `undefined` means the connected environment
 // has not applied 0104 yet — degrade to an explicit dash, never to max_active_listings, which is
@@ -142,6 +143,12 @@ export default function UpgradeScreen() {
   const native=useNativeSubscriptions(userId??undefined,refreshPlan,usesNativeSubscriptions);
   const primaryPaid=subscriptions.data?.paid_subscriptions[0]??null;
   const billingLabel=primaryPaid?.source==='APPLE'?'Apple':primaryPaid?.source==='GOOGLE_PLAY'?'Google Play':primaryPaid?.source==='STRIPE'?'Gnome website':null;
+  const displayedPlanPrice=(target:MarketPlan) => {
+    const productId=target==='grower'||target==='farm' ? NATIVE_PRODUCT_FOR_PLAN[target] : null;
+    const storePrice=productId ? native.products[productId]?.displayPrice : null;
+    const fallback=limits.data?.[target]?.price_cents;
+    return storePrice ?? (fallback != null ? `$${(fallback/100).toFixed(2)}` : null);
+  };
 
   useEffect(()=>{
     if (!native.state.message) return;
@@ -424,8 +431,8 @@ export default function UpgradeScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.upgradeTitle}>Upgrade your Market</Text>
             <Text style={styles.upgradeBody}>
-              Move to {planDisplay(nextPlan)} for {limits.data?.[nextPlan]?.price_cents != null
-                ? `$${(limits.data[nextPlan].price_cents / 100).toFixed(2)}/month`
+              Move to {planDisplay(nextPlan)} for {displayedPlanPrice(nextPlan) != null
+                ? `${displayedPlanPrice(nextPlan)}/month`
                 : 'the next level of seller tools'}.
             </Text>
           </View>
@@ -457,12 +464,14 @@ export default function UpgradeScreen() {
       {ORDER.map((p) => {
         const l = limits.data?.[p];
         const current = p === plan;
+        const paidPrice=p==='grower'||p==='farm' ? displayedPlanPrice(p) : null;
         return (
           <View key={p} style={[styles.tier, current && styles.tierCurrent]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.tierName}>
                 {planDisplay(p)} {current ? '· current' : ''}
               </Text>
+              {paidPrice ? <Text style={styles.tierPrice}>{paidPrice} per month</Text> : null}
               <Text style={styles.tierMeta}>
                 {tierListings(l) ?? '—'}
                 {tierRenewals(l, canBuyDigitalInApp) ? ` · ${tierRenewals(l, canBuyDigitalInApp)}` : ''}
@@ -505,10 +514,23 @@ export default function UpgradeScreen() {
           : 'Digital plan checkout is not available in the Android app. Your existing paid or complimentary access still works here.'}
       </Text>
       {usesNativeSubscriptions ? (
-        <Pressable style={styles.restoreButton} onPress={()=>void native.restore()} disabled={native.state.kind==='restoring'}>
-          {native.state.kind==='restoring'?<ActivityIndicator size="small" color={Colors.primary}/>:<RefreshCw size={17} color={Colors.primary}/>}
-          <Text style={styles.restoreButtonText}>Restore purchases</Text>
-        </Pressable>
+        <>
+          <Pressable style={styles.restoreButton} onPress={()=>void native.restore()} disabled={native.state.kind==='restoring'}>
+            {native.state.kind==='restoring'
+              ? <ActivityIndicator size="small" color={Colors.primary}/>
+              : <RefreshCw size={17} color={Colors.primary}/>}
+            <Text style={styles.restoreButtonText}>Restore purchases</Text>
+          </Pressable>
+          <View style={styles.subscriptionLegal} accessibilityRole="text">
+            <Pressable onPress={()=>void Linking.openURL(nativeWebUrl('/terms'))} accessibilityRole="link" accessibilityLabel="Open Terms of Use">
+              <Text style={styles.subscriptionLegalLink}>Terms of Use</Text>
+            </Pressable>
+            <Text style={styles.subscriptionLegalSeparator}>·</Text>
+            <Pressable onPress={()=>void Linking.openURL(nativeWebUrl('/privacy'))} accessibilityRole="link" accessibilityLabel="Open Privacy Policy">
+              <Text style={styles.subscriptionLegalLink}>Privacy Policy</Text>
+            </Pressable>
+          </View>
+        </>
       ) : null}
     </ScrollView>
   );
@@ -578,8 +600,12 @@ const styles = StyleSheet.create({
   tierUpgrade: { minWidth: 86, height: 40, paddingHorizontal: 10, gap: 4, flexDirection: 'row', borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary + '12' },
   tierActionText: { color: Colors.primary, fontFamily: fonts.semibold, fontSize: 13 },
   tierName: { fontSize: 16, color: Colors.text, fontFamily: fonts.bold },
+  tierPrice: { fontSize: 15, lineHeight: 20, color: Colors.text, marginTop: 3, fontFamily: fonts.semibold },
   tierMeta: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, fontFamily: fonts.regular },
   tierPerk: { fontSize: 12.5, color: Colors.textTertiary, marginTop: 3, fontFamily: fonts.regular },
   restoreButton: { minHeight: 44, marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 8, borderWidth: 1, borderColor: Colors.primary },
   restoreButtonText: { fontSize: 13.5, fontFamily: fonts.bold, color: Colors.primary },
+  subscriptionLegal: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  subscriptionLegalLink: { fontSize: 12.5, lineHeight: 18, fontFamily: fonts.semibold, color: Colors.primary, textDecorationLine: 'underline' },
+  subscriptionLegalSeparator: { fontSize: 12.5, color: Colors.textTertiary },
 });
