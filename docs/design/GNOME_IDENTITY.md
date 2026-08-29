@@ -164,6 +164,10 @@ Three tiers, as shown: **Free $0 · Pro $9.99/mo · Farm $29.99/mo**
   while the active-slot engine is built and adversarially tested separately.
 - **D4** — annual pricing is post-launch. Launch pricing is monthly only:
   Free / Pro $9.99 / Farm $29.99.
+- **D6 (2026-08-29)** — v1.1 public distribution launches across the entire
+  United States from day one. Store availability is not limited to selected
+  states or cities; marketing may still concentrate locally to build density.
+  The product remains U.S.-only until a separate international review.
 
 **Note the semantic change**, because it is the substantive engineering
 consequence of this design: the card says "3 **active** sell listings", while

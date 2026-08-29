@@ -1,7 +1,7 @@
 # Gnome 1.1.0 — release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-28 against the current release branch and signed iOS build 19.
+Updated 2026-08-29 against the current release branch and signed iOS build 19.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -58,6 +58,11 @@ conflicts with the current board above, the current board is authoritative.
 UI (gate `expo/lib/digitalPurchase.ts`); D2 active-slot semantics not in the RC;
 D3 six tabs with short labels; D4 annual post-launch; D5 no claims for features
 that do not ship. The list below is kept for the reasoning behind each.
+
+**D6 — DECIDED 2026-08-29.** Gnome v1.1 launches with public store availability
+across the entire United States, not a state- or city-limited release. Marketing
+can build local density market by market without restricting who can download
+the app nationally. International storefronts remain out of scope.
 
 **Remodel decisions as they stood before D1–D5 (historical):**
 1. **Android launch posture for the $0.99** — the billing lane's verified finding:
