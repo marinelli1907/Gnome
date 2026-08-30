@@ -19,6 +19,7 @@ const fraunces = Fraunces({
 
 const SITE = 'Gnome';
 const BASE = 'https://gnomefarmersmarket.com';
+const SOCIAL_IMAGE = '/brand/gnome-logo-full.png';
 const DESC =
   'A farmers market in your pocket. Share, trade, buy, and sell homegrown produce, plants, eggs and farm goods from Markets near you.';
 const IOS = process.env.NEXT_PUBLIC_IOS_APP_URL || 'https://apps.apple.com/';
@@ -33,9 +34,9 @@ export const metadata: Metadata = {
     type: 'website',
     title: 'Gnome — A farmers market in your pocket',
     description: DESC,
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Gnome Farmers Market' }],
+    images: [{ url: SOCIAL_IMAGE, width: 1024, height: 518, alt: 'Gnome Farmers Market' }],
   },
-  twitter: { card: 'summary_large_image', images: ['/og.png'] },
+  twitter: { card: 'summary_large_image', images: [SOCIAL_IMAGE] },
 };
 
 const JSON_LD = {
