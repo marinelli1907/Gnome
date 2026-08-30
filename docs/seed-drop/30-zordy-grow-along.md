@@ -35,6 +35,51 @@ Zordy Grow-Along is a Seed Drop care entitlement, not a seller-plan grant.
 - A completed season becomes read-only history. It must not disappear when the
   active care period ends.
 
+## Commercial paths and customer segments
+
+Seed Drop and seller plans are independent entitlements that can be packaged
+together. The customer must have three clear paths:
+
+1. **Marketplace only** — keep the current Free, Pro, or Farm plan and receive
+   no seeds. Existing seller-plan prices and benefits do not change merely
+   because Seed Drop exists.
+2. **Seller + Seed Drop bundle** — subscribe to Pro or Farm and add the
+   corresponding seasonal Drop at a bundled member price. The account receives
+   both entitlements, but the physical Drop and digital seller plan retain
+   separate billing/audit records.
+3. **Seed Drop only** — subscribe to or order seeds without buying Pro or Farm.
+   This customer receives order management and the scoped Grow-Along for those
+   seeds, but no paid seller-plan benefits.
+
+A Seed-only customer may keep their account private and must not be required to
+create a public Market, publish a listing, or present themselves as a seller.
+Their marketplace plan remains Free unless they independently upgrade.
+
+The backend should derive, expose to authorized analytics/admin surfaces, and
+measure at least these segments without duplicating entitlement truth:
+
+- `FREE_ONLY`;
+- `PRO_ONLY`;
+- `FARM_ONLY`;
+- `SEED_ONLY`;
+- `PRO_SEED_BUNDLE`;
+- `FARM_SEED_BUNDLE`.
+
+`SEED_ONLY` is a first-class acquisition cohort, not an unclassified Free user.
+Track its conversion through first Crop Project, first confirmed harvest, first
+Market setup, first published harvest listing, and first Pro/Farm upgrade.
+
+Conversion prompts must be contextual and optional. At harvest, Gnome may offer
+to create a Market or explain how Pro/Farm helps a regular seller, but Seed-only
+customers keep their Grow-Along and order history if they decline. No dark
+patterns, reduced care, or forced seller setup.
+
+Exact bundle and standalone Drop prices remain an owner decision until supplier,
+postage, packaging, labor, payment-fee, AI, and weather-provider costs are
+replaced with verified inputs. Customer-facing copy must show the true billing
+cadence and cannot disguise per-Drop physical charges as a single app-store
+subscription price.
+
 ## Experience hierarchy
 
 ### Seed Drop workspace

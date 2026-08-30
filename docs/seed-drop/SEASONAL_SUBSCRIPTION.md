@@ -11,6 +11,23 @@ AI only ranks/explains and can never invent stock).
 default 2499; `billing_products.GNOME_SEED_DROP_SEASONAL`). Billing model
 `PAY_PER_SEASON` (schema also admits `ANNUAL_PREPAID` later).
 
+## Commercial paths
+
+Owner direction: Seed Drop does not replace the existing marketplace ladder.
+Customers who do not want seeds keep the current Free/Pro/Farm choices and
+prices. Seed Drop can be purchased by itself, or combined with Pro/Farm at a
+member bundle price.
+
+The product must retain Seed-only customers as their own measurable segment.
+They receive order management and Seed Drop Grow-Along, remain on the Free
+marketplace plan, and do not need a public Market. The harvest experience may
+invite them to create a Market or upgrade, but declining cannot remove care or
+history. See [30 — Zordy Grow-Along](30-zordy-grow-along.md#commercial-paths-and-customer-segments).
+
+Bundle prices are not final in this document. Physical Seed Drop charges and
+digital Pro/Farm entitlements keep separate billing and audit records even when
+the customer-facing product presents them together.
+
 ## Future Grow-Along experience
 
 The planned subscription experience includes a scoped **Zordy Grow-Along**:
