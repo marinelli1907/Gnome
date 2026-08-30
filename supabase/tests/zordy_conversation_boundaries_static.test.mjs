@@ -39,4 +39,17 @@ for (const { relative, source } of sources) {
     assert.match(source, /feelings, personal needs, hidden awareness/i);
     assert.match(source, /visible experience/i);
   });
+
+  test(`${relative} checks shipped product reality before proposing features`, () => {
+    assert.match(source, /Pickup scheduling/i);
+    assert.match(source, /request a specific visit time/i);
+    assert.match(source, /review flow is not a shopping cart/i);
+    assert.match(source, /Seed Drop[^\n]*(?:coming soon|announcement only)/i);
+    assert.match(source, /Before calling (?:something|a feature) missing/i);
+  });
+
+  test(`${relative} labels unsupported business claims as hypotheses`, () => {
+    assert.match(source, /Never invent user research, conversion behavior, abandonment, demand, or business outcomes/i);
+    assert.match(source, /hypotheses/i);
+  });
 }
