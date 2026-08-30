@@ -294,10 +294,9 @@ img { display: block; }
 }
 .market-import-band .band-gnome img {
   display: block;
-  width: 198px;
-  height: 100px;
-  max-width: none;
-  transform: translateY(-12px);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .market-import-band .band-cta {
   background: #fff;

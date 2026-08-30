@@ -659,9 +659,8 @@ export default function MyMarketClient() {
           existing stand becomes draft listings (/my/import). */}
       <a className="band market-import-band" href="/my/import" style={{ marginBottom: 10 }}>
         <span className="band-gnome" aria-hidden="true">
-          {/* Crop the official wordmark to its Gnome character. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/gnome-logo-full.png" alt="" />
+          <img src="/brand/gnome-mark.png" alt="" />
         </span>
         <div className="band-copy">
           <h2>Build My Market with Gnome</h2>
