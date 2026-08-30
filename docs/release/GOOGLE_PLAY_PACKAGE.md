@@ -718,26 +718,25 @@ daniel@boonesystems.com
 | 10" tablet screenshots | Optional | Skip. Play will show a "not optimized for tablets" note on tablet devices; acceptable for 1.1.0 |
 | Promo video | Optional | Skip |
 
-### 8.2 Screenshot plan
+### 8.2 Screenshot package
 
-Capture on a phone-sized Android device or emulator, portrait (the app is
-portrait-locked via `android:screenOrientation="portrait"`).
+Four portrait captures from the actual phone-sized Android app are ready in
+`artifacts/store/google/`. Each is 1287 × 2288, opaque, and within Play's phone
+screenshot limits.
 
-| # | Screen | Route | Caption |
-|---|---|---|---|
-| 1 | Browse feed with distance and type filters | `app/(tabs)/index.tsx` | "See what's growing within a mile" |
-| 2 | Listing detail with photo and Request button | `app/listing/[id].tsx` | "Claim it before it's gone" |
-| 3 | Post composer showing the five listing types | `app/(tabs)/post.tsx` | "Sell it, share it, trade it, or ask" |
-| 4 | Gnome AI draft review | `app/(tabs)/ai.tsx` | "A photo becomes a listing you approve" |
-| 5 | Pickup chat | `app/chat/[claimId].tsx` | "Sort out the pickup, privately" |
-| 6 | Market page with pickup locations | `app/market/[id].tsx` | "Your own Market, followed by neighbors" |
-| 7 | Sales Notebook totals | `app/notebook.tsx` | "One ledger for the whole season" |
+| # | File | Screen |
+|---|---|---|
+| 1 | `01-browse.png` | Browse feed with photo listings and filters |
+| 2 | `02-map.png` | Google tiles, attribution, and 13 multi-colour listing pins |
+| 3 | `03-market.png` | Customized Market with cover/profile photos, followers, hours, visit requests, and a live Drop |
+| 4 | `04-market-listings.png` | The same Market's live Drop and photo inventory |
 
 **Rules:**
 - Purpose-made screenshot account. **No real names, addresses, phone numbers, or
   avatars** in any frame.
-- Capture the Map tab only from the rebuilt upload-candidate APK/AAB after the
-  required Map regression confirms tiles, pins, attribution, and clean logs.
+- The Map image comes from the signed release build whose certificate is
+  authorized for the restricted Maps credential. The final Play-signed install
+  still requires the post-upload certificate and runtime check in §9.
 - Skip Upgrade and Boost; they are not part of the Play screenshot story.
 - The Seed Drop card may appear in frame 1 — it now carries a "Coming soon" pill
   and opens a non-transactional modal (F5). Do not screenshot that modal as a

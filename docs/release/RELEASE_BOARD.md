@@ -26,9 +26,9 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | Reviewer notes (Play + iOS) | **READY** | — | Notes match the release behavior and payment posture |
 | iOS native subscriptions | **SANDBOX PASS** | — | Pro/Farm verification and restore were proven; live payments remain disabled |
 | Deferred rewards/referrals | **REMOVED FROM CUSTOMER SURFACES** | — | Static release guard prevents routes or links from returning |
-| Store assets | **GOOGLE + APPLE READY** | — | Apple release screenshots are opaque 1320×2868 JPEGs in `artifacts/store/apple/` |
-| **Final iOS artifact** | **BLOCKED BY EAS HOSTED QUOTA** | Daniel / Codex | Build 20 could not start; quota resets 2026-09-01, or Daniel approves an EAS plan upgrade. Build 19 is signed but superseded |
-| **Final AAB** | **BLOCKED BY EAS HOSTED QUOTA** | Daniel / Codex | Hosted quota resets 2026-09-01, or Daniel approves an EAS plan upgrade |
+| Store assets | **GOOGLE + APPLE READY / MECHANICALLY VERIFIED** | — | Apple screenshots are opaque 1320×2868 JPEGs; Google has four opaque 1287×2288 PNGs plus the verified icon and feature graphic in `artifacts/store/` |
+| **Final iOS artifact** | **READY / UPLOADED TO APP STORE CONNECT** | Daniel / Codex | `Gnome-1.1.0-final.ipa`, build 27, passed signature/privacy/icon checks and was accepted for processing; attach it to version 1.1.0 after Apple finishes processing |
+| **Final AAB** | **READY / LOCAL VALIDATION PASS** | Daniel / Codex | `Gnome-1.1.0-final.aab`, versionCode 22, passed Bundletool and signature checks; upload after the Play upload-key reset is accepted |
 | **Play upload key** | **ROTATION PREPARED / RESET NOT SUBMITTED** | Daniel / Codex | Submit the prepared public-certificate reset in Play Console; never use the replacement private key locally |
 | **Production migrations** | **OWNER ACTION — 5 REVIEWED FILES PENDING** | Daniel | Apply only the ordered files in `PRODUCTION_MIGRATION_HANDOFF.md`; Codex then verifies read-only |
 | **Public store submission** | **HOLD BY DESIGN** | Daniel | Prepare internal/TestFlight artifacts only; do not submit publicly without a separate owner action |

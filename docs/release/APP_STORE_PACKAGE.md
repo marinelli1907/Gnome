@@ -605,16 +605,16 @@ daniel@boonesystems.com
 
 ## 9. Screenshot plan
 
-`supportsTablet` is `false`, so no iPad set is needed. Four opaque 6.9-inch
-iPhone screenshots are ready in `artifacts/store/apple/`; each is 1320 × 2868
-JPEG and was captured from the actual release-mode app.
+`supportsTablet` is `false`, so no iPad set is needed. Four opaque 6.9-inch-sized
+screenshots are ready in `artifacts/store/apple/`; each is 1320 × 2868 JPEG and
+depicts the actual cross-platform release-mode app UI.
 
 | # | File | Screen |
 |---|---|---|
 | 1 | `01-browse.jpg` | Browse feed with real photo listings and filters |
 | 2 | `02-map.jpg` | Live map tiles, listing pins, and Apple attribution |
-| 3 | `03-market.jpg` | A customized public Market with seller identity and listings |
-| 4 | `04-listing.jpg` | Listing detail with photo, price, seller, and request flow |
+| 3 | `03-market.jpg` | A customized public Market with cover/profile photos, followers, hours, visit requests, and a live Drop |
+| 4 | `04-listing.jpg` | The same Market's live Drop and photo inventory |
 
 The set contains no emoji-only listing cards, no fake app mockup, no Upgrade or
 Boost screen, and no real private contact information. The website's app preview
