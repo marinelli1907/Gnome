@@ -1,7 +1,8 @@
 # Gnome 1.1.0 — release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-29 against the current release branch and signed iOS build 19.
+Updated 2026-08-29 against the current release branch, final iOS build 27, and
+final Android versionCode 22.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -27,10 +28,10 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | iOS native subscriptions | **SANDBOX PASS** | — | Pro/Farm verification and restore were proven; live payments remain disabled |
 | Deferred rewards/referrals | **REMOVED FROM CUSTOMER SURFACES** | — | Static release guard prevents routes or links from returning |
 | Store assets | **GOOGLE + APPLE READY / MECHANICALLY VERIFIED** | — | Apple screenshots are opaque 1320×2868 JPEGs; Google has four opaque 1287×2288 PNGs plus the verified icon and feature graphic in `artifacts/store/` |
-| **Final iOS artifact** | **READY / UPLOADED TO APP STORE CONNECT** | Daniel / Codex | `Gnome-1.1.0-final.ipa`, build 27, passed signature/privacy/icon checks and was accepted for processing; attach it to version 1.1.0 after Apple finishes processing |
+| **Final iOS artifact** | **READY / PROCESSED IN APP STORE CONNECT** | Daniel / Codex | `Gnome-1.1.0-final.ipa`, build 27, passed signature/privacy/icon checks, uploaded successfully, and finished processing; attach it to version 1.1.0 |
 | **Final AAB** | **READY / LOCAL VALIDATION PASS** | Daniel / Codex | `Gnome-1.1.0-final.aab`, versionCode 22, passed Bundletool and signature checks; upload after the Play upload-key reset is accepted |
 | **Play upload key** | **ROTATION PREPARED / RESET NOT SUBMITTED** | Daniel / Codex | Submit the prepared public-certificate reset in Play Console; never use the replacement private key locally |
-| **Production migrations** | **OWNER ACTION — 5 REVIEWED FILES PENDING** | Daniel | Apply only the ordered files in `PRODUCTION_MIGRATION_HANDOFF.md`; Codex then verifies read-only |
+| **Production migrations** | **5 APPLIED + VERIFIED / 1 READ-ONLY GRANT REPAIR PENDING** | Daniel | Apply only `20260830013208_lock_public_market_drops_projection.sql`, then Codex verifies read-only |
 | **Public store submission** | **HOLD BY DESIGN** | Daniel | Prepare internal/TestFlight artifacts only; do not submit publicly without a separate owner action |
 
 Current verification: Expo typecheck and lint pass, all 51 Node/static tests

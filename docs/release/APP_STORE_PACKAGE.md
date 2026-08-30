@@ -1,7 +1,7 @@
 # App Store submission package — Gnome 1.1.0
 
-Audited 2026-08-13 against `54e141e`, then reconciled on 2026-08-28 against the
-1.1.0 release branch and signed EAS build 19. Every factual claim below cites
+Audited 2026-08-13 against `54e141e`, then reconciled on 2026-08-29 against the
+1.1.0 release branch and final EAS build 27. Every factual claim below cites
 the file or command it came from.
 Where a thing genuinely cannot be checked from this machine, it says so instead
 of guessing.
@@ -37,7 +37,7 @@ So:
 | Bundle identifier | `app.boonesystems.gnome` | `expo/app.json` → `ios.bundleIdentifier` | OK |
 | App name (binary) | `Gnome` | `expo/app.json` → `name`; `CFBundleDisplayName` in prebuilt `Info.plist` | OK |
 | Marketing version | `1.1.0` | `expo/app.json` → `version` | OK |
-| Build number | **Managed remotely — currently `20`** | `eas build:version:get --platform ios --profile production --non-interactive` | See note |
+| Build number | **Managed remotely — currently `27`** | `eas build:version:get --platform ios --profile production --non-interactive` on 2026-08-29 | Final artifact exists |
 | `appVersionSource` | `remote` | `expo/eas.json` → `cli.appVersionSource` | OK |
 | `autoIncrement` | `true` on `production` | `expo/eas.json` → `build.production` | OK |
 | EAS project | `@marinelli1907/gnome`, id `b84fe5e3-5446-45dd-b078-9db076159143` | `eas project:info` | OK |
@@ -46,29 +46,27 @@ So:
 | Orientation | Portrait | `expo/app.json` → `orientation` | OK |
 | Encryption declaration | `ITSAppUsesNonExemptEncryption: false` | `expo/app.json` → `ios.infoPlist` | OK — skips the per-build export questionnaire |
 
-**Build-number note.** Remote iOS buildNumber is `20` and `autoIncrement: true`.
-The next production build will use the next available number. Build 19 is a
-valid signed archive from `acd25b0`, but is superseded by the removal of deferred
-rewards/referrals and must not be selected as the final release.
+**Build-number note.** Remote iOS buildNumber is `27` and `autoIncrement: true`.
+Build 27 is the final release artifact; older builds are superseded and must not
+be selected for version 1.1.0.
 
 ### 1.2 Build history
 
-The latest signed iOS archive is version 1.1.0 build 19, EAS build
-`0d13cc7d-df3e-423b-973b-e0dd2dbd0a06`, from commit `acd25b0`. Several earlier
-iOS builds also exist. Remote versions are iOS 20 and Android 19. No final native
-artifact exists from the current release head because the free hosted-build
-quota is exhausted until 2026-09-01. `eas.json` configures the App Store Connect
-app id and a draft Play internal track; neither store has been publicly submitted.
+The final signed iOS archive is version 1.1.0 build 27 at
+`artifacts/ios/Gnome-1.1.0-final.ipa`. It passed signature, entitlement, privacy
+manifest, and icon checks, uploaded to App Store Connect, and finished Apple
+processing. `eas.json` configures the existing App Store Connect app id; the
+build has not been attached to or submitted with the public version.
 
 ### 1.3 Signing, capabilities, entitlements
 
 | Item | Actual | Source | Verdict |
 |---|---|---|---|
-| Signing | EAS-managed; signed build 19 verifies and satisfies its designated requirement | `codesign --verify --deep --strict` on the downloaded IPA | VERIFIED on build 19; repeat on final build |
+| Signing | EAS-managed; signed build 27 verifies and satisfies its designated requirement | `codesign --verify --deep --strict` on the final IPA | VERIFIED |
 | Sign in with Apple | `usesAppleSignIn: true`; plugin `expo-apple-authentication` present; prebuild emits `com.apple.developer.applesignin = [Default]` | `expo/app.json`; prebuilt `ios/Gnome/Gnome.entitlements` | OK |
 | Apple provider enabled server-side | **`"apple": true`** | `curl https://fgybyghwcjlstqxkclch.supabase.co/auth/v1/settings` — verified live today | OK |
 | Google provider enabled server-side | **`"google": true`** | same call | OK |
-| Push entitlement | signed build 19 carries `aps-environment = production` | `codesign -d --entitlements :-` on the downloaded IPA | VERIFIED on build 19; repeat on final build |
+| Push entitlement | signed build 27 carries `aps-environment = production` | `codesign -d --entitlements :-` on the final IPA | VERIFIED |
 | `UIBackgroundModes` | absent | prebuilt `Info.plist` | Correct — Gnome sends alert pushes only, not silent pushes |
 | Associated domains | **absent** — no `com.apple.developer.associated-domains` | `expo/app.json`, prebuilt entitlements | See risk R4 |
 
@@ -100,15 +98,14 @@ Nothing required is missing.
 `NSPrivacyTracking: false`, no tracking domains, and the same 15 collected data
 types declared in §5. `npx expo config --type public` resolves those 15 entries.
 
-Signed build 19's root `PrivacyInfo.xcprivacy` carries all 15 configured
-collected-data rows and `NSPrivacyTracking = false`. Repeat the same mechanical
-inspection on the final release archive.
+Signed build 27's root `PrivacyInfo.xcprivacy` carries all 15 configured
+collected-data rows and `NSPrivacyTracking = false`.
 
 ### 1.7 Icon
 
 `expo/assets/images/icon.png` is the 1024×1024 source icon. Expo's generator
-flattened it correctly: signed build 19's `AppIcon60x60@2x.png` is 120×120 and
-has no alpha channel. Repeat this check on the final release archive.
+flattened it correctly: signed build 27's `AppIcon60x60@2x.png` is 120×120 and
+has no alpha channel.
 
 ---
 
@@ -629,23 +626,21 @@ The app is not ready for public submission until every open item below is
 closed. This package deliberately stops before the final Submit for Review
 action.
 
-### Before the build
+### Before App Store submission
 
-1. **Owner:** review and apply the five migrations listed in
-   `docs/release/PRODUCTION_MIGRATION_HANDOFF.md`. Production remains read-only
-   to coding agents. Afterward, run the read-only verification and update
-   `supabase/migrations/APPLIED.tsv`.
+1. **Owner:** apply the one remaining read-only grant repair listed in
+   `docs/release/PRODUCTION_MIGRATION_HANDOFF.md`. The preceding five release
+   migrations are applied and verified. Production remains read-only to coding
+   agents. Afterward, run the read-only proof and update the ledger.
 2. Leave `billing_config.payments_live_enabled = false`; do not make a real
    charge or activate public paid subscriptions during release preparation.
-3. Cut fresh iOS and Android production artifacts from the final commit when
-   the EAS hosted-build quota resets on 2026-09-01, or after the owner explicitly
-   authorizes a paid build plan. Build 19 is signed proof, not the final binary.
+3. Use final iOS build 27. Do not rebuild unless a new code defect requires it;
+   any rebuild must increment the build number and repeat artifact inspection.
 
 ### Apple Developer portal (owner)
 
 4. The App ID, distribution signing, App Store profile, Sign in with Apple, and
-   production push entitlement are proven by signed build 19. Repeat the
-   signature and entitlement inspection on the final archive.
+   production push entitlement are proven by signed final build 27.
 5. Complete a real-device APNs alert delivery test if it has not already been
    recorded. A production entitlement alone does not prove delivery.
 
@@ -673,18 +668,17 @@ action.
 
 ### Build and submit
 
-17. Run `cd expo && eas build --platform ios --profile production` after the
-    quota blocker clears. Remote iOS version is 20 with auto-increment enabled;
-    the final build will take the next available number.
-18. Inspect the final archive: valid signature, bundle id and version, opaque
-    icon, `aps-environment = production`, Sign in with Apple entitlement, and
-    all 15 privacy-manifest collected-data rows.
+17. **Complete:** final build 27 was built, inspected, uploaded, and processed.
+18. **Complete:** the final archive has a valid signature, correct bundle id and
+    version, opaque icon, `aps-environment = production`, Sign in with Apple
+    entitlement, and all 15 privacy-manifest collected-data rows.
 19. Install the exact final artifact on a physical iPhone and rerun sign-in,
     Browse, Map, post, report/block, account deletion entry point, StoreKit
     product load, sandbox purchase, server entitlement, restore, and fail-closed
     verification.
-20. Upload the final build to the existing app record. `eas.json` already holds
-    the non-secret `ascAppId`; do not add Apple credentials to the repository.
+20. Attach processed build 27 to version 1.1.0 in the existing app record.
+    `eas.json` already holds the non-secret `ascAppId`; do not add Apple
+    credentials to the repository.
 21. Stop before **Submit for Review** and request the owner's final submission
     approval. Public submission and live-payment activation are separate gates.
 
@@ -700,6 +694,6 @@ status:
 | eas.json has no `env` block → unconfigured binary | **RESOLVED, twice over.** `eas.json` now sets `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY` on all three profiles, **and** the same two are set in the EAS `production` environment | `expo/eas.json`; `eas build:version:get` printed "The following environment variables are defined in both the production build profile env configuration and the production environment on EAS… The values from the build profile configuration will be used." |
 | `OAUTH_READY` hardcoded; providers possibly disabled | **RESOLVED.** `sign-in.tsx` now fetches `/auth/v1/settings` at runtime and only renders a provider's button if the server says it is enabled. Live check today: `apple: true`, `google: true`, `email: true` | `expo/app/sign-in.tsx:39-68`; `curl …/auth/v1/settings` |
 | Password-reset deep link had no handler | **RESOLVED.** `AuthProvider.tsx` handles `getInitialURL` + the `url` event, parses `?code=`, exchanges it for a session | `expo/providers/AuthProvider.tsx:77-96` |
-| No EAS build has ever run | **RESOLVED.** Signed version 1.1.0 build 19 was downloaded and inspected; it is superseded by later release changes. | EAS build `0d13cc7d-df3e-423b-973b-e0dd2dbd0a06` |
-| APNs credentials / device push test | **PARTIAL.** Build 19 proves the production APNs entitlement. A recorded real-device delivery test remains open. | Signed build 19 entitlement inspection; §10 |
+| No EAS build has ever run | **RESOLVED.** Final signed version 1.1.0 build 27 was downloaded, inspected, uploaded, and processed. | `artifacts/ios/Gnome-1.1.0-final.ipa` |
+| APNs credentials / device push test | **PARTIAL.** Build 27 proves the production APNs entitlement. A recorded real-device delivery test remains open. | Signed build 27 entitlement inspection; §10 |
 | App Store Connect metadata | **OPEN.** The app record exists, and this document plus `artifacts/store/apple/` is the upload package. | §3–§5, §8–§10 |

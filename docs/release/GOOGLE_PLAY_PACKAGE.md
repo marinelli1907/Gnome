@@ -1,20 +1,20 @@
 # Google Play submission package — Gnome 1.1.0
 
-Audited 2026-08-13 against `54e141e`. Every factual claim cites the file or
-command it came from. Where something cannot be checked from this machine, it
-says so instead of guessing.
+Audited 2026-08-13 against `54e141e`, then reconciled on 2026-08-29 against the
+final Android artifact. Every factual claim cites the file or command it came
+from. Where something cannot be checked from this machine, it says so instead
+of guessing.
 
 **Companion doc:** `docs/release/APP_STORE_PACKAGE.md` (iOS side). Sections that
 are identical across stores — listing copy rationale, the data-collection
 inventory, the in-app-purchase analysis — are summarized here and reasoned
 through in full there.
 
-> **Android build history is no longer empty, but the final launch artifact is
-> still unproven.** Older Android artifacts exist (remote Android `versionCode`
-> 4), and emulator testing has proven Maps/Firebase plumbing reached a build.
-> No final reviewed Play-bound AAB has been cut from this working tree, uploaded
-> to Play, installed through Play App Signing, or verified on a physical Android
-> device. Everything below keeps that distinction explicit.
+> **The final reviewed Play-bound AAB exists and passed local artifact checks.**
+> `artifacts/android/Gnome-1.1.0-final.aab` is versionCode 22 and passed
+> Bundletool and signature verification. It has not been uploaded to Play,
+> installed through Play App Signing, or verified on a physical Android device.
+> Everything below keeps that distinction explicit.
 
 ---
 
@@ -41,7 +41,7 @@ generated files.
 | Application ID | `app.boonesystems.gnome` | `expo/app.json` → `android.package`; prebuilt `build.gradle` → `applicationId`, `namespace` | OK |
 | App label | `Gnome` | `expo/app.json` → `name` → `@string/app_name` | OK |
 | versionName | `1.1.0` | `expo/app.json` → `version` | OK |
-| versionCode | **Remote Android `versionCode` 4** | `eas build:version:get --platform android` | OK — next build should auto-increment |
+| versionCode | **Remote Android `versionCode` 22** | `eas build:version:get --platform android --profile production --non-interactive` on 2026-08-29 | Final artifact exists |
 | `appVersionSource` | `remote` | `expo/eas.json` → `cli.appVersionSource` | OK |
 | Remote version state | Android remote version configured | `eas build:version:get --platform android` | OK |
 | minSdkVersion | **24** (Expo SDK 54 default) | `node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle:68` → `safeExtGet("minSdkVersion", 24)` | OK |
@@ -74,12 +74,11 @@ credential store at build time. It matters only if somebody runs
 `./gradlew assembleRelease` locally — which would produce a debug-signed
 artifact that Play rejects outright.
 
-**What genuinely cannot be verified here:** whether an EAS Android keystore
-exists for this project. `eas credentials` is interactive and nothing about
-Android signing is in the repo (`*.jks`, `*.keystore` are gitignored). See §8.
-
-Plan to use **Play App Signing** (required for new apps): EAS generates the
-upload keystore, Play holds the app signing key.
+The final AAB is release-signed and passes JAR signature verification. The Play
+Console upload-key reset is still pending because the final AAB uses the
+replacement upload certificate. No private signing material is stored in the
+repository. Play App Signing will hold the runtime app-signing key after the
+first accepted upload.
 
 ### 1.3 Permissions — the prebuilt merged app-module manifest
 
@@ -748,7 +747,7 @@ screenshot limits.
 
 Ordered. **(owner)** marks anything needing a Google account or console.
 
-### Must happen before the final Android build/upload
+### Must happen before the final Android upload
 
 1. **(owner + coordinator)** **B1** — Google Maps config is present in
    `app.json`; re-verify Map tiles after the final AAB is signed with the Play
@@ -787,16 +786,16 @@ Ordered. **(owner)** marks anything needing a Google account or console.
 
 ### Build and submit
 
-14. `cd expo && eas build --platform android --profile production`. Remote
-    versioning is active; the latest remote Android versionCode observed on
-    2026-08-20 was 4, so the final production build must increment beyond every
-    prior upload.
+14. **Complete:** `artifacts/android/Gnome-1.1.0-final.aab` was built as version
+    1.1.0 versionCode 22 and passed Bundletool and signature validation. Do not
+    rebuild unless a code defect requires it.
 15. **On that build, verify before promoting:** the Map tab renders (B1); push
     registration writes a `device_tokens` row on a physical Android device (B2);
     the merged manifest contains `POST_NOTIFICATIONS` and does **not** contain
     `SYSTEM_ALERT_WINDOW` (F1); picking a listing photo works on Android 10 and
     Android 14 (F2).
-16. Upload to **Internal testing** first. Run the push loop end-to-end
+16. Submit the prepared upload-key reset, then upload versionCode 22 to
+    **Internal testing** first. Run the push loop end-to-end
     (claim → approve → message) across an Android and an iOS device.
 17. Promote through closed testing (mandatory if §7.1 applies) → production.
 18. `eas.json` → `submit.production` is `{}`. Configure `eas submit` with a Play

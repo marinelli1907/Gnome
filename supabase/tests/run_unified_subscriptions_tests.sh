@@ -56,6 +56,7 @@ migrations=(
   20260827130544_fix_verified_subscription_readiness_gate.sql
   20260828035457_fix_email_readiness_after_otp.sql
   20260828045652_paid_market_storefront_visits.sql
+  20260830013208_lock_public_market_drops_projection.sql
 )
 for migration in "${migrations[@]}"; do
   printf 'apply %-64s' "$migration"
