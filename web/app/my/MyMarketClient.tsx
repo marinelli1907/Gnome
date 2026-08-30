@@ -657,8 +657,12 @@ export default function MyMarketClient() {
       <ShareMarketCard />
       {/* Entry to the import flow — the one surface where a screenshot of an
           existing stand becomes draft listings (/my/import). */}
-      <a className="band" href="/my/import" style={{ marginBottom: 10 }}>
-        <span className="band-emoji">🧙</span>
+      <a className="band market-import-band" href="/my/import" style={{ marginBottom: 10 }}>
+        <span className="band-gnome" aria-hidden="true">
+          {/* Crop the official wordmark to its Gnome character. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/gnome-logo-full.png" alt="" />
+        </span>
         <div className="band-copy">
           <h2>Build My Market with Gnome</h2>
           <p>

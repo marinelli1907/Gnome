@@ -284,6 +284,27 @@ img { display: block; }
 .band-copy h2 { margin: 0 0 4px; font-size: 24px; color: #fff; }
 .band-copy p { margin: 0; color: rgba(255,255,255,.85); font-size: 15px; line-height: 1.5; max-width: 560px; }
 .band-cta { white-space: nowrap; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); border-radius: 14px; padding: 12px 18px; font-weight: 800; font-size: 15px; }
+.market-import-band .band-gnome {
+  width: 64px;
+  height: 76px;
+  flex: 0 0 64px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #fff;
+}
+.market-import-band .band-gnome img {
+  display: block;
+  width: 198px;
+  height: 100px;
+  max-width: none;
+  transform: translateY(-12px);
+}
+.market-import-band .band-cta {
+  background: #fff;
+  border-color: #fff;
+  color: var(--gnome-red-deepest);
+  box-shadow: 0 3px 0 rgba(var(--shadow-rgb), .22);
+}
 .band-arrow { display: inline-block; transition: transform .15s ease; }
 
 .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
