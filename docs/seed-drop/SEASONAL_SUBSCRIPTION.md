@@ -11,6 +11,19 @@ AI only ranks/explains and can never invent stock).
 default 2499; `billing_products.GNOME_SEED_DROP_SEASONAL`). Billing model
 `PAY_PER_SEASON` (schema also admits `ANNUAL_PREPAID` later).
 
+## Future Grow-Along experience
+
+The planned subscription experience includes a scoped **Zordy Grow-Along**:
+each fulfilled variety becomes a private Crop Project with its own schedule,
+check-ins, weather-aware care, photos, and harvest history. At harvest, Zordy
+may prepare a listing draft that the customer reviews and publishes through the
+normal marketplace rules. This entitlement does not grant Pro/Farm or increase
+listing allowances. See [30 — Zordy Grow-Along](30-zordy-grow-along.md).
+
+This is a future-release specification only. It does not change the current
+Seed Drop coming-soon posture, open ordering, authorize fulfillment, or enable
+live payments.
+
 ## Season windows (`seed_season_windows` — config rows, not code)
 Each row: season_code (EARLY_SEASON/SPRING/SUMMER/FALL) + year + zone range +
 `window_start` → `join_cutoff` → `generation_date` → `ship_start`–`ship_end`.

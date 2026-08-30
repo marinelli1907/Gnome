@@ -52,6 +52,7 @@ Deliverable 25 (the verdict value itself) is stated in 01 and 24.
 | 27 | [Final USDA + ODA inquiries](27-final-agency-inquiries.md) | Send-ready email and printable letter versions with verified recipients. **NOTHING SENT.** |
 | 28 | [Facility decision package](28-facility-decision.md) | Home vs storage-only vs flex space, Richmond Heights zoning findings, three checklists, and the questions for the City and the insurance broker. **Nothing rented or contacted.** |
 | 29 | [Supplier request package](29-supplier-request-package.md) | Shared questionnaire, three tailored outreach emails, weighted scorecard, credential checklist, quote-import template. **No supplier contacted.** |
+| 30 | [Zordy Grow-Along](30-zordy-grow-along.md) | **Future release specification** for per-variety Crop Projects, weather-aware care, private check-ins, and a guarded harvest-to-listing draft handoff. **Not in the current store release; no purchase path enabled.** |
 
 ## Locked decisions this pack is built around
 
