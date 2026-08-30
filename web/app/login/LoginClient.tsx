@@ -7,10 +7,66 @@
 // view with sign out.
 import { useEffect, useState } from 'react';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import { planDisplay } from '../../lib/allowance';
 import AccountReadinessPanel from '../components/AccountReadinessPanel';
 import { SignInCard, useSession } from '../components/auth';
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'reset' | 'code';
+
+type PaidSubscription = {
+  source: string;
+  status: string;
+  expires_at: string | null;
+  cancel_at_period_end: boolean;
+};
+
+type SubscriptionSummary = {
+  effective_plan: string | null;
+  effective_source: string | null;
+  grant_expires_at: string | null;
+  paid_subscriptions: PaidSubscription[];
+  duplicate_paid_sources: boolean;
+};
+
+function billingSourceLabel(source?: string | null): string | null {
+  if (source === 'APPLE') return 'Apple';
+  if (source === 'GOOGLE_PLAY') return 'Google Play';
+  if (source === 'STRIPE') return 'Gnome website';
+  return null;
+}
+
+function shortDate(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function subscriptionStatus(summary: SubscriptionSummary): string {
+  const source = summary.effective_source;
+  if (source === 'complimentary') {
+    const end = shortDate(summary.grant_expires_at);
+    return end ? `Complimentary access through ${end}` : 'Complimentary access';
+  }
+  if (source === 'legacy' || source === 'sponsor') return 'Active legacy access';
+  if (!source || source === 'free') return 'No active paid subscription';
+
+  const paid = summary.paid_subscriptions.find((item) => item.source === source)
+    ?? summary.paid_subscriptions[0];
+  const provider = billingSourceLabel(source);
+  if (!paid) return provider ? `Active through ${provider}` : 'Active';
+
+  const end = shortDate(paid.expires_at);
+  if (paid.cancel_at_period_end || paid.status === 'canceled' || paid.status === 'cancelled') {
+    return end ? `Active through ${end} · Billed by ${provider ?? 'store'}` : `Canceled · Billed by ${provider ?? 'store'}`;
+  }
+  if (paid.status === 'trialing') return `Trial active · Billed by ${provider ?? 'store'}`;
+  if (paid.status === 'grace_period') return `Grace period · Billed by ${provider ?? 'store'}`;
+  if (paid.status === 'billing_retry') return `Payment retry · Billed by ${provider ?? 'store'}`;
+  if (paid.status === 'pending') return `Verification pending · ${provider ?? 'store'}`;
+  if (paid.status === 'paused') return `Paused · Billed by ${provider ?? 'store'}`;
+  return `Active · Billed by ${provider ?? 'store'}`;
+}
 
 // Account + profile: name, town, ZIP, avatar. Writes the user's own
 // profiles row (profiles_update_self RLS); avatar goes to the public
@@ -25,6 +81,8 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
   const [state, setState] = useState('OH');
   const [zip, setZip] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [subscriptionReady, setSubscriptionReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -54,6 +112,11 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
         setLastName(data.last_name ?? '');
         setContactEmail(data.contact_email ?? '');
         setPhone(data.phone ?? '');
+      });
+    supabaseBrowser().rpc('my_subscription_summary')
+      .then(({ data, error }) => {
+        if (!error && data) setSubscription(data as SubscriptionSummary);
+        setSubscriptionReady(true);
       });
   }, [uid]);
 
@@ -128,6 +191,26 @@ function AccountView({ email, uid, onSetPassword }: { email: string; uid: string
           Switch account
         </button>
       </div>
+
+      <section className="account-plan-summary" aria-labelledby="account-plan-title">
+        <div>
+          <span className="account-plan-label">Your subscription</span>
+          <strong id="account-plan-title">
+            {subscriptionReady
+              ? `${planDisplay(subscription?.effective_plan)} plan`
+              : 'Checking your plan…'}
+          </strong>
+          {subscriptionReady && subscription ? (
+            <span className="account-plan-status">{subscriptionStatus(subscription)}</span>
+          ) : subscriptionReady ? (
+            <span className="account-plan-status">Plan details are unavailable right now.</span>
+          ) : null}
+          {subscription?.duplicate_paid_sources ? (
+            <span className="account-plan-warning">Two billing providers are active. Manage both to avoid duplicate charges.</span>
+          ) : null}
+        </div>
+        <a className="btn btn-secondary btn-sm" href="/pricing">View plans</a>
+      </section>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '10px 0' }}>
         <div className="avatar lg" style={{ overflow: 'hidden', flex: 'none' }}>

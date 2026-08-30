@@ -1694,6 +1694,46 @@ body { background-image: none; }
 .account-main .authcard {
   max-width: none;
 }
+.account-plan-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 0 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.account-plan-summary > div {
+  display: grid;
+  gap: 3px;
+}
+.account-plan-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.account-plan-summary strong {
+  color: var(--text);
+  font-size: 20px;
+}
+.account-plan-status,
+.account-plan-warning {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.account-plan-warning {
+  color: var(--danger-ink);
+  font-weight: 700;
+}
+@media (max-width: 520px) {
+  .account-plan-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
 .account-side {
   top: 92px;
 }
