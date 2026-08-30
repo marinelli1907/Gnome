@@ -68,7 +68,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <NativeAppVisitMarker />
         <header className="site-header">
           <div className="container inner">
-            <Link href="/" className="brand">
+            <Link href="/" className="brand" aria-label="Gnome home">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/brand/gnome-logo-full.png" alt="Gnome Farmers Market" className="brand-logo-full" />
             </Link>
@@ -94,8 +94,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="container">
             <div className="footer-cols">
               <div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/brand/gnome-logo-full.png" alt="Gnome Farmers Market" className="footer-logo-full" />
+                <Link href="/" className="footer-home-link" aria-label="Gnome home">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/brand/gnome-logo-full.png" alt="Gnome Farmers Market" className="footer-logo-full" />
+                </Link>
                 <p className="footer-tag">
                   Gnome is a neighborhood marketplace that helps people grow, find,
                   share, and sell local food and garden goods.
