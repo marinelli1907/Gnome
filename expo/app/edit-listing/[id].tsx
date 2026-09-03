@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
+import SaleUnitPicker from '@/components/SaleUnitPicker';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
@@ -26,6 +27,7 @@ import {
 } from '@/lib/taxonomy';
 import { todayIsoDate, validateHarvestDateInput } from '@/lib/harvestDate';
 import { alertListingWriteError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
+import { resolveSaleUnit, saleUnitPlural } from '@/lib/saleUnits';
 
 export default function EditListingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,6 +41,9 @@ export default function EditListingScreen() {
 
   const [title, setTitle] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [unit, setUnit] = useState('each');
+  const [customUnit, setCustomUnit] = useState(false);
+  const [inventory, setInventory] = useState('');
   const [harvestDate, setHarvestDate] = useState(todayIsoDate());
   const [description, setDescription] = useState('');
   // Legacy listings keep their backfilled node untouched unless the seller
@@ -52,6 +57,10 @@ export default function EditListingScreen() {
     if (listing && !seeded) {
       setTitle(listing.title);
       setQuantity(listing.quantity ?? '');
+      const resolvedUnit = resolveSaleUnit(listing.unit);
+      setUnit(resolvedUnit.value);
+      setCustomUnit(resolvedUnit.custom);
+      setInventory(listing.inventory_count != null ? String(listing.inventory_count) : '');
       setHarvestDate(listing.harvest_date ?? todayIsoDate());
       setDescription(listing.description ?? '');
       setTaxNodeId(listing.taxonomy_node_id ?? null);
@@ -91,12 +100,29 @@ export default function EditListingScreen() {
       Alert.alert('Check picked date', harvest.error);
       return;
     }
+    if (listing.listing_type === 'sale' && !unit.trim()) {
+      Alert.alert('Choose how it is sold', 'Select a unit or enter a custom measurement.');
+      return;
+    }
+    let inventoryCount: number | null | undefined;
+    if (listing.listing_type === 'sale') {
+      inventoryCount = null;
+      if (inventory.trim()) {
+        const n = Number(inventory);
+        if (!Number.isInteger(n) || n <= 0) {
+          Alert.alert('Check inventory', 'Available inventory must be a whole number above 0.');
+          return;
+        }
+        inventoryCount = n;
+      }
+    }
     update.mutate(
       {
         listingId: listing.id,
         title: title.trim(),
         description: description.trim(),
-        quantity: quantity.trim(),
+        quantity: listing.listing_type === 'sale' ? '' : quantity.trim(),
+        ...(listing.listing_type === 'sale' ? { unit: unit.trim(), inventoryCount } : {}),
         harvestDate: harvest.value,
         category:
           nodeTouched && selectedNode && index
@@ -137,7 +163,37 @@ export default function EditListingScreen() {
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled">
         <Field label="Title" value={title} onChangeText={setTitle} placeholder="Cherry tomatoes" />
-        <Field label="Quantity" value={quantity} onChangeText={setQuantity} placeholder="About 2 lbs / a full basket" />
+        {listing.listing_type === 'sale' ? (
+          <>
+            <SaleUnitPicker
+              value={unit}
+              custom={customUnit}
+              onSelect={(next, isCustom) => {
+                setUnit(next);
+                setCustomUnit(isCustom);
+              }}
+            />
+            {customUnit ? (
+              <Field
+                label="Custom unit or measurement"
+                value={unit}
+                onChangeText={setUnit}
+                placeholder="crate, peck, 6-pack"
+                autoCapitalize="none"
+                maxLength={40}
+              />
+            ) : null}
+            <Field
+              label={`How many ${saleUnitPlural(unit)} are available? (optional)`}
+              value={inventory}
+              onChangeText={(value) => setInventory(value.replace(/[^0-9]/g, ''))}
+              placeholder="12"
+              keyboardType="number-pad"
+            />
+          </>
+        ) : (
+          <Field label={isPlot ? 'Plot size' : 'Amount offered'} value={quantity} onChangeText={setQuantity} placeholder={isPlot ? '4x8 ft raised bed' : 'About 2 lbs / one basket'} />
+        )}
         {needsHarvestDate ? (
           <Field
             label="Picked / harvest date"

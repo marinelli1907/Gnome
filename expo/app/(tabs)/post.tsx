@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, ChevronRight, Sparkles, X } from 'lucide-react-native';
 import { Button, Field, EmptyState } from '@/components/ui';
+import SaleUnitPicker from '@/components/SaleUnitPicker';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
 import ComplianceGate from '@/components/ComplianceGate';
 import {
@@ -44,6 +45,7 @@ import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
 import { getCurrentCoords } from '@/lib/location';
 import { todayIsoDate, validateHarvestDateInput } from '@/lib/harvestDate';
+import { resolveSaleUnit, saleUnitPlural, saleUnitSingular } from '@/lib/saleUnits';
 import type { ListingType } from '@/types';
 
 const MAX_PHOTOS = 5;
@@ -88,11 +90,17 @@ export default function PostScreen() {
     taxNode?: string;
     title?: string;
     quantity?: string;
+    unit?: string;
+    inventory?: string;
     description?: string;
     harvestDate?: string;
     fulfilledBy?: string;
     n?: string;
   }>();
+
+  const aiPrefill = params as unknown as {
+    aiTitle?: string; aiDescription?: string; aiPrice?: string; aiUnit?: string; aiNode?: string;
+  };
 
   // Resolved before the first render, so the first paint is already the right
   // type — never Share Free flashing into Sell. An explicit `?type=` (deep link,
@@ -101,22 +109,20 @@ export default function PostScreen() {
   const initialType: ListingType = params.fulfilledBy
     ? 'free'
     : clampToLaunch(listingTypeFromParam(params.type));
+  const initialUnit = resolveSaleUnit(params.unit ?? aiPrefill.aiUnit);
 
   const [type, setType] = useState<ListingType>(initialType);
   const [title, setTitle] = useState(params.title ?? '');
   const [quantity, setQuantity] = useState(params.quantity ?? '');
   const [harvestDate, setHarvestDate] = useState(params.harvestDate ?? todayIsoDate());
-  // AI Listing Assistant prefill (params come from the AI sheet on Sell)
-  const aiPrefill = params as unknown as {
-    aiTitle?: string; aiDescription?: string; aiPrice?: string; aiUnit?: string; aiNode?: string;
-  };
   const [description, setDescription] = useState(params.description ?? '');
   const [taxNodeId, setTaxNodeId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [assets, setAssets] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [price, setPrice] = useState('');
-  const [unit, setUnit] = useState('');
-  const [inventory, setInventory] = useState('');
+  const [unit, setUnit] = useState(initialUnit.value);
+  const [customUnit, setCustomUnit] = useState(initialUnit.custom);
+  const [inventory, setInventory] = useState(params.inventory ?? '');
   const [tradeFor, setTradeFor] = useState('');
   const [fulfilledBy, setFulfilledBy] = useState<string | null>(params.fulfilledBy ?? null);
   // Optional structured options: Wanted acceptable variants / Plot supported crops.
@@ -131,6 +137,12 @@ export default function PostScreen() {
   const selectedNode = index && taxNodeId ? index.byId.get(taxNodeId) ?? null : null;
   const isPlot = type === 'plot';
   const needsHarvestDate = type === 'sale' || type === 'free' || type === 'trade';
+
+  const applyUnitSuggestion = (raw?: string | null) => {
+    const resolved = resolveSaleUnit(raw);
+    setUnit(resolved.value);
+    setCustomUnit(resolved.custom);
+  };
 
   // Server-side verdict for the chosen node (drafts/plots skip the check).
   const eligibility = usePublishEligibility(isPlot ? null : taxNodeId, userId ?? undefined);
@@ -159,11 +171,13 @@ export default function PostScreen() {
       // id, so it doesn't need the legacy-category mapping and wins over it.
       if (typeof params.taxNode === 'string' && params.taxNode) setTaxNodeId(params.taxNode);
       if (params.quantity) setQuantity(params.quantity);
+      if (params.inventory) setInventory(params.inventory);
       if (params.harvestDate) setHarvestDate(params.harvestDate);
       if (aiPrefill.aiTitle) setTitle(aiPrefill.aiTitle);
       if (aiPrefill.aiDescription) setDescription(aiPrefill.aiDescription);
       if (aiPrefill.aiPrice) setPrice(aiPrefill.aiPrice);
-      if (aiPrefill.aiUnit) setUnit(aiPrefill.aiUnit);
+      if (params.unit) applyUnitSuggestion(params.unit);
+      else if (aiPrefill.aiUnit) applyUnitSuggestion(aiPrefill.aiUnit);
       if (aiPrefill.aiNode) setTaxNodeId(aiPrefill.aiNode);
       if (params.description) setDescription(params.description);
       setFulfilledBy(params.fulfilledBy ?? null);
@@ -223,7 +237,9 @@ export default function PostScreen() {
         if (!price.trim() && draft.suggested_price_cents != null) {
           setPrice((draft.suggested_price_cents / 100).toFixed(2).replace(/\.00$/, ''));
         }
-        if (!unit.trim() && draft.suggested_unit) setUnit(draft.suggested_unit);
+        if (unit === 'each' && !customUnit && draft.suggested_unit) {
+          applyUnitSuggestion(draft.suggested_unit);
+        }
       }
       void logEvent('ai_draft_used', { userId, metadata: { listing_type: type } });
     } catch (e: any) {
@@ -246,7 +262,8 @@ export default function PostScreen() {
     setTaxNodeId(null);
     setAssets([]);
     setPrice('');
-    setUnit('');
+    setUnit('each');
+    setCustomUnit(false);
     setInventory('');
     setTradeFor('');
     setFulfilledBy(null);
@@ -364,8 +381,12 @@ export default function PostScreen() {
       }
       priceCents = Math.round(dollars * 100);
     }
+    if (type === 'sale' && !unit.trim()) {
+      Alert.alert('Choose how it is sold', 'Select a unit or enter a custom measurement.');
+      return;
+    }
     let inventoryCount: number | null = null;
-    if (inventory.trim()) {
+    if ((type === 'sale' || type === 'plot') && inventory.trim()) {
       const n = parseInt(inventory, 10);
       if (!Number.isFinite(n) || n <= 0) {
         Alert.alert('Check the amount', 'Quantity available must be a whole number above 0.');
@@ -400,13 +421,13 @@ export default function PostScreen() {
         category: !isPlot && selectedNode && index ? legacyCategoryFor(index, selectedNode) : 'other',
         taxonomyNodeId: isPlot ? null : selectedNode?.id ?? null,
         status: 'active',
-        quantity: quantity.trim(),
+        quantity: type === 'sale' ? '' : quantity.trim(),
         harvestDate: harvest.value,
         photos,
         coords,
         priceCents,
-        unit: unit.trim() || null,
-        inventoryCount,
+        unit: type === 'sale' ? unit.trim() : null,
+        inventoryCount: type === 'sale' || type === 'plot' ? inventoryCount : null,
         tradeFor: tradeFor.trim() || null,
         fulfilledByListingId: fulfilledBy,
         requestOptions: (isWanted || isPlot) && reqOptions.length ? reqOptions : null,
@@ -584,12 +605,14 @@ export default function PostScreen() {
           onChangeText={setTitle}
           placeholder={isWanted ? 'Fresh basil' : 'Cherry tomatoes'}
         />
-        <Field
-          label={isWanted ? 'How much do you need? (optional)' : isPlot ? 'Plot size' : 'Quantity (optional)'}
-          value={quantity}
-          onChangeText={setQuantity}
-          placeholder={isWanted ? 'A handful for pesto' : isPlot ? '4×8 ft raised bed' : 'About 2 lbs / a full basket'}
-        />
+        {type !== 'sale' ? (
+          <Field
+            label={isWanted ? 'How much do you need? (optional)' : isPlot ? 'Plot size' : 'Amount offered (optional)'}
+            value={quantity}
+            onChangeText={setQuantity}
+            placeholder={isWanted ? 'A handful for pesto' : isPlot ? '4×8 ft raised bed' : 'About 2 lbs / one basket'}
+          />
+        ) : null}
         {needsHarvestDate ? (
           <>
             <Field
@@ -606,15 +629,39 @@ export default function PostScreen() {
         {/* Type-specific */}
         {type === 'sale' && (
           <View style={styles.typeFields}>
-            <View style={styles.rowFields}>
-              <View style={{ flex: 1 }}>
-                <Field label="Price ($)" value={price} onChangeText={setPrice} placeholder="5" keyboardType="decimal-pad" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Field label="Per unit (optional)" value={unit} onChangeText={setUnit} placeholder="lb, dozen, bunch" autoCapitalize="none" />
-              </View>
-            </View>
-            <Field label="Quantity available (optional)" value={inventory} onChangeText={setInventory} placeholder="12" keyboardType="number-pad" />
+            <SaleUnitPicker
+              value={unit}
+              custom={customUnit}
+              onSelect={(next, isCustom) => {
+                setUnit(next);
+                setCustomUnit(isCustom);
+              }}
+            />
+            {customUnit ? (
+              <Field
+                label="Custom unit or measurement"
+                value={unit}
+                onChangeText={setUnit}
+                placeholder="crate, peck, 6-pack"
+                autoCapitalize="none"
+                maxLength={40}
+              />
+            ) : null}
+            <Field
+              label={`Price per ${saleUnitSingular(unit)} ($)`}
+              value={price}
+              onChangeText={setPrice}
+              placeholder="5"
+              keyboardType="decimal-pad"
+            />
+            <Field
+              label={`How many ${saleUnitPlural(unit)} are available? (optional)`}
+              value={inventory}
+              onChangeText={(value) => setInventory(value.replace(/[^0-9]/g, ''))}
+              placeholder="12"
+              keyboardType="number-pad"
+            />
+            <Text style={styles.hint}>This is your inventory count. Enter a whole number, such as 12 bunches.</Text>
             <Text style={styles.hint}>Payment is arranged in person — Gnome never handles money.</Text>
           </View>
         )}

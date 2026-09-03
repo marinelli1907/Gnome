@@ -32,6 +32,13 @@ import {
   type ScreenedListing,
 } from '../../lib/gnome';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import {
+  OTHER_SALE_UNIT,
+  SALE_UNIT_OPTIONS,
+  resolveSaleUnit,
+  saleUnitPlural,
+  saleUnitSingular,
+} from '../../lib/saleUnits';
 import { SignInCard, useSession } from '../components/auth';
 import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
 import TaxonomySellPicker from '../components/TaxonomySellPicker';
@@ -92,7 +99,9 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');       // dollars, string
   const [plotCount, setPlotCount] = useState('1'); // identical plots to post (plot type only)
-  const [unit, setUnit] = useState('');
+  const [unit, setUnit] = useState('each');
+  const [customUnit, setCustomUnit] = useState(false);
+  const [inventory, setInventory] = useState('');
   const [tradeFor, setTradeFor] = useState('');
   const [reqOptions, setReqOptions] = useState<{ label: string }[]>([]);
   const [optionDraft, setOptionDraft] = useState('');
@@ -218,7 +227,11 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       if (listingType === 'sale' && !price && draft.suggested_price_cents) {
         setPrice((draft.suggested_price_cents / 100).toFixed(2));
       }
-      if (listingType === 'sale' && !unit && draft.suggested_unit) setUnit(draft.suggested_unit);
+      if (listingType === 'sale' && unit === 'each' && !customUnit && draft.suggested_unit) {
+        const resolved = resolveSaleUnit(draft.suggested_unit);
+        setUnit(resolved.value);
+        setCustomUnit(resolved.custom);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI drafting failed — fill the form by hand.');
     } finally {
@@ -245,6 +258,16 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     }
     if (listingType === 'plot' && (!price || Number(price) <= 0)) {
       return setError('Set a reservation price for your plot.');
+    }
+    if (listingType === 'sale' && !unit.trim()) {
+      return setError('Choose how the item is sold or enter a custom measurement.');
+    }
+    let inventoryCount: number | null = null;
+    if (listingType === 'sale' && inventory.trim()) {
+      inventoryCount = Number(inventory);
+      if (!Number.isInteger(inventoryCount) || inventoryCount <= 0) {
+        return setError('Available inventory must be a whole number above 0.');
+      }
     }
     if (listingType === 'trade' && !tradeFor.trim()) {
       return setError('Say what you’d like to trade for.');
@@ -298,7 +321,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         description: description.trim() || null,
         category: listingType === 'plot' ? 'other' : category,
         taxonomy_node_id: listingType === 'plot' ? null : taxonomyNodeId,
-        quantity: quantity.trim() || null,
+        quantity: listingType === 'sale' ? null : quantity.trim() || null,
         photos: urls,
         price_cents:
           listingType === 'sale' || listingType === 'plot'
@@ -308,7 +331,7 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         trade_for: listingType === 'trade' ? tradeFor.trim() : null,
         city: city.trim(),
         state: state.trim().toUpperCase(),
-        inventory_count: plotsAvailable,
+        inventory_count: listingType === 'sale' ? inventoryCount : plotsAvailable,
         ...((listingType === 'wanted' || listingType === 'plot') && reqOptions.length
           ? { request_options: reqOptions } : {}),
         ...(listingType === 'wanted' || listingType === 'plot'
@@ -379,7 +402,8 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     const href = listingPath(done.id, done.title);
     const reset = () => {
       setDone(null); setTitle(''); setDescription(''); setQuantity('');
-      setPrice(''); setUnit(''); setTradeFor(''); setPhotos([]); setPlotCount('1');
+      setPrice(''); setUnit('each'); setCustomUnit(false); setInventory('');
+      setTradeFor(''); setPhotos([]); setPlotCount('1');
       setReqOptions([]); setOptionDraft(''); setAllowCustomRequest(true);
     };
 
@@ -506,14 +530,16 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
             )}
           </div>
         )}
-        <div className="field">
-          <label>{listingType === 'plot' ? 'Plot size — e.g. 4×8 ft' : 'Quantity (optional)'}</label>
-          <input
-            value={quantity}
-            placeholder={listingType === 'plot' ? '4×8 raised bed, full sun' : 'About 2 lbs'}
-            onChange={(e) => setQuantity(e.target.value)}
-          />
-        </div>
+        {listingType !== 'sale' && (
+          <div className="field">
+            <label>{listingType === 'plot' ? 'Plot size — e.g. 4×8 ft' : 'Amount offered (optional)'}</label>
+            <input
+              value={quantity}
+              placeholder={listingType === 'plot' ? '4×8 raised bed, full sun' : 'About 2 lbs or one basket'}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </div>
+        )}
       </div>
 
       {listingType !== 'plot' && taxonomyNodeId && (
@@ -533,16 +559,55 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       )}
 
       {listingType === 'sale' && (
-        <div className="field-row">
-          <div className="field">
-            <label>Price (USD)</label>
-            <input inputMode="decimal" value={price} placeholder="4.00" onChange={(e) => setPrice(e.target.value)} />
+        <>
+          <div className="field-row">
+            <div className="field">
+              <label>Sold by</label>
+              <select
+                value={customUnit ? OTHER_SALE_UNIT : unit}
+                onChange={(e) => {
+                  if (e.target.value === OTHER_SALE_UNIT) {
+                    setUnit('');
+                    setCustomUnit(true);
+                  } else {
+                    setUnit(e.target.value);
+                    setCustomUnit(false);
+                  }
+                }}
+              >
+                {SALE_UNIT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+                <option value={OTHER_SALE_UNIT}>Other measurement</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Price per {saleUnitSingular(unit)} (USD)</label>
+              <input inputMode="decimal" value={price} placeholder="4.00" onChange={(e) => setPrice(e.target.value)} />
+            </div>
           </div>
+          {customUnit && (
+            <div className="field">
+              <label>Custom unit or measurement</label>
+              <input
+                value={unit}
+                maxLength={40}
+                placeholder="crate, peck, 6-pack"
+                onChange={(e) => setUnit(e.target.value)}
+              />
+            </div>
+          )}
           <div className="field">
-            <label>Per (optional)</label>
-            <input value={unit} placeholder="dozen, lb, jar…" onChange={(e) => setUnit(e.target.value)} />
+            <label>How many {saleUnitPlural(unit)} are available? (optional)</label>
+            <input
+              inputMode="numeric"
+              value={inventory}
+              placeholder="12"
+              onChange={(e) => setInventory(e.target.value.replace(/[^0-9]/g, ''))}
+            />
+            <span className="hint">This is your inventory count. Enter a whole number, such as 12 bunches.</span>
           </div>
-        </div>
+        </>
       )}
 
       {listingType === 'plot' && (

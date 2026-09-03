@@ -673,6 +673,8 @@ export function useUpdateListing(uid?: string) {
       title: string;
       description: string;
       quantity: string;
+      unit?: string | null;
+      inventoryCount?: number | null;
       harvestDate?: string | null;
       category: string;
       /** undefined = leave the node untouched (legacy listings keep their
@@ -691,6 +693,10 @@ export function useUpdateListing(uid?: string) {
           title: input.title,
           description: input.description || null,
           quantity: input.quantity || null,
+          ...(input.unit !== undefined ? { unit: input.unit || null } : {}),
+          ...(input.inventoryCount !== undefined
+            ? { inventory_count: input.inventoryCount }
+            : {}),
           ...(input.harvestDate !== undefined
             ? { harvest_date: input.harvestDate }
             : {}),

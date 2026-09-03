@@ -163,6 +163,8 @@ export default function MyListingsView({ uid }: { uid: string }) {
         category: l.category,
         title: l.title,
         quantity: l.quantity ?? '',
+        unit: l.unit ?? '',
+        inventory: l.inventory_count != null ? String(l.inventory_count) : '',
         harvestDate: l.harvest_date ?? '',
         description: l.description ?? '',
         // nonce so re-posting the same listing twice still re-seeds the form

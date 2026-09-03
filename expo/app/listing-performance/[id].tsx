@@ -130,6 +130,8 @@ export default function ListingPerformanceScreen() {
         category: item.category,
         title: item.title,
         quantity: item.quantity ?? '',
+        unit: item.unit ?? '',
+        inventory: item.inventory_count != null ? String(item.inventory_count) : '',
         harvestDate: item.harvest_date ?? '',
         description: item.description ?? '',
         n: String(Date.now()),
