@@ -18,24 +18,36 @@ export interface TaxonomyNode {
   path: string;
   depth: number;
   display_order: number;
+  active: boolean;
   icon: string | null;
   search_synonyms: string[];
+  compliance_classification:
+    | 'GENERALLY_UNRESTRICTED'
+    | 'CONDITIONAL'
+    | 'REGULATED'
+    | 'PROHIBITED'
+    | 'REVIEW_REQUIRED';
+  prohibited: boolean;
 }
 
-const NODE_COLUMNS = 'id,parent_id,name,slug,path,depth,display_order,icon,search_synonyms';
+const NODE_COLUMNS =
+  'id,parent_id,name,slug,path,depth,display_order,active,icon,search_synonyms,compliance_classification,prohibited';
 
 export interface TaxonomyIndex {
   nodes: TaxonomyNode[];
   byId: Map<string, TaxonomyNode>;
+  byPath: Map<string, TaxonomyNode>;
   childrenOf: (parentId: string | null) => TaxonomyNode[];
   roots: TaxonomyNode[];
 }
 
 function buildIndex(nodes: TaxonomyNode[]): TaxonomyIndex {
   const byId = new Map<string, TaxonomyNode>();
+  const byPath = new Map<string, TaxonomyNode>();
   const children = new Map<string | null, TaxonomyNode[]>();
   for (const n of nodes) {
     byId.set(n.id, n);
+    byPath.set(n.path, n);
     const list = children.get(n.parent_id) ?? [];
     list.push(n);
     children.set(n.parent_id, list);
@@ -46,9 +58,43 @@ function buildIndex(nodes: TaxonomyNode[]): TaxonomyIndex {
   return {
     nodes,
     byId,
+    byPath,
     childrenOf: (parentId) => children.get(parentId) ?? [],
     roots: children.get(null) ?? [],
   };
+}
+
+const ROOT_TO_LEGACY: Record<string, string> = {
+  vegetables: 'vegetables',
+  fruit: 'fruit',
+  herbs: 'herbs',
+  eggs: 'eggs',
+  seeds: 'seeds',
+  plants: 'plants',
+  flowers: 'flowers',
+  meat: 'meat',
+  pet: 'pet_treats',
+  'wood-firewood': 'wood',
+  'honey-and-syrups': 'honey',
+  'garden-goods': 'supplies',
+  'preserves-and-pantry': 'farm_fresh',
+  'baked-goods': 'farm_fresh',
+  'fishing-and-bait': 'other',
+};
+
+export function legacyCategoryFor(index: TaxonomyIndex, node: TaxonomyNode): string {
+  const root = ancestorsOf(index, node)[0];
+  return ROOT_TO_LEGACY[root?.slug ?? ''] ?? 'other';
+}
+
+export function rootForLegacy(index: TaxonomyIndex, legacyId: string): TaxonomyNode | null {
+  for (const [rootSlug, legacy] of Object.entries(ROOT_TO_LEGACY)) {
+    if (legacy === legacyId) {
+      const node = index.byPath.get(rootSlug);
+      if (node) return node;
+    }
+  }
+  return null;
 }
 
 // One fetch per page load, shared by every caller (module-level promise cache).

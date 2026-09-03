@@ -8,6 +8,13 @@ import { useEffect, useRef, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { CATEGORIES } from '../../lib/categories';
 import {
+  fetchTaxonomy,
+  legacyCategoryFor,
+  rootForLegacy,
+  type TaxonomyIndex,
+  type TaxonomyNode,
+} from '../../lib/taxonomy';
+import {
   DEFAULT_LISTING_TYPE,
   listingPath,
   LISTING_TYPE_ACTION_LABEL,
@@ -27,6 +34,7 @@ import {
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
 import { SignInCard, useSession } from '../components/auth';
 import { HeldForReview, ServerErrorNotice } from '../components/ScreeningNotice';
+import TaxonomySellPicker from '../components/TaxonomySellPicker';
 
 // Order, labels and hints all come from the canonical config in lib/format —
 // this file must never carry its own list or its own idea of the default.
@@ -39,6 +47,12 @@ const TYPES: { id: ListingType; label: string; hint: string }[] = LAUNCH_LISTING
 const MAX_PHOTOS = 5;
 
 interface Photo { file: File; preview: string }
+
+interface PublishEligibility {
+  allowed: boolean;
+  reason: string;
+  message: string | null;
+}
 
 // Downscale to ≤1280px JPEG so uploads are quick and the AI draft call stays
 // under the function's 8MB base64 cap regardless of the original photo size.
@@ -70,6 +84,10 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
   );
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('vegetables');
+  const [taxIndex, setTaxIndex] = useState<TaxonomyIndex | null>(null);
+  const [taxonomyNodeId, setTaxonomyNodeId] = useState<string | null>(null);
+  const [eligibility, setEligibility] = useState<PublishEligibility | null>(null);
+  const [eligibilityLoading, setEligibilityLoading] = useState(false);
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');       // dollars, string
@@ -93,6 +111,60 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     { id: string; title: string; count: number; review: boolean; reason: string } | null
   >(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchTaxonomy().then((index) => {
+      if (alive) setTaxIndex(index);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!taxIndex || taxonomyNodeId || listingType === 'plot') return;
+    const root = rootForLegacy(taxIndex, category);
+    if (root) setTaxonomyNodeId(root.id);
+  }, [category, listingType, taxIndex, taxonomyNodeId]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!uid || !taxonomyNodeId || listingType === 'plot') {
+      setEligibility(null);
+      setEligibilityLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
+
+    setEligibility(null);
+    setEligibilityLoading(true);
+    void supabaseBrowser()
+      .rpc('publish_eligibility', { p_node_id: taxonomyNodeId })
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) {
+          // The insert trigger remains authoritative when preflight is unavailable.
+          setEligibility(null);
+        } else {
+          const row = (Array.isArray(data) ? data[0] : data) as PublishEligibility | null;
+          setEligibility(row ?? null);
+        }
+        setEligibilityLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [listingType, taxonomyNodeId, uid]);
+
+  function selectTaxonomyNode(node: TaxonomyNode) {
+    if (!taxIndex) return;
+    setTaxonomyNodeId(node.id);
+    setCategory(legacyCategoryFor(taxIndex, node));
+    setError(null);
+    setRefused(null);
+  }
 
   // Prefill town from the profile (set by the app or a previous web post).
   useEffect(() => {
@@ -136,7 +208,12 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       if (!draft) throw new Error(data?.error ?? 'No draft came back — try again.');
       // Fill only empty fields — never clobber what the seller already typed.
       if (!title.trim() && draft.title) setTitle(draft.title);
-      if (draft.category) setCategory(draft.category);
+      if (draft.category) {
+        setCategory(draft.category);
+        if (taxIndex) {
+          setTaxonomyNodeId(rootForLegacy(taxIndex, draft.category)?.id ?? null);
+        }
+      }
       if (!description.trim() && draft.description) setDescription(draft.description);
       if (listingType === 'sale' && !price && draft.suggested_price_cents) {
         setPrice((draft.suggested_price_cents / 100).toFixed(2));
@@ -154,6 +231,15 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
     setError(null);
     setRefused(null);
     if (!title.trim()) return setError('Give your listing a title.');
+    if (listingType !== 'plot' && taxIndex && !taxonomyNodeId) {
+      return setError('Choose a category for this listing.');
+    }
+    if (listingType !== 'plot' && eligibilityLoading) {
+      return setError('Gnome is still checking this category. Try again in a moment.');
+    }
+    if (listingType !== 'plot' && eligibility && !eligibility.allowed) {
+      return setError(eligibility.message ?? 'This category is not available for this listing.');
+    }
     if (listingType === 'sale' && (!price || Number(price) <= 0)) {
       return setError('Set a price for a sale listing.');
     }
@@ -210,7 +296,8 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
         kind: listingType === 'wanted' ? ('wanted' as const) : ('offer' as const),
         title: title.trim(),
         description: description.trim() || null,
-        category,
+        category: listingType === 'plot' ? 'other' : category,
+        taxonomy_node_id: listingType === 'plot' ? null : taxonomyNodeId,
         quantity: quantity.trim() || null,
         photos: urls,
         price_cents:
@@ -401,14 +488,24 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       </div>
 
       <div className="field-row">
-        <div className="field">
-          <label>Category</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>
-            ))}
-          </select>
-        </div>
+        {listingType !== 'plot' && (
+          <div className="field">
+            <label>What are you listing?</label>
+            {taxIndex ? (
+              <TaxonomySellPicker
+                index={taxIndex}
+                selectedId={taxonomyNodeId}
+                onSelect={selectTaxonomyNode}
+              />
+            ) : (
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                {CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
         <div className="field">
           <label>{listingType === 'plot' ? 'Plot size — e.g. 4×8 ft' : 'Quantity (optional)'}</label>
           <input
@@ -418,6 +515,22 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
           />
         </div>
       </div>
+
+      {listingType !== 'plot' && taxonomyNodeId && (
+        <div
+          className={`taxonomy-eligibility${eligibility && !eligibility.allowed ? ' blocked' : ''}`}
+          role={eligibility && !eligibility.allowed ? 'alert' : 'status'}
+        >
+          {eligibilityLoading
+            ? 'Checking category requirements…'
+            : eligibility && !eligibility.allowed
+              ? (eligibility.message ?? 'This category is not available for this listing.')
+              : eligibility?.message ?? 'Category checked.'}
+          {eligibility?.reason === 'PLAN_REQUIRED' && (
+            <> <a href="/pricing">See seller plans</a>.</>
+          )}
+        </div>
+      )}
 
       {listingType === 'sale' && (
         <div className="field-row">
@@ -545,9 +658,21 @@ export default function SellClient({ initialType }: { initialType?: ListingType 
       {error && <p className="autherror">{error}</p>}
       {refused && <ServerErrorNotice error={refused} />}
 
-      <button className="btn btn-primary" disabled={posting} onClick={() => void post()}>
+      <button
+        className="btn btn-primary"
+        disabled={
+          posting ||
+          eligibilityLoading ||
+          (listingType !== 'plot' && !!eligibility && !eligibility.allowed)
+        }
+        onClick={() => void post()}
+      >
         {posting
           ? 'Posting…'
+          : eligibilityLoading
+            ? 'Checking category…'
+          : listingType !== 'plot' && eligibility && !eligibility.allowed
+            ? 'Category unavailable'
           : listingType === 'wanted'
             ? 'Post your ask'
             : listingType === 'plot'
