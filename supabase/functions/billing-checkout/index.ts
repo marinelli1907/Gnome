@@ -120,7 +120,7 @@ const PROMO_MESSAGE: Record<string, string> = {
 // header — same posture as ask-gnome/gnome-assistant.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, x-gnome-platform, apikey, content-type',
 };
 
 Deno.serve(async (req: Request) => {
@@ -157,7 +157,8 @@ Deno.serve(async (req: Request) => {
     // standalone overages/boosts have no native purchase path in this release.
     // Missing or legacy `app` platform values fail before entitlement, promo,
     // allowance, product, mode, key, or Stripe processing.
-    if (body.platform !== 'web') {
+    const requestPlatform = (req.headers.get('x-gnome-platform') ?? '').trim().toLowerCase();
+    if (body.platform !== 'web' || requestPlatform !== 'web') {
       return json(403, {
         error: 'DIGITAL_CHECKOUT_WEB_ONLY',
         message: 'This digital checkout is not available in the mobile app.',

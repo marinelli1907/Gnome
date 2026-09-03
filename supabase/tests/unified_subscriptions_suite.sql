@@ -171,4 +171,82 @@ do $$ begin
   if (select payments_live_enabled from public.billing_config where id) then raise exception 'payments live changed'; end if;
 end $$;
 
+-- A Stripe overage bought on the website is not an IAP-equivalent item. It
+-- must remain unusable from iOS/Android while the same authorization still
+-- completes the web action it was purchased for.
+select set_config('request.jwt.claims','{"role":"authenticated","sub":"b1000000-0000-4000-8000-000000000002"}',false);
+select set_config('request.headers','{"x-gnome-platform":"ios"}',false);
+do $$
+declare
+  v_market uuid;
+  v_auth uuid;
+  v_listing uuid;
+  v_renew_auth uuid;
+  i int;
+begin
+  select id into v_market from public.markets
+   where owner_id='b1000000-0000-4000-8000-000000000002'
+   order by created_at limit 1;
+
+  for i in 1..3 loop
+    insert into public.listings(owner_id,market_id,title,category,price_cents,listing_type,status,expires_at)
+    values('b1000000-0000-4000-8000-000000000002',v_market,'Boundary item '||i,
+      'vegetables',500,'sale','active',now()+interval '7 days');
+  end loop;
+
+  insert into public.listing_publish_authorizations
+    (market_id,intent,amount_cents,stripe_session_id,status,paid_at)
+  values(v_market,'publish',99,'cs_ios_boundary','paid',now()) returning id into v_auth;
+
+  begin
+    insert into public.listings(owner_id,market_id,title,category,price_cents,listing_type,status,expires_at)
+    values('b1000000-0000-4000-8000-000000000002',v_market,'Native paid attempt',
+      'vegetables',500,'sale','active',now()+interval '7 days');
+    raise exception 'native request consumed a web overage';
+  exception when others then
+    if sqlerrm not like '%PUBLISH_ALLOWANCE_EXHAUSTED%' then raise; end if;
+  end;
+
+  if (select status from public.listing_publish_authorizations where id=v_auth)<>'paid' then
+    raise exception 'native refusal changed the web authorization';
+  end if;
+
+  perform set_config('request.headers','{"x-gnome-platform":"web"}',true);
+  insert into public.listings(owner_id,market_id,title,category,price_cents,listing_type,status,expires_at)
+  values('b1000000-0000-4000-8000-000000000002',v_market,'Web paid publish',
+    'vegetables',500,'sale','active',now()+interval '7 days');
+
+  if (select status from public.listing_publish_authorizations where id=v_auth)<>'consumed' then
+    raise exception 'web request did not consume its paid authorization';
+  end if;
+
+  select id into v_listing from public.listings
+   where market_id=v_market and title='Boundary item 1';
+  update public.listings set status='expired',expires_at=now()-interval '1 second'
+   where id=v_listing;
+  insert into public.listing_publish_authorizations
+    (market_id,listing_id,intent,amount_cents,stripe_session_id,status,paid_at)
+  values(v_market,v_listing,'renewal',99,'cs_ios_renew_boundary','paid',now())
+  returning id into v_renew_auth;
+
+  perform set_config('request.headers','{"x-gnome-platform":"ios"}',true);
+  begin
+    perform public.renew_listing(v_listing);
+    raise exception 'native request consumed a web renewal';
+  exception when others then
+    if sqlerrm not like '%PUBLISH_ALLOWANCE_EXHAUSTED%' then raise; end if;
+  end;
+  if (select status from public.listing_publish_authorizations where id=v_renew_auth)<>'paid'
+     or (select status from public.listings where id=v_listing)<>'expired' then
+    raise exception 'native renewal refusal changed paid or listing state';
+  end if;
+
+  perform set_config('request.headers','{"x-gnome-platform":"web"}',true);
+  perform public.renew_listing(v_listing);
+  if (select status from public.listing_publish_authorizations where id=v_renew_auth)<>'consumed'
+     or (select status from public.listings where id=v_listing)<>'active' then
+    raise exception 'web renewal did not consume its paid authorization';
+  end if;
+end $$;
+
 \echo 'Unified subscription contract suite: PASS'

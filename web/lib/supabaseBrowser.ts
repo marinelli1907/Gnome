@@ -11,6 +11,9 @@ export function supabaseBrowser(): SupabaseClient {
       process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'anon',
       {
+        global: {
+          headers: { 'x-gnome-platform': 'web' },
+        },
         auth: {
           storageKey: 'gnome-web-auth',
           persistSession: true,

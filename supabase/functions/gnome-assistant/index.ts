@@ -39,7 +39,7 @@ import {
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, x-gnome-platform, apikey, content-type',
 };
 
 const MAX_TURNS = 12;
@@ -291,8 +291,10 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? 'chat');
-    const appPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
-    const digitalPurchasesAvailable = appPlatform === 'web';
+    const bodyPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
+    const headerPlatform = (req.headers.get('x-gnome-platform') ?? '').toLowerCase();
+    const digitalPurchasesAvailable = bodyPlatform === 'web' && headerPlatform === 'web';
+    const appPlatform = digitalPurchasesAvailable ? 'web' : headerPlatform || bodyPlatform;
 
     // Global read-side kill switch + provider chain.
     const { data: settings } = await admin.from('ai_settings')
@@ -514,7 +516,10 @@ Deno.serve(async (req: Request) => {
       if (hasChatImage) throw new Error('SKIP_ACTION_LAYER_FOR_IMAGE');
       const userClient = createClient(
         Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
-        { global: { headers: { Authorization: `Bearer ${token}` } } },
+        { global: { headers: {
+          Authorization: `Bearer ${token}`,
+          'x-gnome-platform': digitalPurchasesAvailable ? 'web' : 'native',
+        } } },
       );
       const { data: invRows } = await userClient.rpc('ai_my_inventory');
       const sellerTitles = (Array.isArray(invRows) ? invRows : [])

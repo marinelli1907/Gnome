@@ -59,3 +59,7 @@
 # ---------------------------------------------------------------------------
 20260903040036_seasonal_campaign_config.sql  Seasonal Discovery remote config; awaiting coordinated post-launch rollout
 20260903040040_seasonal_analytics_allowlist.sql  first-party Seasonal Discovery events; awaiting coordinated post-launch rollout
+
+# Apple build 33 digital-purchase boundary. Written and tested locally; NOT
+# applied until the coordinated replacement-build rollout.
+20260903192317_ios_web_overage_boundary.sql  web-only consumption of Stripe listing overages; awaiting release rollout

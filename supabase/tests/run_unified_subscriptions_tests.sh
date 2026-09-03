@@ -57,6 +57,7 @@ migrations=(
   20260828035457_fix_email_readiness_after_otp.sql
   20260828045652_paid_market_storefront_visits.sql
   20260830013208_lock_public_market_drops_projection.sql
+  20260903192317_ios_web_overage_boundary.sql
 )
 for migration in "${migrations[@]}"; do
   printf 'apply %-64s' "$migration"

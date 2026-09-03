@@ -24,6 +24,17 @@ const subscriptions = read('expo/lib/nativeSubscriptions.ts');
 const promote = read('expo/app/promote/[listingId].tsx');
 const checkout = read('supabase/functions/billing-checkout/index.ts');
 const assistant = read('supabase/functions/gnome-assistant/index.ts');
+const mobileSupabase = read('expo/lib/supabase.ts');
+const webSupabase = read('web/lib/supabaseBrowser.ts');
+const overageBoundary = read('supabase/migrations/20260903192317_ios_web_overage_boundary.sql');
+const webInvokedFunctions = [
+  'billing-checkout',
+  'delete-account',
+  'draft-listing',
+  'garden-planner',
+  'gnome-assistant',
+  'market-import',
+].map((name) => [name, read(`supabase/functions/${name}/index.ts`)]);
 const webSources = collectSources(path.join(root, 'web'))
   .map((file) => `\n/* ${path.relative(root, file)} */\n${readFileSync(file, 'utf8')}`)
   .join('\n');
@@ -71,14 +82,14 @@ assert.doesNotMatch(subscriptions, /promoCode|FOUNDING3|foundingEligibility/iu);
 assert.match(promote, /source: 'plan_credit'/u);
 assert.match(promote, /Extra promotions are not sold in the app\.|They are not sold in the app\./u);
 assert.doesNotMatch(promote, /purchased_balance|usePromotePurchased|promotePurchased|purchased credit/iu);
-assert.match(assistant, /const digitalPurchasesAvailable = appPlatform === 'web';/u);
+assert.match(assistant, /const digitalPurchasesAvailable = bodyPlatform === 'web' && headerPlatform === 'web';/u);
 assert.match(assistant, /NATIVE PURCHASE POLICY:[\s\S]*Do not mention standalone paid publishes/iu);
 const chatSystem = assistant.slice(assistant.indexOf('const CHAT_SYSTEM'), assistant.indexOf('const VISION_PROMPT'));
 assert.doesNotMatch(chatSystem, /\$0\.99/u, 'the base assistant prompt must not leak web-only overage pricing to native callers');
 
 // Defense in depth: the Edge Function rejects every missing/native platform
 // before allowance, promo, product, mode, portal, or Stripe work.
-const webOnlyGate = checkout.indexOf("if (body.platform !== 'web')");
+const webOnlyGate = checkout.indexOf("if (body.platform !== 'web' || requestPlatform !== 'web')");
 const marketLookup = checkout.indexOf("admin.from('markets')");
 const overageLookup = checkout.indexOf('if (OVERAGE_KEYS.has(key))');
 const productLookup = checkout.indexOf("admin.from('billing_products')");
@@ -86,6 +97,7 @@ const promoPreview = checkout.indexOf("if (body.action === 'preview_promo')");
 const stripeSecret = checkout.indexOf("Deno.env.get('STRIPE_SECRET_KEY_");
 const stripeSession = checkout.indexOf('stripe.checkout.sessions.create');
 assert.ok(webOnlyGate >= 0, 'billing-checkout must have a fail-closed web-only gate');
+assert.match(checkout, /req\.headers\.get\('x-gnome-platform'\)/u);
 for (const [name, index] of [
   ['market lookup', marketLookup],
   ['overage lookup', overageLookup],
@@ -100,6 +112,21 @@ assert.match(checkout, /error: 'DIGITAL_CHECKOUT_WEB_ONLY'/u);
 assert.doesNotMatch(checkout, /gnome:\/\/checkout-(?:success|cancelled)/iu);
 assert.match(checkout, /success_url: `\$\{base\}\/my\?checkout=success`/u);
 assert.match(checkout, /cancel_url: `\$\{base\}\/my\?checkout=cancelled`/u);
+
+// A web-bought one-time publish/renewal is not an IAP-equivalent item. The
+// authoritative listing trigger may consume it only for an explicitly marked
+// Gnome web request; native and missing-platform requests fail closed.
+assert.match(mobileSupabase, /headers:\s*\{\s*'x-gnome-platform': Platform\.OS\s*\}/u);
+assert.match(webSupabase, /headers:\s*\{\s*'x-gnome-platform': 'web'\s*\}/u);
+assert.match(assistant, /bodyPlatform === 'web' && headerPlatform === 'web'/u);
+assert.match(assistant, /Access-Control-Allow-Headers[^\n]+x-gnome-platform/u);
+assert.match(assistant, /'x-gnome-platform': digitalPurchasesAvailable \? 'web' : 'native'/u);
+for (const [name, source] of webInvokedFunctions) {
+  assert.match(source, /Access-Control-Allow-Headers[^\n]+x-gnome-platform/u, `${name} must allow the shared web platform header`);
+}
+assert.match(overageBoundary, /request_platform = 'web'/u);
+assert.match(overageBoundary, /from public\.listing_publish_authorizations/u);
+assert.doesNotMatch(overageBoundary, /request_platform\s*(?:<>|!=)\s*'web'[\s\S]*status\s*=\s*'consumed'/u);
 
 // Every retained Stripe caller lives in Next.js and explicitly opts into the
 // server's web-only contract. Missing platform fails closed.

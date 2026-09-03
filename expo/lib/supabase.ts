@@ -20,6 +20,9 @@ export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'public-anon-placeholder',
   {
+    global: {
+      headers: { 'x-gnome-platform': Platform.OS },
+    },
     auth: {
       // AsyncStorage isn't available during SSR/web prerender.
       storage: Platform.OS === 'web' ? undefined : AsyncStorage,

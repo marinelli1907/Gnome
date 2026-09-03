@@ -56,7 +56,7 @@ async function releaseDailyCap(userId: string): Promise<void> {
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, x-gnome-platform, apikey, content-type',
 };
 
 const MAX_TURNS = 12;          // last N chat turns forwarded
