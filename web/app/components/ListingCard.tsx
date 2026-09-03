@@ -1,7 +1,10 @@
+'use client';
+
 import Link from 'next/link';
 import { categoryFor } from '@/lib/categories';
 import { areaLabel, formatPrice, listingPath, pickedDateLabel, TYPE_LABEL, timeLeft } from '@/lib/format';
 import type { WebListing } from '@/lib/gnome';
+import { logWeb } from '@/lib/analytics';
 
 function shortValue(l: WebListing): string {
   if (l.listing_type === 'sale') return l.price_cents != null ? formatPrice(l.price_cents, l.unit) : 'For sale';
@@ -11,13 +14,32 @@ function shortValue(l: WebListing): string {
   return 'Free';
 }
 
-export default function ListingCard({ listing, promoted }: { listing: WebListing; promoted?: boolean }) {
+export default function ListingCard({
+  listing,
+  promoted,
+  seasonalCampaignId,
+}: {
+  listing: WebListing;
+  promoted?: boolean;
+  seasonalCampaignId?: string;
+}) {
   const cat = categoryFor(listing.category);
   const photo = listing.photos?.[0];
   const t = listing.listing_type;
   const picked = pickedDateLabel(listing.harvest_date);
   return (
-    <Link className="card" href={listingPath(listing.id, listing.slug ?? listing.title)}>
+    <Link
+      className="card"
+      href={listingPath(listing.id, listing.slug ?? listing.title)}
+      onClick={() => {
+        if (seasonalCampaignId) {
+          logWeb('seasonal_listing_clicked', {
+            campaign_id: seasonalCampaignId,
+            listing_id: listing.id,
+          });
+        }
+      }}
+    >
       <div className="imgwrap">
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element

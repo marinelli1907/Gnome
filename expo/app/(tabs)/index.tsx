@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, SlidersHorizontal, X } from 'lucide-react-native';
 import ListingCard from '@/components/ListingCard';
+import SeasonalDiscovery from '@/components/SeasonalDiscovery';
 import DistancePicker from '@/components/DistancePicker';
 import FeaturedRail from '@/components/FeaturedRail';
 import TaxonomyPicker from '@/components/TaxonomyPicker';
@@ -53,6 +54,8 @@ import {
   type BrowseRadius,
 } from '@/lib/location';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { useSeasonalCampaign } from '@/lib/seasonalCampaign';
+import { rankSeasonalListings } from '@/lib/seasonal';
 
 const MARKET_PREVIEW = [
   {
@@ -171,6 +174,7 @@ export default function BrowseScreen() {
   }, [anchor]);
 
   const taxonomy = useTaxonomy();
+  const seasonalCampaign = useSeasonalCampaign();
   const index = taxonomy.data;
   const selectedNode = index && taxNodeId ? index.byId.get(taxNodeId) ?? null : null;
 
@@ -245,6 +249,13 @@ export default function BrowseScreen() {
     });
   }, [feed, search, index]);
 
+  const seasonalListings = useMemo(() => {
+    if (!seasonalCampaign.data) return [];
+    return rankSeasonalListings(feed, seasonalCampaign.data, index?.nodes ?? []).map(
+      ({ listing }) => listing,
+    );
+  }, [feed, index?.nodes, seasonalCampaign.data]);
+
   const filtering = !!selectedNode || !!search.trim() || typeFilter !== 'all';
   const truthfulFreshTitle = anchor ? 'Fresh near you' : 'Fresh listings';
   const locationSummary = anchor
@@ -287,7 +298,13 @@ export default function BrowseScreen() {
         ) : null}
       </View>
 
-      {!filtering && (
+      {!filtering && seasonalCampaign.data && seasonalListings.length ? (
+        <SeasonalDiscovery
+          campaign={seasonalCampaign.data}
+          listings={seasonalListings}
+          onSearch={setSearch}
+        />
+      ) : !filtering ? (
         <View style={styles.previewPanel}>
           <View style={styles.previewHead}>
             <Text style={styles.previewTitle}>{truthfulFreshTitle}</Text>
@@ -323,7 +340,7 @@ export default function BrowseScreen() {
             ))}
           </View>
         </View>
-      )}
+      ) : null}
 
       {!filtering && (
         <Pressable style={styles.plannerBanner} onPress={() => router.push('/garden')}>
@@ -573,6 +590,7 @@ export default function BrowseScreen() {
                 if (c && anchor?.source === 'current') applyAnchor({ ...anchor, coords: c });
               });
               void refetch();
+              void seasonalCampaign.refetch();
               void followedMarkets.refetch();
               if (followedMarketIds.length) void followedListings.refetch();
             }}

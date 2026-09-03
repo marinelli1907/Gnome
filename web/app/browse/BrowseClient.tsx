@@ -6,6 +6,7 @@
 // sorted newest-first, and the radius chips prompt for permission.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ListingCard from '../components/ListingCard';
+import SeasonalDiscovery from '../components/SeasonalDiscovery';
 import {
   fetchTaxonomy,
   breadcrumb,
@@ -18,6 +19,8 @@ import {
 import type { WebListing } from '../../lib/gnome';
 import { logWeb } from '../../lib/analytics';
 import { LAUNCH_LISTING_TYPES, TYPE_LABEL } from '../../lib/format';
+import { getSeasonalCampaign } from '../../lib/seasonalClient';
+import { rankSeasonalListings, type SeasonalCampaign } from '../../lib/seasonal';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -81,6 +84,7 @@ export default function BrowseClient() {
   const [radius, setRadius] = useState<number>(25);
   const [type, setType] = useState<string | null>(null);
   const [q, setQ] = useState('');
+  const [seasonalCampaign, setSeasonalCampaign] = useState<SeasonalCampaign | null>(null);
 
   // Categories — the app's backend-managed taxonomy tree, not the legacy flat
   // list. `taxNodeId` is the active filter (any depth); the drilldown browses
@@ -118,6 +122,18 @@ export default function BrowseClient() {
       }
     })();
     return () => { alive = false; };
+  }, []);
+
+  // Seasonal configuration resolves independently. It never participates in
+  // the normal listing request or its loading state.
+  useEffect(() => {
+    let alive = true;
+    void getSeasonalCampaign().then((campaign) => {
+      if (alive) setSeasonalCampaign(campaign);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -282,6 +298,13 @@ export default function BrowseClient() {
     });
     return rows;
   }, [listings, coords, radius, type, taxNode, taxIndex, q]);
+
+  const seasonalListings = useMemo(() => {
+    if (!seasonalCampaign || !filtered || q.trim() || type || taxNode) return [];
+    return rankSeasonalListings(filtered, seasonalCampaign, taxIndex?.nodes ?? []).map(
+      ({ listing }) => listing,
+    );
+  }, [filtered, q, seasonalCampaign, taxIndex?.nodes, taxNode, type]);
 
   return (
     <div>
@@ -564,6 +587,14 @@ export default function BrowseClient() {
         )}
         {locError && <p className="autherror">{locError}</p>}
       </div>
+
+      {seasonalCampaign && seasonalListings.length > 0 && (
+        <SeasonalDiscovery
+          campaign={seasonalCampaign}
+          listings={seasonalListings}
+          onSearch={setQ}
+        />
+      )}
 
       {filtered !== null && filtered.length > 0 && (
         <p className="browse-count">

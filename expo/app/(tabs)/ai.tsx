@@ -30,6 +30,7 @@ import { fetchListingScreening } from '@/lib/db';
 import { pickImages, takePhoto, uploadListingImages } from '@/lib/images';
 import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
+import { seasonalDateKey } from '@/lib/seasonal';
 
 /**
  * Server-bound action payloads riding on an assistant reply (market management).
@@ -280,6 +281,7 @@ export default function AiTab() {
           action: 'chat',
           messages: serverMessages,
           platform: Platform.OS,
+          local_date: seasonalDateKey(),
           ...(image ? {
             image: { image_base64: image.base64, media_type: image.mediaType },
           } : {}),

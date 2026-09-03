@@ -13,6 +13,7 @@ import { usePathname } from 'next/navigation';
 import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { logWeb } from '../../lib/analytics';
 import { supabaseBrowser } from '../../lib/supabaseBrowser';
+import { seasonalDateKey } from '../../lib/seasonal';
 import { SignInCard, useSession } from './auth';
 
 interface Turn {
@@ -240,6 +241,7 @@ export default function GnomeAssistant() {
           messages: serverMessages,
           page: pathname,
           platform: 'web',
+          local_date: seasonalDateKey(),
           ...(image ? { image: { image_base64: image.base64, media_type: image.mediaType } } : {}),
         },
       });

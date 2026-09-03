@@ -51,3 +51,11 @@
 # Final release grant repair. Clean-room verified; NOT applied to production.
 # ---------------------------------------------------------------------------
 20260830013208_lock_public_market_drops_projection.sql  removes unintended client write grants from the public Market Drops projection
+
+# ---------------------------------------------------------------------------
+# Seasonal Discovery post-launch release. Clean-room verified; NOT applied to
+# production. The seeded campaign is disabled and must remain disabled through
+# migration, backend deployment, binary QA, and store approval.
+# ---------------------------------------------------------------------------
+20260903040036_seasonal_campaign_config.sql  Seasonal Discovery remote config; awaiting coordinated post-launch rollout
+20260903040040_seasonal_analytics_allowlist.sql  first-party Seasonal Discovery events; awaiting coordinated post-launch rollout

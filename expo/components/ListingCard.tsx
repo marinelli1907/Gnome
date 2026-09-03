@@ -35,7 +35,15 @@ function shortValue(l: Listing, type: ListingType): string {
  * ListingCardV2 — the visual heart of the feed. Premium single-column card:
  * image, type badge, value, title, market, distance/freshness, primary CTA.
  */
-export default function ListingCard({ listing, promoted }: { listing: Listing; promoted?: boolean }) {
+export default function ListingCard({
+  listing,
+  promoted,
+  seasonalCampaignId,
+}: {
+  listing: Listing;
+  promoted?: boolean;
+  seasonalCampaignId?: string;
+}) {
   const router = useRouter();
   const { userId } = useAuth();
   const cat = categoryFor(listing.category);
@@ -60,6 +68,13 @@ export default function ListingCard({ listing, promoted }: { listing: Listing; p
     });
     if (promoted) {
       void logEvent('promoted_listing_opened', { userId: userId ?? null, listingId: listing.id });
+    }
+    if (seasonalCampaignId) {
+      void logEvent('seasonal_listing_clicked', {
+        userId: userId ?? null,
+        listingId: listing.id,
+        metadata: { campaign_id: seasonalCampaignId },
+      });
     }
     router.push(`/listing/${listing.id}`);
   };

@@ -20,6 +20,7 @@ import { isUnread, useChatReads } from '@/lib/chatReads';
 import MyMarketCard from '@/components/mygnome/MyMarketCard';
 import ShareMarketCard from '@/components/mygnome/ShareMarketCard';
 import BuildMarketCard from '@/components/mygnome/BuildMarketCard';
+import SeasonalSellerPrompt from '@/components/mygnome/SeasonalSellerPrompt';
 import ClaimsToReview from '@/components/mygnome/ClaimsToReview';
 import MyListingsView from '@/components/mygnome/MyListingsView';
 import MyPickups from '@/components/mygnome/MyPickups';
@@ -98,6 +99,7 @@ export default function MyGnomeScreen() {
         </View>
         <MyMarketCard uid={userId} />
         <BuildMarketCard />
+        <SeasonalSellerPrompt />
         <ShareMarketCard uid={userId} />
 
         <View style={styles.segShell}>

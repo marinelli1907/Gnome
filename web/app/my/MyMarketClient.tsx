@@ -32,6 +32,7 @@ import DeliverySettingsEditor from './DeliverySettingsEditor';
 import MarketDropsEditor from './MarketDropsEditor';
 import BundleEditor from './BundleEditor';
 import PickupOrdersManager from './PickupOrdersManager';
+import SeasonalSellerPrompt from '../components/SeasonalSellerPrompt';
 
 // Explicit column list — post-0010 the base table rejects select=* for
 // non-service roles (lat/lng/slug are revoked; everything else is granted).
@@ -636,6 +637,7 @@ export default function MyMarketClient() {
         </div>
         {error && <p className="autherror">{error}</p>}
         {refused && <ServerErrorNotice error={refused} />}
+        <SeasonalSellerPrompt />
         <div className="empty">
           <div className="emoji">🌱</div>
           <h2>Nothing posted yet</h2>
@@ -671,6 +673,7 @@ export default function MyMarketClient() {
         </div>
         <span className="band-cta">Upload photos or screenshots</span>
       </a>
+      <SeasonalSellerPrompt />
       <div className="mm-head">
         <div>
           <h1>{market?.name ?? 'My Market'}</h1>
