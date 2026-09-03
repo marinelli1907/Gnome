@@ -118,15 +118,7 @@ export function useNativeSubscriptions(
 
   const byProduct=useMemo(()=>Object.fromEntries(iap.subscriptions.map((product)=>[product.id,product])),[iap.subscriptions]);
 
-  const foundingEligibility=useCallback((plan:MarketPlan):'eligible'|'ineligible'|'store-confirmed'|'unavailable' => {
-    if (plan!=='grower' && plan!=='farm') return 'unavailable';
-    const product=byProduct[NATIVE_PRODUCT_FOR_PLAN[plan]];
-    if (!product) return 'unavailable';
-    if (product.platform==='ios') return 'store-confirmed';
-    return (product.subscriptionOffers??[]).some(isThreeMonthFreeTrialOffer)?'eligible':'ineligible';
-  },[byProduct]);
-
-  const purchase=useCallback(async (plan:MarketPlan,promoCode?:string) => {
+  const purchase=useCallback(async (plan:MarketPlan) => {
     if (!enabled || !userId || (plan!=='grower' && plan!=='farm')) return;
     const productId=NATIVE_PRODUCT_FOR_PLAN[plan];
     const product=byProduct[productId];
@@ -134,17 +126,10 @@ export function useNativeSubscriptions(
       setState({kind:'error',message:'That plan is not configured in this store yet.'});
       return;
     }
-    const founding=promoCode?.trim().toUpperCase()==='FOUNDING3';
     const accountHash=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,userId.toLowerCase());
     const current=iap.availablePurchases.find((item)=>NATIVE_SUBSCRIPTION_PRODUCTS.includes(item.productId));
     const offers=product.platform==='android'?product.subscriptionOffers??[]:[];
-    const selected=founding
-      ? offers.find(isThreeMonthFreeTrialOffer)
-      : offers.find((offer)=>!isThreeMonthFreeTrialOffer(offer));
-    if (Platform.OS==='android' && founding && !selected) {
-      setState({kind:'error',message:'Google Play says this account is not eligible for the Founding3 trial.'});
-      return;
-    }
+    const selected=offers.find((offer)=>!isThreeMonthFreeTrialOffer(offer));
     if (Platform.OS==='android' && !selected?.offerTokenAndroid) {
       setState({kind:'error',message:'The monthly plan is not configured correctly in Google Play yet.'});
       return;
@@ -188,5 +173,5 @@ export function useNativeSubscriptions(
     await deepLinkToSubscriptions({skuAndroid:productId??null,packageNameAndroid:'app.boonesystems.gnome'});
   },[enabled]);
 
-  return {connected:iap.connected,products:byProduct,state,purchase,restore,manage,foundingEligibility};
+  return {connected:iap.connected,products:byProduct,state,purchase,restore,manage};
 }

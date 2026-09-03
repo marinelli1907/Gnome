@@ -27,7 +27,6 @@ import { fonts } from '@/constants/theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { logEvent } from '@/lib/db';
-import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import { pickImages } from '@/lib/images';
 import {
   COMPLIANCE_NOTE, allowanceSummary, categoryLabel, conflictHeadline, conflictsFor,
@@ -695,7 +694,7 @@ function DoneView({ result, ackedDups, onAckDup, onViewListing, onViewPlans, onR
 }) {
   const created = result.drafts_created + result.drafts_already_existed;
   const allowance = useMemo(
-    () => allowanceSummary(result.allowance, { canBuyExtras: canBuyDigitalInApp }),
+    () => allowanceSummary(result.allowance),
     [result.allowance],
   );
   const dups = result.duplicates.filter((d) => !ackedDups.includes(d.candidate_index));

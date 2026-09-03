@@ -18,14 +18,20 @@ assert.match(
   /purchase\.purchaseState==='pending'[\s\S]*Access starts only after the store confirms it\.[\s\S]*return;/,
 );
 
+assert.doesNotMatch(
+  upgrade,
+  /Promo code|Enter promo code|FOUNDING3|previewPlanPromo|nativeFounding|promoCode/i,
+  'the iOS plan screen must not expose a non-IAP promo-code redemption path',
+);
 assert.match(
   upgrade,
-  /const nativePromo = target === 'grower' && nativeFounding \? promoCode : undefined;/,
-  'FOUNDING3 must be scoped to Pro and never leak into a Farm checkout',
+  /await native\.purchase\(target\);/,
+  'native subscription checkout must go directly through the store product',
 );
-assert.ok(
-  (upgrade.match(/setNativeFounding\(null\)/g) ?? []).length >= 3,
-  'changing or reapplying promo input must clear stale native offer state',
+assert.doesNotMatch(
+  subscriptions,
+  /promoCode|FOUNDING3|foundingEligibility/i,
+  'the native subscription client must not accept a Gnome-controlled offer code',
 );
 assert.match(
   upgrade,
@@ -39,9 +45,17 @@ assert.match(
 );
 assert.match(
   upgrade,
-  /if \(!canBuyDigitalInApp\) return;/,
-  'the checkout function must refuse Android even if a hidden call site regresses',
+  /if \(!usesNativeSubscriptions \|\| checkoutPlan/,
+  'the upgrade action must refuse every platform except the enabled native store surface',
 );
+assert.doesNotMatch(
+  upgrade,
+  /billing-checkout|openAuthSessionAsync|openStripeSubscriptionPortal|createPlanCheckout|finishPlanCheckout/iu,
+  'the native plan screen must contain no external digital checkout fallback',
+);
+assert.equal(fs.existsSync(path.join(root, 'lib/billing.ts')), false, 'the mobile Stripe billing client must be absent');
+assert.equal(fs.existsSync(path.join(root, 'app/checkout-success.tsx')), false, 'the mobile checkout success route must be absent');
+assert.equal(fs.existsSync(path.join(root, 'app/checkout-cancelled.tsx')), false, 'the mobile checkout cancel route must be absent');
 assert.match(
   upgrade,
   /native\.products\[productId\]\?\.displayPrice/,

@@ -30,8 +30,6 @@ import { fetchListingScreening } from '@/lib/db';
 import { pickImages, takePhoto, uploadListingImages } from '@/lib/images';
 import { parseServerError, type ServerError } from '@/lib/taxonomy';
 import { alertScreeningError, alertUnderReview, isUnderReview, safeErrorText } from '@/lib/screening';
-import { purchaseOverage } from '@/lib/billing';
-import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 
 /**
  * Server-bound action payloads riding on an assistant reply (market management).
@@ -49,22 +47,11 @@ type Proposal = {
 };
 type DisambigOption = { id: string; title: string; detail: string };
 
-/** A confirm came back payment_needed: the exact listings whose renewal wants $0.99.
- * The card this renders reuses the EXISTING overage checkout (purchaseOverage →
- * Stripe-hosted TEST/LIVE checkout → webhook → my_overage_required reconciliation);
- * after the authorization lands, the renewal executes through a fresh server-bound
- * proposal + confirm, which consumes the payment bound to this exact listing. */
-type PaymentAsk = {
-  items: { id: string; title: string }[];
-  verb: 'Renew' | 'Restock';
-};
-
 type Msg = {
   role: 'user' | 'assistant'; content: string;
   imageUri?: string | null;
   proposal?: Proposal | null;
   options?: DisambigOption[] | null;
-  paymentAsk?: PaymentAsk | null;
   /** the user message that produced this reply — reused when a disambiguation chip is tapped */
   sourceText?: string;
 };
@@ -345,9 +332,7 @@ export default function AiTab() {
         if (pay > 0) {
           setMessages((m) => [...m, {
             role: 'assistant',
-            content: canBuyDigitalInApp
-              ? 'Your plan’s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created — you can publish it from My Market when you’re ready.'
-              : 'Your plan’s Sell publishes are used up for this period. Nothing was created — upgrade for unlimited Sell publishes, or publish the basket when your allowance resets.',
+            content: 'Your plan’s Sell publishes are used up for this period. Nothing was created — upgrade for unlimited Sell publishes, or publish the basket when your allowance resets.',
           }]);
           return;
         }
@@ -377,27 +362,13 @@ export default function AiTab() {
       const parts: string[] = [];
       if (ok) parts.push(`${ok} listing${ok === 1 ? '' : 's'} ${did}.`);
       if (pay) {
-        parts.push(canBuyDigitalInApp
-          ? `${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`
-          : `${pay} need${pay === 1 ? 's' : ''} renewal help — your plan's included renewals are used up.`);
+        parts.push(`${pay} need${pay === 1 ? 's' : ''} renewal help — your plan's included renewals are used up.`);
       }
       if (!parts.length) parts.push('Nothing needed doing — everything was already in that state.');
       setSettled((s) => ({ ...s, [p.action_id]: true }));
-      // The server's per-listing results say exactly which renewals want $0.99; those become
-      // a payment card wired into the existing overage checkout — never a dead end.
-      const needPay = (Array.isArray(data?.results) ? data.results : [])
-        .filter((r: { ok?: boolean; error?: string }) => r?.ok === false && r?.error === 'PAYMENT_REQUIRED')
-        .map((r: { id?: string }) => ({
-          id: String(r.id ?? ''),
-          title: p.items.find((it) => it.id === r.id)?.title ?? 'this listing',
-        }))
-        .filter((it: { id: string }) => it.id);
       setMessages((m) => [...m, {
         role: 'assistant',
         content: parts.join(' '),
-        paymentAsk: needPay.length
-          ? { items: needPay, verb: p.action === 'restock' ? 'Restock' : 'Renew' }
-          : null,
       }]);
       void qc.invalidateQueries({ queryKey: ['listings'] });
     } catch (err: any) {
@@ -412,79 +383,6 @@ export default function AiTab() {
       setBusy(false);
     }
   }, [busy, settled, qc]);
-
-  // ---- the $0.99 leg: existing overage checkout, then execute the EXACT paid renewal -------
-  // paidFlow[listingId]: 'paying' | 'processing' | 'done' — drives the card's buttons.
-  const [paidFlow, setPaidFlow] = useState<Record<string, string>>({});
-
-  /** Execute the renewal AFTER the authorization exists: a fresh server-bound proposal +
-   * confirm. The 0104 gate consumes the payment bound to this listing; nothing here can
-   * renew anything else or renew twice (server truth). */
-  const finishPaidRenewal = useCallback(async (item: { id: string; title: string }) => {
-    try {
-      const { data: prop, error: pe } = await supabase.rpc('ai_propose_action', {
-        p_action: 'renew', p_listing_ids: [item.id], p_payload: {},
-        p_summary: `Renew "${item.title}" using your $0.99 payment`, p_request: null,
-      });
-      if (pe) throw pe;
-      const { data: res, error: ce } = await supabase.rpc('ai_confirm_action', {
-        p_action_id: prop.action_id,
-      });
-      if (ce) throw ce;
-      if (Number(res?.ok_count ?? 0) >= 1) {
-        setPaidFlow((s) => ({ ...s, [item.id]: 'done' }));
-        setMessages((m) => [...m, {
-          role: 'assistant',
-          content: `Done — “${item.title}” is renewed and live for another 7 days. Your $0.99 payment covered exactly this renewal.`,
-        }]);
-        void qc.invalidateQueries({ queryKey: ['listings'] });
-      } else {
-        // Not executed. Say what is actually true: paid-but-webhook-pending reads differently
-        // from never-paid. my_overage_required is the server truth for both.
-        const { data: ov } = await supabase.rpc('my_overage_required', { p_listing: item.id });
-        const row = Array.isArray(ov) ? ov[0] : ov;
-        setPaidFlow((s) => ({ ...s, [item.id]: 'processing' }));
-        setMessages((m) => [...m, {
-          role: 'assistant',
-          content: row?.required === false
-            ? 'Stripe is still confirming your payment. Tap “Finish renewal” again in a few seconds — you will not be charged twice.'
-            : 'I don’t see a completed payment yet. If you just paid, give it a few seconds and tap “Finish renewal” again — you will never be charged twice. If you cancelled checkout, nothing was charged.',
-        }]);
-      }
-    } catch {
-      setPaidFlow((s) => ({ ...s, [item.id]: 'processing' }));
-      setError('Couldn\'t finish the renewal just now — your payment is safe. Tap “Finish renewal” to try again.');
-    }
-  }, [qc]);
-
-  const payAndRenew = useCallback(async (item: { id: string; title: string }) => {
-    if (paidFlow[item.id] === 'paying' || paidFlow[item.id] === 'done') return;
-    if (!canBuyDigitalInApp) {
-      router.push('/upgrade');
-      return;
-    }
-    setError(null);
-    setPaidFlow((s) => ({ ...s, [item.id]: 'paying' }));
-    const outcome = await purchaseOverage(item.id);
-    if (outcome === 'paid' || outcome === 'not_needed') {
-      await finishPaidRenewal(item);
-    } else if (outcome === 'pending') {
-      setPaidFlow((s) => ({ ...s, [item.id]: 'processing' }));
-      setMessages((m) => [...m, {
-        role: 'assistant',
-        content: 'Payment received — Stripe is confirming. Tap “Finish renewal” in a few seconds; you will not be charged twice.',
-      }]);
-    } else if (outcome === 'cancelled') {
-      setPaidFlow((s) => { const { [item.id]: _gone, ...rest } = s; return rest; });
-      setMessages((m) => [...m, {
-        role: 'assistant',
-        content: 'Checkout cancelled — nothing was charged and nothing changed. The button is still here if you change your mind.',
-      }]);
-    } else {
-      setPaidFlow((s) => { const { [item.id]: _gone, ...rest } = s; return rest; });
-      setError('The checkout could not start. Nothing was charged.');
-    }
-  }, [paidFlow, finishPaidRenewal, router]);
 
   const cancelProposal = useCallback(async (p: Proposal) => {
     if (settled[p.action_id]) return;
@@ -599,25 +497,13 @@ export default function AiTab() {
       return;
     }
     if (r.error?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
-      // Draft rows persist server-side, so the retry after purchase is just publishing again.
-      // D1: no in-app digital purchase on Android until Play Billing (v1.2).
-      // The draft persists server-side either way.
+      // Draft rows persist server-side while the seller upgrades or waits for reset.
       Alert.alert(
         'Included listings used up',
-        canBuyDigitalInApp
-          ? 'You’ve used your included Sell listings for this period. The draft stays saved.'
-          : 'You’ve used your included Sell listings for this period. The draft stays saved — upgrade for unlimited Sell listings.',
+        'You’ve used your included Sell listings for this period. The draft stays saved — upgrade for unlimited Sell listings, or publish it when your allowance resets.',
         [
           { text: 'Not now', style: 'cancel' },
-          ...(!canBuyDigitalInApp
-            ? [{ text: 'See plans', onPress: () => router.push('/upgrade') }]
-            : []),
-          ...(!canBuyDigitalInApp ? [] : [{ text: 'Publish for $0.99', onPress: async () => {
-            const outcome = await purchaseOverage(null);
-            if (outcome === 'paid' || outcome === 'not_needed') void publish(d);
-            else if (outcome === 'pending') Alert.alert('Payment received', 'Stripe is confirming. Tap publish again in a few seconds — you will not be charged twice.');
-            else if (outcome === 'error') Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged.');
-          } }]),
+          { text: 'See plans', onPress: () => router.push('/upgrade') },
         ],
       );
       return;
@@ -821,38 +707,6 @@ export default function AiTab() {
                   </View>
                 </View>
               )}
-              {!!m.paymentAsk && m.paymentAsk.items.map((item) => (
-                paidFlow[item.id] === 'done' ? null : (
-                  <View key={item.id} style={styles.proposalCard}>
-                    <Text style={styles.proposalTitle}>{m.paymentAsk!.verb} {item.title}</Text>
-                    <Text style={styles.proposalMeta}>
-                      {canBuyDigitalInApp
-                        ? 'Another 7 days · $0.99 one time'
-                        : 'Included renewals used up — Pro renews without limits'}
-                    </Text>
-                    <View style={styles.cardActions}>
-                      {/* D1: Android cannot sell this in-app until Play Billing
-                          (v1.2), so the card offers the plan instead of a price. */}
-                      {!canBuyDigitalInApp ? (
-                        <Button label="See plans" onPress={() => router.push('/upgrade')} />
-                      ) : paidFlow[item.id] === 'processing' ? (
-                        <Button label="Finish renewal" onPress={() => void finishPaidRenewal(item)} />
-                      ) : (
-                        <Button
-                          label={paidFlow[item.id] === 'paying' ? 'Opening checkout…' : `${m.paymentAsk!.verb} for $0.99`}
-                          onPress={() => void payAndRenew(item)}
-                        />
-                      )}
-                      <Pressable
-                        onPress={() => setPaidFlow((s) => ({ ...s, [item.id]: 'done' }))}
-                        hitSlop={6}
-                      >
-                        <Text style={styles.linkMuted}>Not now</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )
-              ))}
             </View>
           ))}
 

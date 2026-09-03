@@ -8,7 +8,6 @@ import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { useBoostCreditsRemaining, useMyListingAllowance, useMyListings, useMyMarket, usePlanLimits } from '@/lib/db';
 import { exhaustedHint, listingsMeter, renewalsMeter, planDisplay, resetLabel, type Meter } from '@/lib/allowance';
-import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import type { MarketPlan } from '@/types';
 
 // One LISTINGS or RENEWALS block. Lines come straight from the shared formatter, which renders
@@ -74,11 +73,11 @@ export default function MyMarketCard({ uid }: { uid: string }) {
           <View style={styles.meters}>
             <MeterBlock
               meter={listingsMeter(row)}
-              hint={exhaustedHint(row, 'listings', { canBuyExtras: canBuyDigitalInApp })}
+              hint={exhaustedHint(row, 'listings')}
             />
             <MeterBlock
-              meter={renewalsMeter(row, { canBuyExtras: canBuyDigitalInApp })}
-              hint={exhaustedHint(row, 'renewals', { canBuyExtras: canBuyDigitalInApp })}
+              meter={renewalsMeter(row)}
+              hint={exhaustedHint(row, 'renewals')}
             />
           </View>
         )}

@@ -385,7 +385,7 @@ export default function MyMarketClient() {
     setRefused(null);
     try {
       const { data, error } = await supabaseBrowser().functions.invoke('billing-checkout', {
-        body: { product_key: 'GNOME_LISTING_PROMOTION', listing_id: l.id },
+        body: { product_key: 'GNOME_LISTING_PROMOTION', listing_id: l.id, platform: 'web' },
       });
       const code = (data as { error?: string } | null)?.error;
       if (code === 'NOT_YOUR_LISTING') { setError('That listing is not yours.'); return; }

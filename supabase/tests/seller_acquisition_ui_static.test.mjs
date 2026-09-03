@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const admin = read('admin/App.tsx');
 const claim = read('expo/app/claim-market.tsx');
 const assist = read('expo/app/market/assistance.tsx');
 const upgrade = read('expo/app/upgrade.tsx');
-const billing = read('expo/lib/billing.ts');
 const webPricing = read('web/app/pricing/PricingCTA.tsx');
 const webClaim = read('web/app/claim-market/ClaimMarketClient.tsx');
 const webImport = read('web/app/my/import/ImportClient.tsx');
@@ -24,12 +24,14 @@ assert.match(claim, /Claim my Market/u);
 assert.match(claim, /PUBLIC_STAND/u);
 assert.match(claim, /One quick account update/u);
 assert.match(assist, /'OFF'.*'SUPPORT'.*'MANAGED'/su);
-assert.match(upgrade, /Promo code/u);
-assert.match(upgrade, /Have a code\? Apply it before checkout\./u);
-assert.match(upgrade, /Billing test mode/iu);
-assert.match(billing, /action: 'preview_promo'/u);
-assert.match(billing, /billing-checkout/u);
+assert.doesNotMatch(upgrade, /Promo code|Have a code\?|FOUNDING3|preview_promo/iu);
+assert.equal(
+  existsSync(fileURLToPath(new URL('../../expo/lib/billing.ts', import.meta.url))),
+  false,
+  'native external digital checkout must remain absent',
+);
 assert.match(webPricing, /promo/iu);
+assert.match(webPricing, /platform:\s*'web'/u);
 assert.match(webClaim, /verify_concierge_email/u);
 assert.match(webClaim, /session\.access_token/u);
 assert.match(webClaim, /claim_prepared_market/u);

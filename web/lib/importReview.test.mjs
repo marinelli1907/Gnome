@@ -2,14 +2,11 @@
 //
 //   node web/lib/importReview.test.mjs
 //
-// Web and Expo must MEAN the same thing. The cheapest possible drift-proof comes first: the two
-// files are byte-identical twins, asserted here — a divergence fails before any behavior runs.
-// The behavior cases then pin the sentences: human words for missing fields, honest plan-aware
-// summaries built only from server numbers, and a create-payload that can never smuggle an
-// unknown key to the server.
+// Web and Expo share the same data contract and arithmetic. Their purchase copy
+// intentionally differs: standalone overages remain available on web, while the
+// native formatter can only offer a plan upgrade or allowance reset.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, copyFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { mkdtempSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,15 +22,15 @@ function ck(name, ok, detail = '') {
   console.log(`  ${String(n).padStart(3)}  ${name}  ${ok ? 'PASS' : `FAIL  ${detail}`}`);
 }
 
-const md5 = (p) => createHash('md5').update(readFileSync(p)).digest('hex');
-ck('web and expo modules are byte-identical twins', md5(WEB) === md5(EXPO),
-  `${md5(WEB)} vs ${md5(EXPO)}`);
-
 const tmp = mkdtempSync(join(tmpdir(), 'ir-'));
 copyFileSync(WEB, join(tmp, 'importReview.ts'));
+copyFileSync(EXPO, join(tmp, 'expoImportReview.ts'));
 execFileSync('npx', ['--yes', 'esbuild@0.23.0', join(tmp, 'importReview.ts'),
   '--format=esm', '--target=es2022', `--outfile=${join(tmp, 'ir.mjs')}`], { stdio: 'pipe' });
+execFileSync('npx', ['--yes', 'esbuild@0.23.0', join(tmp, 'expoImportReview.ts'),
+  '--format=esm', '--target=es2022', `--outfile=${join(tmp, 'expo-ir.mjs')}`], { stdio: 'pipe' });
 const m = await import(join(tmp, 'ir.mjs'));
+const expo = await import(join(tmp, 'expo-ir.mjs'));
 
 const cand = (over = {}) => ({
   product_name: 'Roma Tomatoes', variety: 'Roma', category_terms: ['tomato'],
@@ -102,6 +99,11 @@ const freeOverNoExtras = m.allowanceSummary({ plan: 'free', publishes_allowed: 3
 ck('free-over-allowance can suppress extra-publish price copy',
   !freeOverNoExtras.text.includes('$0.99') && freeOverNoExtras.text.includes('upgrade for unlimited Sell publishes'),
   freeOverNoExtras.text);
+const nativeFreeOver = expo.allowanceSummary({ plan: 'free', publishes_allowed: 3, publishes_used: 0,
+  publishes_remaining: 3, sale_candidates_selected: 17, exceeds_included_allowance: true });
+ck('native free-over-allowance never offers a standalone digital purchase',
+  !nativeFreeOver.text.includes('$0.99') && nativeFreeOver.text.includes('upgrade for unlimited Sell publishes'),
+  nativeFreeOver.text);
 const proWithin = m.allowanceSummary({ plan: 'grower', publishes_allowed: 20, publishes_used: 0,
   publishes_remaining: 20, sale_candidates_selected: 17, exceeds_included_allowance: false });
 ck('pro-within-allowance gets no upsell', proWithin.suggestUpgrade === false

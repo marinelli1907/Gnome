@@ -95,6 +95,7 @@ export default function PricingCTA({
         body: {
           product_key: productKey,
           promo_code: promoCode.trim() || undefined,
+          platform: 'web',
         },
       });
       // A non-2xx from an edge function surfaces as `error`, but the server's own

@@ -44,10 +44,7 @@ export type Meter = {
   exhausted: boolean;
   unlimited: boolean;
 };
-export type PurchaseCopyOptions = { canBuyExtras?: boolean };
-
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
-const canMentionExtras = (opts?: PurchaseCopyOptions) => opts?.canBuyExtras !== false;
 
 /**
  * Next upgrade in the customer-facing ladder, or null at the top. Keyed on display_name because
@@ -121,7 +118,7 @@ export function listingsMeter(row: AllowanceRow): Meter {
   };
 }
 
-export function renewalsMeter(row: AllowanceRow, opts?: PurchaseCopyOptions): Meter {
+export function renewalsMeter(row: AllowanceRow): Meter {
   const heading = `Renewals ${periodLabel(row)}`;
 
   if (row.renewals_allowed === null) {
@@ -137,7 +134,7 @@ export function renewalsMeter(row: AllowanceRow, opts?: PurchaseCopyOptions): Me
   }
 
   // Free includes none. "0 of 0 used" is technically true and tells the seller nothing, so this
-  // states the plan fact and, only where platform policy allows, the extra-renewal price.
+  // states the plan fact and the compliant upgrade path.
   if (row.renewals_allowed === 0) {
     return {
       heading: 'Renewals',
@@ -148,7 +145,7 @@ export function renewalsMeter(row: AllowanceRow, opts?: PurchaseCopyOptions): Me
         ...(row.renewals_actual > 0
           ? [{ value: `${row.renewals_actual} renewed ${periodLabel(row)}` }]
           : []),
-        { value: canMentionExtras(opts) ? '$0.99 each' : 'Upgrade for renewals' },
+        { value: 'Upgrade for renewals' },
       ],
     };
   }
@@ -182,20 +179,11 @@ export function renewalsMeter(row: AllowanceRow, opts?: PurchaseCopyOptions): Me
 }
 
 /**
- * The hint under an exhausted meter. Status and a price, never a checkout: the dashboard states
- * what an extra costs, and the real purchase goes through the publish/renew flow where the server
- * decides whether payment is genuinely owed.
+ * Native does not sell standalone digital publishes or renewals. The plan prompt beside these
+ * meters owns the upgrade action, so an exhausted meter needs no purchase-price hint.
  */
-export function exhaustedHint(row: AllowanceRow, which: 'listings' | 'renewals', opts?: PurchaseCopyOptions): string | null {
-  if (!canMentionExtras(opts)) return null;
-  if (which === 'listings') {
-    if (row.publishes_allowed === null || row.publishes_remaining !== 0) return null;
-    return 'Additional listing: $0.99';
-  }
-  if (row.renewals_allowed === null) return null;
-  if (row.renewals_allowed === 0) return null;   // already stated in the meter itself
-  if (row.renewals_remaining !== 0) return null;
-  return 'Additional renewal: $0.99';
+export function exhaustedHint(_row: AllowanceRow, _which: 'listings' | 'renewals'): string | null {
+  return null;
 }
 
 export function upgradeHint(row: AllowanceRow): { name: string; price: string } | null {

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowUpRight, Check, CreditCard, RefreshCw, Settings, TicketPercent } from 'lucide-react-native';
+import { ArrowUpRight, Check, CreditCard, RefreshCw, Settings } from 'lucide-react-native';
 import UpgradePromptCard from '@/components/UpgradePromptCard';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
@@ -10,12 +10,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useMyListingAllowance, useMyMarket, usePlanLimits } from '@/lib/db';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { listingsMeter, planDisplay, renewalsMeter, resetLabel } from '@/lib/allowance';
-import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import { nativeWebUrl } from '@/lib/links';
-import {
-  createPlanCheckout, finishPlanCheckout, openStripeSubscriptionPortal, previewPlanPromo,
-  type PlanCheckoutSession, type PlanProductKey, type PlanPromoPreview,
-} from '@/lib/billing';
 import type { MarketPlan, PlanLimit } from '@/types';
 import { NATIVE_PRODUCT_FOR_PLAN, useNativeSubscriptions } from '@/lib/nativeSubscriptions';
 
@@ -26,7 +21,7 @@ const tierListings = (l?: PlanLimit) =>
   l === undefined || l.monthly_publish_allowance === undefined ? null
     : l.monthly_publish_allowance === null ? 'Unlimited Sell listings'
     : `${l.monthly_publish_allowance} new Sell listings/mo`;
-const tierRenewals = (l?: PlanLimit, canBuyExtras = true) =>
+const tierRenewals = (l?: PlanLimit) =>
   l === undefined || l.included_renewals_per_period === undefined ? null
     : l.included_renewals_per_period === null ? 'unlimited renewals'
     : l.included_renewals_per_period === 0
@@ -40,10 +35,9 @@ const tierWanted = (_l?: PlanLimit) => null;
 const tierQr = (l?: PlanLimit) =>
   l === undefined || l.qr_tools === undefined ? null
     : l.qr_tools ? 'Custom Market QR tools' : 'Market link included · QR tools locked';
-const tierCaveat = (l?: PlanLimit, canBuyExtras = true) => {
+const tierCaveat = (l?: PlanLimit) => {
   if (l === undefined || l.included_renewals_per_period === undefined) return null;
   if (l.included_renewals_per_period === null) return 'No listing or renewal overage charges.';
-  if (!canBuyExtras) return 'Review higher plans for unlimited Sell listings and renewals, or post again when your allowance resets.';
   if (l.included_renewals_per_period === 0) return 'Review higher plans for renewal access.';
   return `Review higher plans after the first ${l.included_renewals_per_period} renewal${l.included_renewals_per_period === 1 ? '' : 's'}.`;
 };
@@ -52,10 +46,6 @@ const tierCaveat = (l?: PlanLimit, canBuyExtras = true) => {
 // come from planDisplay — customer-facing names only; the retired sponsor rung
 // ("Legacy Farm", the old $99 tier) is comp-only and deliberately not shown.
 const ORDER: MarketPlan[] = ['free', 'grower', 'farm'];
-const PRODUCT_FOR_PLAN: Partial<Record<MarketPlan, PlanProductKey>> = {
-  grower: 'GNOME_GROWER_MONTHLY',
-  farm: 'GNOME_FARM_MONTHLY',
-};
 const PLAN_RANK: Record<MarketPlan, number> = { free: 0, grower: 1, farm: 2, sponsor: 3 };
 
 /** Resolved entitlements: plan + subscription + purchased add-ons, from the
@@ -130,12 +120,6 @@ export default function UpgradeScreen() {
   const row = allowance.data ?? null;
   const [checkoutPlan, setCheckoutPlan] = useState<MarketPlan | null>(null);
   const nextPlan: MarketPlan | null = plan === 'free' ? 'grower' : plan === 'grower' ? 'farm' : null;
-  const [promoCode, setPromoCode] = useState('');
-  const [promoPlan, setPromoPlan] = useState<MarketPlan>(nextPlan ?? 'grower');
-  const [promoBusy, setPromoBusy] = useState(false);
-  const [promoError, setPromoError] = useState<string | null>(null);
-  const [appliedPromo, setAppliedPromo] = useState<PlanPromoPreview | null>(null);
-  const [nativeFounding, setNativeFounding] = useState<'eligible'|'store-confirmed'|null>(null);
   const usesNativeSubscriptions = Platform.OS === 'ios';
   const refreshPlan=useCallback(async()=>{
     await Promise.all([ent.refetch(),subscriptions.refetch(),allowance.refetch(),market.refetch()]);
@@ -155,113 +139,23 @@ export default function UpgradeScreen() {
     Alert.alert(native.state.kind==='active'?'Subscription active':native.state.kind==='pending'?'Payment pending':'Subscription',native.state.message);
   },[native.state.kind,native.state.message]);
 
-  const completeCheckout = async (session: PlanCheckoutSession, target: MarketPlan) => {
-    setCheckoutPlan(target);
-    const outcome = await finishPlanCheckout(session);
-    setCheckoutPlan(null);
-    if (outcome === 'active') {
-      await refreshPlan();
-      Alert.alert(`${planDisplay(target)} is active`, 'Your Market benefits and limits have been updated.');
-    } else if (outcome === 'pending') {
-      Alert.alert('Payment is confirming', 'Stripe received the checkout. Your plan will update as soon as Gnome confirms the payment.');
-    } else if (outcome === 'error') {
-      Alert.alert('Could not confirm the upgrade', 'Nothing else was charged. Check your plan again in a moment.');
-    }
-  };
-
   const beginUpgrade = async (target: MarketPlan) => {
-    const productKey = PRODUCT_FOR_PLAN[target];
-    if (!productKey || checkoutPlan) return;
-    if (usesNativeSubscriptions) {
-      const currentProvider='APPLE';
-      const other=subscriptions.data?.paid_subscriptions.find((sub)=>
-        ['active','trialing','grace_period','canceled','cancelled'].includes(sub.status)
-        && sub.source!==currentProvider && (!sub.expires_at || Date.parse(sub.expires_at)>Date.now()));
-      if (other) {
-        Alert.alert(
-          'You already have a paid plan',
-          `Your ${planDisplay(other.plan)} subscription is billed through ${other.source==='STRIPE'?'the Gnome website':other.source==='APPLE'?'Apple':'Google Play'}. Manage that subscription instead of paying twice.`,
-        );
-        return;
-      }
-      setCheckoutPlan(target);
-      const nativePromo = target === 'grower' && nativeFounding ? promoCode : undefined;
-      await native.purchase(target,nativePromo);
-      setCheckoutPlan(null);
-      return;
-    }
-    if (!canBuyDigitalInApp) return;
-    setCheckoutPlan(target);
-    const promo = appliedPromo?.product_key === productKey ? appliedPromo.promo.code : undefined;
-    const result = await createPlanCheckout(productKey, promo);
-    setCheckoutPlan(null);
-    if (!result.session) {
-      Alert.alert('Checkout unavailable', result.error ?? 'Nothing was charged.');
-      return;
-    }
-    if (result.session.mode === 'test') {
+    if (!usesNativeSubscriptions || checkoutPlan || (target !== 'grower' && target !== 'farm')) return;
+    const currentProvider='APPLE';
+    const other=subscriptions.data?.paid_subscriptions.find((sub)=>
+      ['active','trialing','grace_period','canceled','cancelled'].includes(sub.status)
+      && sub.source!==currentProvider && (!sub.expires_at || Date.parse(sub.expires_at)>Date.now()));
+    if (other) {
       Alert.alert(
-        'Test checkout only',
-        'Payments are not live. A real card will not be charged. Continuing may temporarily activate a test plan in this environment.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Continue testing', onPress: () => void completeCheckout(result.session!, target) },
-        ],
+        'You already have a paid plan',
+        `Your ${planDisplay(other.plan)} subscription is billed through ${other.source==='STRIPE'?'the Gnome website':other.source==='APPLE'?'Apple':'Google Play'}. Manage that subscription instead of paying twice.`,
       );
       return;
     }
-    await completeCheckout(result.session, target);
+    setCheckoutPlan(target);
+    await native.purchase(target);
+    setCheckoutPlan(null);
   };
-
-  const applyPromo = async () => {
-    const productKey = PRODUCT_FOR_PLAN[promoPlan];
-    if (!productKey || !promoCode.trim() || promoBusy) return;
-    setPromoBusy(true);
-    setPromoError(null);
-    setAppliedPromo(null);
-    setNativeFounding(null);
-    if (usesNativeSubscriptions) {
-      if (promoCode.trim().toUpperCase()!=='FOUNDING3') {
-        setPromoBusy(false);
-        setPromoError('That code is not available through this app store.');
-        return;
-      }
-      if (promoPlan!=='grower') {
-        setPromoBusy(false);
-        setPromoError('FOUNDING3 applies to Pro. Select Pro to continue.');
-        return;
-      }
-      const eligibility=native.foundingEligibility(promoPlan);
-      setPromoBusy(false);
-      if (eligibility==='ineligible') {
-        setPromoError('Apple says this account is not eligible for the Founding3 trial.');
-        return;
-      }
-      if (eligibility==='unavailable') {
-        setPromoError('The store has not returned this plan yet. Try again in a moment.');
-        return;
-      }
-      setPromoCode('FOUNDING3');
-      setNativeFounding(eligibility);
-      return;
-    }
-    const result = await previewPlanPromo(productKey, promoCode);
-    setPromoBusy(false);
-    if (!result.preview) {
-      setPromoError(result.error ?? 'That code could not be applied.');
-      return;
-    }
-    setPromoCode(result.preview.promo.code);
-    setAppliedPromo(result.preview);
-  };
-
-  const promoBenefit = appliedPromo?.promo.discount_type === 'percent'
-    ? `${Number(appliedPromo.promo.discount_percent ?? 0)}% off${appliedPromo.promo.duration === 'repeating'
-      ? ` for ${appliedPromo.promo.duration_in_months} months`
-      : appliedPromo.promo.duration === 'forever' ? ' ongoing' : ' once'}`
-    : appliedPromo?.promo.discount_amount_cents != null
-      ? `$${(appliedPromo.promo.discount_amount_cents / 100).toFixed(2)} off`
-      : null;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}>
@@ -269,9 +163,7 @@ export default function UpgradeScreen() {
       <Text style={styles.sub}>
         {usesNativeSubscriptions
           ? 'Compare seller plans and subscribe securely with Apple. Gnome unlocks a plan only after server verification.'
-          : canBuyDigitalInApp
-            ? 'Compare seller plans and upgrade securely with Stripe. Your plan changes only after Gnome confirms the subscription.'
-            : 'Compare seller plans and benefits. Digital plan checkout is not available in the Android app, while existing paid or complimentary access still works here.'}
+          : 'Compare seller plans and benefits. Digital plan checkout is not available in the Android app, while existing paid or complimentary access still works here.'}
         {' '}All Sell listings run for 7 days; Share Free, Trade and Plot posts never touch your Sell allowance.
       </Text>
 
@@ -304,13 +196,6 @@ export default function UpgradeScreen() {
                   <Settings size={16} color={Colors.primary}/><Text style={styles.manageButtonText}>Manage subscription</Text>
                 </Pressable>
               ) : null}
-              {primaryPaid.source==='STRIPE' && Platform.OS !== 'android' ? (
-                <Pressable style={styles.manageButton} onPress={()=>void openStripeSubscriptionPortal().then((result)=>{
-                  if (result.error) Alert.alert('Could not open subscription management',result.error);
-                })}>
-                  <Settings size={16} color={Colors.primary}/><Text style={styles.manageButtonText}>Manage website subscription</Text>
-                </Pressable>
-              ) : null}
             </>
           ) : null}
           {allowance.isError && (
@@ -322,7 +207,7 @@ export default function UpgradeScreen() {
                 {listingsMeter(row).lines.map((l) => l.value).join(' · ')}
               </Text>
               <Text style={styles.entLine}>
-                {renewalsMeter(row, { canBuyExtras: canBuyDigitalInApp }).lines.map((l) => l.value).join(' · ')}
+                {renewalsMeter(row).lines.map((l) => l.value).join(' · ')}
               </Text>
               <Text style={styles.entHint}>{resetLabel(row)}</Text>
             </>
@@ -340,92 +225,7 @@ export default function UpgradeScreen() {
         </View>
       ) : null}
 
-      {canBuyDigitalInApp ? (
-        <View style={styles.promoCard}>
-          <View style={styles.promoHead}>
-            <View style={styles.promoIcon}><TicketPercent size={20} color={Colors.text} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.promoTitle}>Promo code</Text>
-              <Text style={styles.promoHint}>Have a code? Apply it before checkout.</Text>
-            </View>
-          </View>
-          <View style={styles.planChoiceRow}>
-            {(['grower', 'farm'] as MarketPlan[]).map((choice) => (
-              <Pressable key={choice} style={[styles.planChoice, promoPlan === choice && styles.planChoiceActive]}
-                onPress={() => {
-                  setPromoPlan(choice);
-                  setAppliedPromo(null);
-                  setNativeFounding(null);
-                  setPromoError(null);
-                }}>
-                <Text style={[styles.planChoiceText, promoPlan === choice && styles.planChoiceTextActive]}>{planDisplay(choice)}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.promoEntry}>
-            <TextInput value={promoCode} onChangeText={(value) => {
-              setPromoCode(value.toUpperCase());
-              setAppliedPromo(null);
-              setNativeFounding(null);
-              setPromoError(null);
-            }}
-              placeholder="Enter promo code" placeholderTextColor={Colors.textTertiary} autoCapitalize="characters"
-              autoCorrect={false} style={styles.promoInput} />
-            <Pressable style={[styles.applyButton, (!promoCode.trim() || promoBusy) && styles.applyButtonDisabled]}
-              disabled={!promoCode.trim() || promoBusy} onPress={() => void applyPromo()}>
-              {promoBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.applyButtonText}>Apply</Text>}
-            </Pressable>
-          </View>
-          {promoError ? <Text style={styles.promoError}>{promoError}</Text> : null}
-          {nativeFounding ? (
-            <View style={styles.promoResult}>
-              <Text style={styles.promoApplied}>FOUNDING3 recognized</Text>
-              <Text style={styles.promoResultPlan}>Pro</Text>
-              {nativeFounding==='eligible' ? (
-                <>
-                  <Text style={styles.promoBenefit}>$0 today</Text>
-                  <Text style={styles.promoBenefit}>Pro free for 3 months</Text>
-                  <Text style={styles.promoRenewal}>Then $9.99/month unless canceled. Apple will show the final offer before you confirm.</Text>
-                </>
-              ) : (
-                <Text style={styles.promoRenewal}>Apple will check introductory-offer eligibility and show the exact trial and renewal terms before you confirm. Gnome will not promise or grant the trial independently.</Text>
-              )}
-              <Pressable style={styles.promoContinue} onPress={() => void beginUpgrade('grower')} disabled={checkoutPlan !== null}>
-                <Text style={styles.promoContinueText}>Continue with Apple</Text>
-                <ArrowUpRight size={16} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          ) : null}
-          {appliedPromo ? (
-            <View style={styles.promoResult}>
-              <Text style={styles.promoApplied}>{appliedPromo.promo.code} applied</Text>
-              <Text style={styles.promoResultPlan}>{planDisplay(appliedPromo.plan)}</Text>
-              <Text style={styles.promoBenefit}>$0 today</Text>
-              <Text style={styles.promoBenefit}>{promoBenefit}</Text>
-              {appliedPromo.promo.conversion_behavior === 'AUTO_RENEW' ? (
-                <Text style={styles.promoRenewal}>
-                  Then ${(appliedPromo.renewal_price_cents / 100).toFixed(2)}/month unless canceled.
-                  {appliedPromo.promo.payment_method_required ? ' A payment method is required to activate this offer.' : ''}
-                </Text>
-              ) : (
-                <Text style={styles.promoRenewal}>No card required. This offer ends without converting to a paid plan.</Text>
-              )}
-              {appliedPromo.mode === 'test' ? (
-                <View style={styles.testMode}>
-                  <Text style={styles.testModeTitle}>Billing test mode</Text>
-                  <Text style={styles.testModeText}>This checkout cannot create a live paid subscription.</Text>
-                </View>
-              ) : null}
-              <Pressable style={styles.promoContinue} onPress={() => void beginUpgrade(appliedPromo.plan)} disabled={checkoutPlan !== null}>
-                <Text style={styles.promoContinueText}>Continue with offer</Text>
-                <ArrowUpRight size={16} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {nextPlan && canBuyDigitalInApp ? (
+      {nextPlan && usesNativeSubscriptions ? (
         <View style={styles.upgradeCard}>
           <View style={styles.upgradeIcon}><CreditCard size={20} color={Colors.primary} /></View>
           <View style={{ flex: 1 }}>
@@ -474,7 +274,7 @@ export default function UpgradeScreen() {
               {paidPrice ? <Text style={styles.tierPrice}>{paidPrice} per month</Text> : null}
               <Text style={styles.tierMeta}>
                 {tierListings(l) ?? '—'}
-                {tierRenewals(l, canBuyDigitalInApp) ? ` · ${tierRenewals(l, canBuyDigitalInApp)}` : ''}
+                {tierRenewals(l) ? ` · ${tierRenewals(l)}` : ''}
                 {tierWanted(l) ? ` · ${tierWanted(l)}` : ''}
                 {tierQr(l) ? ` · ${tierQr(l)}` : ''}
                 {l?.max_pickup_locations
@@ -482,7 +282,7 @@ export default function UpgradeScreen() {
                   : ''}
                 {l?.included_boost_credits ? ` · ${l.included_boost_credits} promotions/mo` : ''}
               </Text>
-              {tierCaveat(l, canBuyDigitalInApp) ? <Text style={styles.tierPerk}>{tierCaveat(l, canBuyDigitalInApp)}</Text> : null}
+              {tierCaveat(l) ? <Text style={styles.tierPerk}>{tierCaveat(l)}</Text> : null}
               {p !== 'free' && (
                 <Text style={styles.tierPerk}>
                   AI Listing Assistant · delivery your way — distance fees, same-day & next-day cutoffs, weekly schedules
@@ -493,8 +293,7 @@ export default function UpgradeScreen() {
               )}
             </View>
             {current ? <Check size={20} color={Colors.primary} /> : null}
-            {!current && canBuyDigitalInApp && p !== 'free'
-              && (usesNativeSubscriptions || PLAN_RANK[p] > PLAN_RANK[plan]) ? (
+            {!current && usesNativeSubscriptions && p !== 'free' ? (
               <Pressable style={styles.tierUpgrade} onPress={() => void beginUpgrade(p)}
                 disabled={checkoutPlan !== null} accessibilityRole="button"
                 accessibilityLabel={`${PLAN_RANK[p] > PLAN_RANK[plan] ? 'Upgrade' : 'Change'} to ${planDisplay(p)}`}>
@@ -509,8 +308,6 @@ export default function UpgradeScreen() {
       <Text style={styles.tierPerk}>
         {usesNativeSubscriptions
           ? 'Checkout stays inside Apple. Gnome confirms the store transaction on the server before changing your plan.'
-          : canBuyDigitalInApp
-          ? 'Checkout opens securely with Stripe. Gnome confirms the subscription before changing your plan.'
           : 'Digital plan checkout is not available in the Android app. Your existing paid or complimentary access still works here.'}
       </Text>
       {usesNativeSubscriptions ? (
@@ -560,32 +357,6 @@ const styles = StyleSheet.create({
   upgradeBody: { fontSize: 12.5, lineHeight: 17, fontFamily: fonts.regular, color: Colors.textSecondary, marginTop: 2 },
   upgradeButton: { minWidth: 86, minHeight: 42, borderRadius: 8, paddingHorizontal: 13, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary },
   upgradeButtonText: { fontSize: 13, fontFamily: fonts.bold, color: '#FFFFFF' },
-  promoCard: { backgroundColor: Colors.goldLight, borderWidth: 1.5, borderColor: Colors.harvestYellow, borderRadius: 8, padding: 14, marginBottom: 14 },
-  promoHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  promoIcon: { width: 36, height: 36, borderRadius: 8, backgroundColor: Colors.harvestYellow, alignItems: 'center', justifyContent: 'center' },
-  promoTitle: { fontSize: 17, fontFamily: fonts.bold, color: Colors.text },
-  promoHint: { fontSize: 12.5, fontFamily: fonts.semibold, color: Colors.textSecondary, marginTop: 1 },
-  planChoiceRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  planChoice: { flex: 1, minHeight: 38, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
-  planChoiceActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '10' },
-  planChoiceText: { fontSize: 13, fontFamily: fonts.semibold, color: Colors.textSecondary },
-  planChoiceTextActive: { color: Colors.primary },
-  promoEntry: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  promoInput: { flex: 1, minHeight: 44, borderRadius: 8, borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.surface, paddingHorizontal: 12, color: Colors.text, fontFamily: fonts.semibold, fontSize: 15 },
-  applyButton: { minWidth: 76, minHeight: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary, paddingHorizontal: 14 },
-  applyButtonDisabled: { opacity: 0.45 },
-  applyButtonText: { color: '#FFFFFF', fontFamily: fonts.bold, fontSize: 13 },
-  promoError: { color: Colors.error, fontFamily: fonts.semibold, fontSize: 12.5, marginTop: 8 },
-  promoResult: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.borderLight },
-  promoApplied: { color: Colors.primary, fontFamily: fonts.bold, fontSize: 12, textTransform: 'uppercase' },
-  promoResultPlan: { color: Colors.text, fontFamily: fonts.bold, fontSize: 18, marginTop: 4 },
-  promoBenefit: { color: Colors.text, fontFamily: fonts.semibold, fontSize: 15, marginTop: 2 },
-  promoRenewal: { color: Colors.textSecondary, fontFamily: fonts.regular, fontSize: 12.5, lineHeight: 18, marginTop: 4 },
-  testMode: { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FDBA74', borderRadius: 8, padding: 10, marginTop: 10 },
-  testModeTitle: { color: '#9A3412', fontFamily: fonts.bold, fontSize: 12, textTransform: 'uppercase' },
-  testModeText: { color: '#9A3412', fontFamily: fonts.regular, fontSize: 12.5, marginTop: 2 },
-  promoContinue: { minHeight: 44, borderRadius: 8, backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
-  promoContinueText: { color: '#FFFFFF', fontFamily: fonts.bold, fontSize: 13.5 },
   tier: {
     flexDirection: 'row',
     alignItems: 'center',

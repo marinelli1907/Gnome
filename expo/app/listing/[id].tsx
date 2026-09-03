@@ -26,8 +26,6 @@ import type { ListingType } from '@/types';
 import { useAuth } from '@/providers/AuthProvider';
 import { useBlockUser, useBundleComponents, useClaimListing, useListing, useListingVerifiedBadge, useMyClaims, useMarketReputation, useReport, logEvent } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { purchaseOverage } from '@/lib/billing';
-import { canBuyDigitalInApp } from '@/lib/digitalPurchase';
 import { distanceMiles, fmtDistance, getCoordsIfGranted, type Coords } from '@/lib/location';
 import { pickedDateLabel } from '@/lib/harvestDate';
 import { breadcrumb, useTaxonomy } from '@/lib/taxonomy';
@@ -113,9 +111,8 @@ export default function ListingDetailScreen() {
   const isOwner = userId === listing.owner_id;
 
   // renew_listing (0104): republishes THIS listing for a fresh lifetime measured from now. The
-  // allowance trigger decides included vs paid as the status flips; PUBLISH_ALLOWANCE_EXHAUSTED
-  // means this renewal costs $0.99, and after a confirmed purchase the same call runs again —
-  // the payment authorized exactly this renewal, and consumption is once-only server-side.
+  // allowance trigger is authoritative; an exhausted native account can upgrade or wait for its
+  // allowance to reset, but cannot buy a standalone digital renewal in the app.
   const renewNow = async () => {
     setRenewing(true);
     try {
@@ -126,25 +123,12 @@ export default function ListingDetailScreen() {
         return;
       }
       if (/PUBLISH_ALLOWANCE_EXHAUSTED/.test(error.message ?? '')) {
-        // D1: on Android the $0.99 renewal is not purchasable in-app until Play
-        // Billing (v1.2). The listing is untouched either way; Pro removes the
-        // renewal limit entirely, so the plan screen is the real answer.
         Alert.alert(
-          canBuyDigitalInApp ? 'Renewal — $0.99' : 'Included renewals used up',
-          canBuyDigitalInApp
-            ? 'You’ve used your included renewals for this period. Renew this listing for another 7 days for $0.99?'
-            : 'You’ve used your included renewals for this period. Upgrade for unlimited renewals — your listing is unchanged in the meantime.',
+          'Included renewals used up',
+          'You’ve used your included renewals for this period. Upgrade for unlimited renewals — your listing is unchanged in the meantime.',
           [
             { text: 'Not now', style: 'cancel' },
-            ...(!canBuyDigitalInApp
-              ? [{ text: 'See plans', onPress: () => router.push('/upgrade') }]
-              : []),
-            ...(!canBuyDigitalInApp ? [] : [{ text: 'Renew for $0.99', onPress: async () => {
-              const outcome = await purchaseOverage(listing.id);
-              if (outcome === 'paid' || outcome === 'not_needed') await renewNow();
-              else if (outcome === 'pending') Alert.alert('Payment received', 'Stripe is confirming. Tap Renew again in a few seconds — you will not be charged twice.');
-              else if (outcome === 'error') Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged.');
-            } }]),
+            { text: 'See plans', onPress: () => router.push('/upgrade') },
           ],
         );
         return;
@@ -417,7 +401,7 @@ export default function ListingDetailScreen() {
           </Pressable>
         ) : isOwner && listing.status === 'expired' && type === 'sale' ? (
           // Renewal: one tap re-runs the same listing for a fresh 7 days. The server decides
-          // whether this renewal is included or needs $0.99 — the client never guesses.
+          // whether the plan includes it; the client never guesses.
           <Button label="Renew for another 7 days" onPress={() => void renewNow()} loading={renewing} />
         ) : isOwner ? (
           <Text style={styles.footerNote}>

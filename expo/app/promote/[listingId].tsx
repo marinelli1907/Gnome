@@ -13,12 +13,12 @@ import {
   useMarketPromotionStatus,
   useMyMarket,
   usePromoteListing,
-  usePromotePurchased,
 } from '@/lib/db';
 
 // FEATURED LISTING PROMOTION — 7 days, redeemed with an included plan credit or
-// a previously granted credit. All allowance math is
-// server-side (market_promotion_status → effective plan).
+// a complimentary credit included in Pro or Farm. All allowance math is
+// server-side (market_promotion_status → effective plan). Standalone purchased
+// promotion credits are not redeemable in the native app.
 export default function PromoteScreen() {
   const { listingId } = useLocalSearchParams<{ listingId: string }>();
   const insets = useSafeAreaInsets();
@@ -28,18 +28,16 @@ export default function PromoteScreen() {
   const market = useMyMarket(userId ?? undefined);
   const status = useMarketPromotionStatus(market.data?.id);
   const promote = usePromoteListing(userId ?? undefined);
-  const promotePurchased = usePromotePurchased(userId ?? undefined);
 
   const st = status.data;
   const includedRemaining = st?.included_remaining ?? 0;
-  const purchased = st?.purchased_balance ?? 0;
   const days = st?.duration_days ?? 7;
   const resetsOn = st?.resets_on
     ? new Date(`${st.resets_on}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     : '';
 
   useEffect(() => {
-    if (!isLoading && listing && st && includedRemaining <= 0 && purchased <= 0 && !listing.is_featured) {
+    if (!isLoading && listing && st && includedRemaining <= 0 && !listing.is_featured) {
       void logEvent('boost_upgrade_prompt_viewed', { userId: userId ?? null, listingId, metadata: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,9 +89,7 @@ export default function PromoteScreen() {
         ? `This listing is already featured until ${new Date(stacked[1]).toLocaleDateString()}. One promotion at a time.`
         : /NO_BOOST_CREDITS/.test(m)
           ? 'You’re out of included promotions this month.'
-          : /NO_PURCHASED_CREDITS/.test(m)
-            ? 'No purchased promotion credits available.'
-            : /LISTING_NOT_PROMOTABLE/.test(m)
+          : /LISTING_NOT_PROMOTABLE/.test(m)
               ? 'Only live listings can be promoted.'
               : m || 'Please try again.',
     );
@@ -108,8 +104,6 @@ export default function PromoteScreen() {
       { listingId: listing.id, marketId: market.data!.id, durationDays: days, source: 'plan_credit', priceCents: 0 },
       { onSuccess: done, onError: onErr },
     );
-  const usePurchasedCredit = () =>
-    promotePurchased.mutate({ listingId: listing.id, marketId: market.data!.id }, { onSuccess: done, onError: onErr });
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}>
       <Text style={styles.heading}>Feature “{listing.title}”</Text>
@@ -124,7 +118,7 @@ export default function PromoteScreen() {
           <Text style={styles.creditText}>
             {st ? `${includedRemaining} of ${st.included_allowance} included promotions left` : '—'}
           </Text>
-          {!!resetsOn && <Text style={styles.creditSub}>Resets {resetsOn}{purchased > 0 ? ` · ${purchased} purchased credit${purchased === 1 ? '' : 's'} banked` : ''}</Text>}
+          {!!resetsOn && <Text style={styles.creditSub}>Resets {resetsOn}</Text>}
         </View>
       </View>
 
@@ -133,12 +127,6 @@ export default function PromoteScreen() {
           label={`Feature for ${days} days · FREE (included credit)`}
           onPress={useIncluded}
           loading={promote.isPending}
-        />
-      ) : purchased > 0 ? (
-        <Button
-          label={`Feature for ${days} days · use 1 purchased credit`}
-          onPress={usePurchasedCredit}
-          loading={promotePurchased.isPending}
         />
       ) : (
         <>

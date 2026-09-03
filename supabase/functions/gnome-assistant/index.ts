@@ -209,7 +209,7 @@ CORE JOBS:
 5. MARKETING AND MARKET ANALYSIS — write posts, captions, QR sign copy, Market updates, and practical suggestions. Clearly distinguish known Market facts from your suggestions.
 6. USING THE APP — explain how to post, promote, set pickup, follow a Market, reserve/request items, attach a plant photo, change radius, manage requests, delivery, Seed Drop, and plans. Only describe functionality that actually exists.
 
-PLANS — the only plan facts; never invent others, and prefer the user's own numbers in MARKET INTEL when present: Free $0 — 3 Sell publishes a month, no included renewals, 1 Wanted intro a day, QR tools locked. Pro $9.99/mo — unlimited Sell listings, unlimited renewals, 5 Wanted intros a day, premium QR tools. Farm $29.99/mo — unlimited Sell listings, renewals, and Wanted intros (subject to anti-abuse controls), premium QR tools. Every Sell listing runs 7 days, then expires; on Free, every renewal is $0.99 and an extra Sell publish past the allowance is $0.99. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do; offering a plot needs a paid plan. Every Market has a free public link; the premium QR tools are the paid part.
+PLANS — the only plan facts; never invent others, and prefer the user's own numbers in MARKET INTEL when present: Free $0 — 3 Sell publishes a month, no included renewals, 1 Wanted intro a day, QR tools locked. Pro $9.99/mo — unlimited Sell listings, unlimited renewals, 5 Wanted intros a day, premium QR tools. Farm $29.99/mo — unlimited Sell listings, renewals, and Wanted intros (subject to anti-abuse controls), premium QR tools. Every Sell listing runs 7 days, then expires. Only For Sale listings use the publish allowance — Share Free, Trade, Wanted, and Offer a Plot posts never do; offering a plot needs a paid plan. Every Market has a free public link; the premium QR tools are the paid part.
 
 ZORDY REQUEST ALLOWANCE — customer-facing facts: Free gets 5 successful Zordy requests per day, Pro gets 25, Farm gets 100. No plan is unlimited. The server enforces this; do not invent another tier.
 
@@ -286,7 +286,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? 'chat');
     const appPlatform = typeof body.platform === 'string' ? body.platform.toLowerCase() : '';
-    const digitalPurchasesAvailable = appPlatform !== 'android';
+    const digitalPurchasesAvailable = appPlatform === 'web';
 
     // Global read-side kill switch + provider chain.
     const { data: settings } = await admin.from('ai_settings')
@@ -552,8 +552,8 @@ Deno.serve(async (req: Request) => {
 
     const intel = await marketIntel(admin, uid, mkt2);
     const purchasePolicy = digitalPurchasesAvailable
-      ? ''
-      : '\nANDROID PURCHASE POLICY: This caller is using Android. Do not mention $0.99 extra publishes or renewals, and do not send the user to web checkout for digital plan or overage purchases. When a Free-plan limit is exhausted, say that paid-plan renewal or extra-publish checkout is unavailable on this device.';
+      ? '\nWEB PURCHASE POLICY: On the Gnome website only, a Free seller can buy a $0.99 standalone Sell publish or renewal after included allowance is exhausted. Never imply that web payment is available inside a native app.'
+      : '\nNATIVE PURCHASE POLICY: This caller is using a native app or did not identify a supported web client. Do not mention standalone paid publishes, renewals, or promotion credits, and do not send the user to web checkout for digital functionality. Paid plans may be purchased only through the native store surface when that platform offers it. When a Free-plan limit is exhausted, suggest reviewing plans or waiting for the allowance to reset.';
 
     let r;
     try {

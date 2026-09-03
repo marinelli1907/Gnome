@@ -47,9 +47,8 @@ type Body = {
   quantity?: number;   // GNOME_PICKUP_LOCATION_ADDON
   promo_code?: string; // subscription keys only
   action?: 'checkout' | 'preview_promo' | 'portal';
-  // 'app' asks for the mobile deep-link return pair instead of the web URLs. The VALUES are
-  // server constants either way — the client chooses between two fixed pairs and can never
-  // supply a URL of its own, so checkout cannot be pointed anywhere Gnome does not control.
+  // Digital Stripe checkout is deliberately web-only. Native apps use their store purchase
+  // systems and do not receive a checkout URL from this function.
   platform?: 'app' | 'web';
 };
 
@@ -116,9 +115,9 @@ const PROMO_MESSAGE: Record<string, string> = {
   NO_CODE: 'Enter a code first.',
 };
 
-// Browser callers (web plan/boost purchases, the Ask Gnome $0.99 renewal leg) are
+// Browser callers (web plan/boost purchases and Ask Gnome overage actions) are
 // cross-origin, so the preflight must be answered and every response must carry the
-// header — same posture as ask-gnome/gnome-assistant. Mobile invokes are unaffected.
+// header — same posture as ask-gnome/gnome-assistant.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -146,11 +145,24 @@ Deno.serve(async (req: Request) => {
     // request cannot dodge the gate by reshaping the key.
     const body = (await req.json().catch(() => ({}))) as Body;
     let key = String(body.product_key ?? '').trim().toUpperCase();
+    const rawPromo = String(body.promo_code ?? '').trim();
 
     if (SEED_DROP_COMING_SOON && isSeedDropKey(key)) {
       return json(403, { error: 'SEED_DROP_COMING_SOON', message: SEED_DROP_COMING_SOON_MESSAGE, product_key: key });
     }
     if (!CHECKOUT_ALLOWED_KEYS.has(key)) return json(400, { error: 'UNKNOWN_PRODUCT' });
+
+    // Store compliance: every Stripe product handled here changes digital app
+    // functionality. Native apps must use their store purchase system, and
+    // standalone overages/boosts have no native purchase path in this release.
+    // Missing or legacy `app` platform values fail before entitlement, promo,
+    // allowance, product, mode, key, or Stripe processing.
+    if (body.platform !== 'web') {
+      return json(403, {
+        error: 'DIGITAL_CHECKOUT_WEB_ONLY',
+        message: 'This digital checkout is not available in the mobile app.',
+      });
+    }
 
     // The caller's OWN market (owner_id = uid). Never a client-supplied id.
     const { data: market } = await admin.from('markets').select('id,owner_id').eq('owner_id', uid).limit(1).maybeSingle();
@@ -208,7 +220,6 @@ Deno.serve(async (req: Request) => {
     // authenticated endpoint from becoming a practical code-enumeration oracle.
     if (body.action === 'preview_promo') {
       const plan = PLAN_FOR_KEY[key];
-      const rawPromo = String(body.promo_code ?? '').trim();
       if (!plan || !rawPromo) {
         return json(400, { error: 'PROMO_NOT_APPLICABLE', message: 'Choose a paid plan and enter a promo code.' });
       }
@@ -235,13 +246,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Native apps use Apple / Google Play for new digital plan purchases. The
-    // portal action remains available to manage an existing WEBSITE-billed
-    // Stripe subscription without offering a second subscription.
-    if (body.platform === 'app' && PLAN_FOR_KEY[key] && body.action !== 'portal') {
-      return json(409, { error: 'NATIVE_STORE_REQUIRED', message: 'Subscribe with your device app store.' });
-    }
-    if (body.platform !== 'app' && PLAN_FOR_KEY[key] && market) {
+    if (PLAN_FOR_KEY[key] && market) {
       const { data: otherProvider } = await admin.from('market_subscriptions')
         .select('plan,billing_source,status,expires_at').eq('market_id', market.id).eq('kind', 'plan')
         .neq('billing_source', 'STRIPE').in('status', ['active','trialing','grace_period','canceled','cancelled'])
@@ -301,7 +306,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- promo codes: eligibility decided here, never by Stripe ------------
-    const rawPromo = String(body.promo_code ?? '').trim();
     if (rawPromo) {
       const plan = PLAN_FOR_KEY[key];
       // Only plan subscriptions carry campaigns. Refusing here rather than
@@ -355,25 +359,10 @@ Deno.serve(async (req: Request) => {
       ...(checkoutMode === 'subscription' && promoBehavior
         ? { payment_method_collection: promoPaymentMethodRequired ? 'always' : 'if_required' }
         : {}),
-      // /account does not exist and never has — a customer who paid landed on a
-      // 404 the instant the charge went through. /my is the seller dashboard and
-      // the only page where the thing they just bought becomes visible.
-      ...(body.platform === 'app'
-        ? {
-            // The Expo client opens checkout in an auth session that closes on this scheme.
-            // Return is a SIGNAL, never proof: the app reconciles by re-asking the server
-            // whether payment is still owed before publishing anything.
-            success_url: checkoutMode === 'subscription'
-              ? 'gnome://checkout-success?kind=plan'
-              : 'gnome://checkout-success',
-            cancel_url: checkoutMode === 'subscription'
-              ? 'gnome://checkout-cancelled?kind=plan'
-              : 'gnome://checkout-cancelled',
-          }
-        : {
-            success_url: `${base}/my?checkout=success`,
-            cancel_url: `${base}/my?checkout=cancelled`,
-          }),
+      // /my is the seller dashboard and the only page where the web purchase
+      // becomes visible. Native deep-link returns are intentionally unsupported.
+      success_url: `${base}/my?checkout=success`,
+      cancel_url: `${base}/my?checkout=cancelled`,
       // Stripe refuses allow_promotion_codes and discounts in the same request —
       // verified against the API, and it refuses even when the flag is FALSE:
       //   "You may only specify one of these parameters: allow_promotion_codes, discounts."

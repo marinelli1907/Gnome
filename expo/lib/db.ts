@@ -1156,9 +1156,7 @@ export type PromotionStatus = {
   included_allowance: number;
   included_remaining: number;
   included_used_this_month: number;
-  purchased_balance: number;
   resets_on: string;
-  price_cents: number;
   duration_days: number;
   active: { id: string; listing_id: string; ends_at: string; source: string }[];
 };
@@ -1173,23 +1171,6 @@ export function useMarketPromotionStatus(marketId?: string) {
       const { data, error } = await supabase.rpc('market_promotion_status', { p_market: marketId });
       if (error) throw error;
       return (data as PromotionStatus) ?? null;
-    },
-  });
-}
-
-// Redeem a PURCHASED credit (server-side ledger consumption; definer RPC).
-export function usePromotePurchased(uid?: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { listingId: string; marketId: string }): Promise<void> => {
-      const { error } = await supabase.rpc('promote_listing_purchased', { p_listing: input.listingId });
-      if (error) throw error;
-    },
-    onSuccess: (_d, input) => {
-      void logEvent('promotion_activated', { userId: uid, listingId: input.listingId, metadata: { source: 'paid' } });
-      qc.invalidateQueries({ queryKey: ['featured'] });
-      qc.invalidateQueries({ queryKey: ['promotionStatus', input.marketId] });
-      qc.invalidateQueries({ queryKey: keys.boostCredits(input.marketId) });
     },
   });
 }

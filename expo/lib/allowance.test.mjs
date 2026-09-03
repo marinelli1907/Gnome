@@ -4,9 +4,9 @@
 //
 // Two jobs:
 //   1. PARITY — transpile web/lib/allowance.ts AND expo/lib/allowance.ts and assert identical
-//      output for identical server rows, across a matrix of plan states. The expo file is a copy
-//      (no shared package exists between the two npm roots), and a copy's failure mode is silent
-//      drift; this makes drift a test failure instead.
+//      allowance arithmetic for identical server rows. Native intentionally uses the web
+//      formatter's `canBuyExtras: false` presentation because it has no standalone digital
+//      overage purchase path.
 //   2. PRESENTATION — the same seller-facing assertions the web suite runs, against the expo copy,
 //      so mobile cannot pass parity while both files are wrong together only if web's own suite is
 //      also failing.
@@ -63,12 +63,9 @@ console.log('\nexpo/web allowance parity\n');
 for (const [name, r] of MATRIX) {
   const same =
     JSON.stringify(EXPO.listingsMeter(r)) === JSON.stringify(WEB.listingsMeter(r)) &&
-    JSON.stringify(EXPO.renewalsMeter(r)) === JSON.stringify(WEB.renewalsMeter(r)) &&
-    JSON.stringify(EXPO.renewalsMeter(r, { canBuyExtras: false })) === JSON.stringify(WEB.renewalsMeter(r, { canBuyExtras: false })) &&
-    EXPO.exhaustedHint(r, 'listings') === WEB.exhaustedHint(r, 'listings') &&
-    EXPO.exhaustedHint(r, 'renewals') === WEB.exhaustedHint(r, 'renewals') &&
-    EXPO.exhaustedHint(r, 'listings', { canBuyExtras: false }) === WEB.exhaustedHint(r, 'listings', { canBuyExtras: false }) &&
-    EXPO.exhaustedHint(r, 'renewals', { canBuyExtras: false }) === WEB.exhaustedHint(r, 'renewals', { canBuyExtras: false }) &&
+    JSON.stringify(EXPO.renewalsMeter(r)) === JSON.stringify(WEB.renewalsMeter(r, { canBuyExtras: false })) &&
+    EXPO.exhaustedHint(r, 'listings') === WEB.exhaustedHint(r, 'listings', { canBuyExtras: false }) &&
+    EXPO.exhaustedHint(r, 'renewals') === WEB.exhaustedHint(r, 'renewals', { canBuyExtras: false }) &&
     JSON.stringify(EXPO.upgradeHint(r)) === JSON.stringify(WEB.upgradeHint(r)) &&
     EXPO.resetLabel(r) === WEB.resetLabel(r);
   ck(`parity: ${name}`, same);
@@ -145,9 +142,9 @@ ck('planDisplay: farm is sellable Farm and sponsor is Legacy Farm',
   EXPO.planDisplay('farm') === 'Farm' && EXPO.planDisplay('sponsor') === 'Legacy Farm');
 {
   const r = row({ publishes_used: 3, publishes_actual: 3, publishes_remaining: 0 });
-  const rm = EXPO.renewalsMeter(r, { canBuyExtras: false });
-  ck('Android-style copy hides extra-purchase prices',
-    EXPO.exhaustedHint(r, 'listings', { canBuyExtras: false }) === null
+  const rm = EXPO.renewalsMeter(r);
+  ck('native copy hides standalone extra-purchase prices',
+    EXPO.exhaustedHint(r, 'listings') === null
     && has(rm, 'Upgrade for renewals')
     && !lines(rm).some((v) => v.includes('$0.99')));
 }

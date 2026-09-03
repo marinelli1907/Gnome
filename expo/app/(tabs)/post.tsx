@@ -42,8 +42,6 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useCreateListing, useMyCredentials, useMyMarket, logEvent } from '@/lib/db';
 import { draftListingFromPhoto } from '@/lib/ai';
 import { pickImages, uploadListingImages } from '@/lib/images';
-import { purchaseOverage } from '@/lib/billing';
-import { canBuyDigitalInApp, OVERAGE_UNAVAILABLE_TITLE, OVERAGE_UNAVAILABLE_BODY } from '@/lib/digitalPurchase';
 import { getCurrentCoords } from '@/lib/location';
 import { todayIsoDate, validateHarvestDateInput } from '@/lib/harvestDate';
 import type { ListingType } from '@/types';
@@ -327,21 +325,6 @@ export default function PostScreen() {
     );
   };
 
-  // $0.99 overage: server-priced, server-authorized. On 'paid' the SAME submit runs again with
-  // the form state untouched — that is the draft-preservation guarantee. 'pending' means the
-  // webhook is still landing; the seller retries publish, never payment.
-  const payAndRetryPublish = async () => {
-    const outcome = await purchaseOverage(null);
-    if (outcome === 'paid' || outcome === 'not_needed') {
-      await submit();
-    } else if (outcome === 'pending') {
-      Alert.alert('Payment received', 'Stripe is confirming your payment. Tap Publish again in a few seconds — you will not be charged twice.');
-    } else if (outcome === 'error') {
-      Alert.alert('Something went wrong', 'The checkout could not start. Nothing was charged — your draft is safe. Please try again.');
-    }
-    // 'cancelled': silent — the seller backed out on purpose, the draft is untouched.
-  };
-
   const submit = async () => {
     if (!title.trim()) {
       Alert.alert(isWanted ? 'What are you looking for?' : 'Add a title', 'Give your listing a short title.');
@@ -458,23 +441,14 @@ export default function PostScreen() {
         Alert.alert(err.title, err.message);
       } else if (err?.code === 'PUBLISH_ALLOWANCE_EXHAUSTED') {
         // 0104 model: a monthly publish allowance that expiry does not refund. The draft is
-        // preserved by construction — the insert was refused, and the form state is untouched,
-        // so a successful $0.99 purchase can simply run the same submit again.
+        // preserved by construction — the insert was refused and the form state is untouched.
         void logEvent('plan_limit_hit', { userId, metadata: { listing_type: type, model: 'allowance' } });
         Alert.alert(
-          canBuyDigitalInApp ? 'Included listings used up' : OVERAGE_UNAVAILABLE_TITLE,
-          canBuyDigitalInApp
-            ? 'You’ve used your included Sell listings for this period. Your draft is saved right here either way.'
-            : OVERAGE_UNAVAILABLE_BODY,
+          'Included listings used up',
+          'You’ve used your included Sell listings for this period. Your draft is saved right here — upgrade for unlimited Sell listings, or post again when your allowance resets.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'See plans', onPress: () => router.push('/upgrade') },
-            // D1: Android has no in-app digital purchase until Play Billing
-            // (v1.2). The draft is preserved either way; the plan comparison is
-            // the honest alternative, not a dead end.
-            ...(canBuyDigitalInApp
-              ? [{ text: 'Publish for $0.99', onPress: () => void payAndRetryPublish() }]
-              : []),
           ],
         );
       } else if (err?.code === 'PLAN_LIMIT_REACHED') {
