@@ -82,12 +82,11 @@ apply time and fails loudly if it reappears.
 
 ## Owner decisions currently in force
 
-- **D1** — Android ships **no in-app digital purchase UI**. The gate is
-  `expo/lib/digitalPurchase.ts` (`canBuyDigitalInApp = Platform.OS !== 'android'`).
-  The $0.99 extra listing still exists in product and backend and is live on
-  iOS and web. Do not add an Android purchase surface or a link-out to Stripe.
-  Note the gate covers checkout call sites but **not** every `$0.99` string —
-  several copy surfaces still leak on Android and are a known open defect.
+- **D1** — Native apps ship **no external digital checkout**. iOS sells Pro and
+  Farm only through StoreKit; Android exposes no digital purchase UI in this
+  release. Standalone listing publishes, renewals, and promotions remain web-only
+  Stripe products. Do not add a native Stripe call, link-out, purchased-credit
+  redemption, or checkout-return deep link for digital functionality.
 - **D2** — "3 active Sell listings" is the target model but does **not** ship.
   Current enforcement is publishes-per-calendar-month.
 - **D3** — six tabs: Browse · Map · Post · Ask AI · Market · Profile. The Market

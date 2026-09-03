@@ -26,8 +26,8 @@ retired, not sellable, and its Stripe SKU is deactivated by 0126.
 
 - **$0.99** per additional Sell publish beyond the period allowance.
 - **$0.99** per renewal beyond the plan's included renewals (on Free, every renewal is $0.99).
-- Android does not expose the in-app overage purchase surface for v1.1 (D1);
-  iOS and web still carry the test-mode path unless/until separately gated.
+- Native apps do not expose or redeem the standalone overage purchase for v1.1
+  (D1); the retained Stripe path is web-only.
 - One payment funds exactly one publish or one renewal: the paid authorization
   (`listing_publish_authorizations`, UNIQUE on the Stripe session id) is consumed by the
   activation trigger, so replays, double-taps, and webhook retries cannot double-spend it.
@@ -91,16 +91,14 @@ against either mode); secrets live only in the environment.
 
 ## PRE-LIVE-PAYMENTS TEST REQUIRED
 
-The $0.99 mobile checkout's device-level round trip has **not** been exercised on a simulator or
-physical device (its logic is unit-tested and every server leg was proven against the deployed
-stack, but the browser/deep-link seam was not device-driven). **Before live payments are ever
-enabled**, verify on a device or simulator:
+The $0.99 checkout is web-only. **Before live payments are ever enabled**, verify
+the complete browser flow against the reviewed web deployment:
 
-1. the checkout browser opens from the app;
-2. a successful payment returns into Gnome (`gnome://checkout-success`);
+1. checkout opens from an authenticated Gnome web page;
+2. a successful payment returns to `/my?checkout=success`;
 3. the seller's draft is preserved across the round trip;
 4. cancelling checkout preserves the draft and charges nothing;
-5. a delayed webhook reconciles (the app's poll of `my_overage_required` flips to paid);
+5. a delayed webhook reconciles (`my_overage_required` flips to paid);
 6. a duplicate/replayed return is harmless (no double publish, no double charge).
 
 ## Where enforcement lives

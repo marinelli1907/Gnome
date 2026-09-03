@@ -386,8 +386,8 @@ promotion button, and shared upgrade cards use Android-safe copy.
 Publish rights are a digital service, so Android must not expose the Stripe
 overage checkout at launch. The working tree implements owner decision D1:
 Android sellers who exhaust the Free allowance see upgrade/reset copy, not a
-Stripe checkout button or link-out. The $0.99 architecture remains available for
-iOS/web and for a future native Play Billing implementation.
+Stripe checkout button or link-out. The $0.99 architecture remains available on
+the website and can return natively only through a future store-billing implementation.
 
 Standing verification: before upload, retest allowance exhaustion on Android and
 confirm no `$0.99` checkout surface appears.

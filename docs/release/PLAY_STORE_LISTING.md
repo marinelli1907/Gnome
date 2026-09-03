@@ -33,7 +33,7 @@ have shipped wrong.
 | 2 | §3.1 specs the feature graphic in Parchment `#F6F2E9` / Moss `#618049` / Ink `#152820` / Terracotta `#AE5832` / Teal `#38728A`, built on `badge.png` | Fixed in working tree: `docs/release/play-feature-graphic.png` is identity-v4, 1024 × 500, RGB/no alpha | **FIXED — upload this asset** |
 | 3 | §4.1 and §4.4: pad captures onto a **Parchment** canvas | The app canvas is now `background: '#FFFFFF'` | **INVALID** — pad on `#FFFFFF`. Happy side effect: white pad reads as bleed, not as a frame |
 | 4 | §4.3 shot list assumes the old tab bar | D3: six tabs, labels **Browse · Map · Post · Ask AI · Market · Profile**. Routes unchanged (`index`, `map`, `post`, `ai`, `activity`, `profile`) | **STALE — updated in §4.4.** The tab bar is legible in every screenshot, so the labels have to be right |
-| 5 | §2 and §5.2: "In-app purchases — **Blocked on the B4 decision**" | **D1 decides it.** `expo/lib/digitalPurchase.ts` exports `canBuyDigitalInApp = Platform.OS !== 'android'`, wired at checkout call sites, and Android-facing copy now suppresses extra-purchase prices | **RESOLVED** — In-app purchases = **No**; IARC digital-goods = **No** |
+| 5 | §2 and §5.2: "In-app purchases — **Blocked on the B4 decision**" | **D1 decides it.** The native Stripe client, overage actions, purchased-credit redemption, and checkout-return routes are absent; Android initializes no store purchase surface | **RESOLVED** — In-app purchases = **No**; IARC digital-goods = **No** |
 | 6 | §1.3 footnote: "customer-facing names are **Pro / Max / Farm**" | Migration 0126 retired Max. Production `plan_limits.display_name` = Free / Pro / Farm / *Legacy Farm* (comp-only, retired) | **INVALID** — never write "Max" |
 | 7 | §1.3 bolt-on **PLANS** paragraph ("…one more listing for $0.99"), inserted if B4 → (b)/(c) | D1 chose the equivalent of (a); D4 defers annual; D5 bars "priority support"/"advanced analytics" | **DELETED.** The Android listing carries **no pricing copy at all** — see §1.3 |
 | 8 | §4.1: pad 1080 × 2400 captures to 1080 × 2160 (exactly 2:1), "recommended" | 2:1 is publishable but is **not** 9:16, and Play's promotion-eligibility spec asks for *"9:16 for portrait screenshots (minimum 1080x1920px)"* | **SUPERSEDED** — better remedy, with zero resampling, in §4.2 |
@@ -268,8 +268,8 @@ IARC questionnaire. Carry those answers over verbatim. Exactly one answer is now
 determinate rather than conditional:
 
 > **"Does the app allow users to purchase digital goods?"** — §6 answered *"No
-> if B4 is gated off; otherwise Yes."* **D1 gates it off.** `canBuyDigitalInApp`
-> is `false` on Android at every purchase call site; Android-opened first-party
+> if B4 is gated off; otherwise Yes."* **D1 gates it off.** The native app has no
+> standalone digital checkout call site; Android-opened first-party
 > web pages carry an app-platform marker that disables digital checkout; and
 > Android-facing AI copy suppresses overage prices. The answer is **No**, and
 > Store settings → In-app purchases is **No**.
@@ -280,14 +280,13 @@ approximate location sharing, not by depicted content.
 
 ### 2.1 Digital-goods posture checks
 
-D1 is implemented at the checkout call sites and the copy surfaces that can
-otherwise confuse Play review:
+D1 is implemented by removing native external digital checkout and its copy:
 
 | Where | Android behavior | Why it matters |
 |---|---|---|
-| Native overage buttons | `canBuyDigitalInApp` is false, so Android branches to upgrade/plan copy instead of Stripe checkout | No native digital purchase UI |
-| Bundles / upgrade / allowance copy | Android paths suppress `$0.99` extra-purchase prices | Play review reads strings, not just button wiring |
-| AI assistant action copy | Android calls include platform context; paid overage summaries say checkout is unavailable on this device instead of naming `$0.99` | The assistant cannot surface a hidden digital-purchase prompt |
+| Native overage buttons | No Stripe overage action or native billing client exists | No native digital purchase UI |
+| Bundles / upgrade / allowance copy | Native paths contain no standalone overage price | Play review reads strings, not just button wiring |
+| AI assistant action copy | Native calls include platform context; exhausted allowances suggest plans or reset instead of standalone checkout | The assistant cannot surface a hidden digital-purchase prompt |
 | First-party web opened from Android | App-opened `/terms`, `/privacy`, and `/trust` URLs carry `app_platform=android`; the site stores that marker for the tab and disables pricing checkout CTAs | A legal/support link from the Android app does not become a link-out to Stripe |
 
 Historical note: the app can still be used on the public web, and `/pricing`
@@ -599,7 +598,7 @@ place a half-finished type treatment shows, **plain captures are the recommendat
 |---|---|---|
 | **The app icon in identity v4** | Fixed in working tree with an interim identity-v4 mark; final commissioned illustration can fast-follow | No |
 | **Produce photographs** | Every photo-led screenshot needs real images; production has zero. I will not download stock on an assumed licence | **Yes — blocks shots 1, 2, 3, 4, 6, 8** |
-| **Fixing the two D1 copy leaks** | Fixed in working tree; Android copy now follows `canBuyDigitalInApp` | No |
+| **Fixing the two D1 copy leaks** | Superseded by removal of the native external digital checkout and standalone-overage copy | No |
 | **Fixing `GOOGLE_PLAY_PACKAGE.md` §7.2** | Fixed in working tree; reviewer note now says "No purchases on Android" | No |
 | **The "My Gnome" heading under the "Market" tab** | Fixed in working tree; user-facing copy says Market while the route remains `activity` | No |
 | **`app.json` splash / adaptive-icon backgrounds** | Fixed in working tree: both are `#FFFFFF`; verify on rebuilt app | Not for listing; rebuild verification remains |
@@ -638,7 +637,7 @@ unreadable; confirm none of them survived.
 
 **Code corrections that gate the declarations**
 - [x] `market/bundles.tsx:62` no longer directs Android sellers to buy on the web
-- [x] `upgrade.tsx` suppresses "$0.99" when `!canBuyDigitalInApp`
+- [x] Native source contains no standalone `$0.99` checkout or purchased-credit redemption
 - [x] `activity.tsx:82` heading reconciled with the "Market" tab label
 - [x] `GOOGLE_PLAY_PACKAGE.md` §7.2 "NO PURCHASES" paragraph rewritten (§7)
 

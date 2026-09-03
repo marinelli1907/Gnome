@@ -46,7 +46,7 @@ Paste-ready. App Store Connect → App Privacy.
 | Data types linked to identity | **All 15.** Nothing is collected anonymously except one event row (§2.9) |
 | Account creation offered? | **Yes** |
 | Account deletion offered in-app? | **Yes** (§10) |
-| In-app purchases / subscriptions? | **No StoreKit products configured** (§11.5); iOS Stripe overage ships as a disclosed seller-tool risk |
+| In-app purchases / subscriptions? | **Yes** — Pro and Farm through StoreKit, server-verified; no native Stripe overage (§11.5) |
 | ATT prompt needed? | **No** — no `NSUserTrackingUsageDescription` anywhere (§3) |
 
 ---
@@ -305,9 +305,9 @@ payment method, optional buyer label, notes, sold-at) and `seller_expenses`
 written through the `record_sale` RPC (`expo/lib/db.ts:1440-1460`).
 
 **Payment Info is NOT collected.** No card number, bank account or payment
-credential is ever entered in Gnome. The iOS overage path can open
-Stripe-hosted checkout through `expo/lib/billing.ts`, but card/payment details
-are collected by Stripe on its hosted page, not by the app.
+credential is entered in Gnome. Pro/Farm checkout is Apple's StoreKit sheet,
+and the native app contains no Stripe digital checkout. Physical-order payment
+links open the seller's chosen payment app and do not report payment to Gnome.
 
 ### 2.12 Purchases → Purchase History — **collected, linked, optional**
 
@@ -506,7 +506,7 @@ deployed**. "Deployed" is what Apple's reviewer will read. See F2.
 | **Apple** | Sign in with Apple identity; MapKit tiles; APNs delivery | `AuthProvider.tsx:178-181`; `react-native-maps` on MapKit | Implicit | Yes |
 | **Google Identity** | OAuth identity at sign-in only | `AuthProvider.tsx:152` | **No** | Yes |
 | ~~Anthropic~~ | **Nothing.** Unreachable while `allow_paid_fallback = false`; also gated behind `AI_PAID_FALLBACK_DISCLOSED=true` | `_shared/providers.ts`; coordinator-verified config | **Named as the AI provider — wrong** | Removed (0 occurrences) |
-| **Stripe** | Hosted checkout for the iOS/web $0.99 seller overage path; Gnome does not collect card numbers | `expo/lib/billing.ts` → `billing-checkout` | n/a | Disclose in Review Notes |
+| **Stripe** | Website-only plan and seller-tool checkout; the native app sends no checkout request or payment data to Stripe | `web/` callers → `billing-checkout`; native billing client absent | n/a | Not a native-app data recipient |
 
 ---
 
@@ -515,7 +515,7 @@ deployed**. "Deployed" is what Apple's reviewer will read. See F2.
 | Type | How verified |
 |---|---|
 | Advertising Identifier | grep across source + `Podfile.lock`: zero hits (§3) |
-| Payment Info / Credit Info | No payment SDK and no card field in the app. The iOS overage path opens Stripe-hosted checkout, so Stripe collects payment details directly; Gnome does not collect card data. |
+| Payment Info / Credit Info | No card field or Stripe payment SDK/path in the native app. StoreKit handles Pro/Farm payment details; physical-order links hand off to the seller's selected payment app. |
 | Contacts (address book) | No `expo-contacts` dependency; no `NSContactsUsageDescription` in `Info.plist` |
 | Health & Fitness | No HealthKit entitlement; no such dependency |
 | Browsing History | The app has no browser. `WebBrowser.openBrowserAsync` is used twice — for the OAuth session (`AuthProvider.tsx:159`) and to open a signed URL for the user's *own* permit document (`expo/app/compliance/index.tsx:106`). Neither records history |
@@ -717,22 +717,22 @@ category gate above. We are stating that plainly rather than implying coverage
 we do not have.
 ```
 
-### 11.5 Subscription disclosure — no StoreKit products; iOS overage disclosed
+### 11.5 Subscription disclosure — StoreKit subscriptions only on iOS
 
-**Verified absent.** `expo/package.json` contains no `expo-in-app-purchases`,
-no `react-native-iap`, no `react-native-purchases`/RevenueCat, and no StoreKit
-usage anywhere in `expo/{app,components,lib,providers}`. `expo/ios/Podfile.lock`
-contains no purchase pod. However, `expo/lib/billing.ts` can open
-Stripe-hosted checkout for the $0.99 publish/renewal overage path on iOS/web.
-Android gates that path off through `canBuyDigitalInApp`.
+`expo/package.json` includes `expo-iap`. `expo/lib/nativeSubscriptions.ts` loads
+`gnome.pro.monthly` and `gnome.farm.monthly`, rejects pending purchases before
+backend synchronization, sends Apple's signed transaction JWS to
+`subscription-sync`, and finishes the transaction only after the server accepts
+it. `expo/app/upgrade.tsx` provides purchase, restore, and Apple subscription
+management. The native Stripe billing client and checkout-return routes are
+absent.
 
 App Store Connect answers:
 
-- In-App Purchases: **No StoreKit products are configured**. The iOS build ships
-  the Stripe-hosted $0.99 seller overage path as a deliberate, disclosed
-  `APP_STORE_PACKAGE.md` §6 posture; Android gates that path off.
-- Subscriptions: **none configured**. Do not create a subscription group.
-- "Restore Purchases" control: **not required** unless StoreKit IAP is added.
+- In-App Purchases: **Yes** — Pro and Farm auto-renewable subscriptions.
+- Subscriptions: **Yes** — attach existing `gnome.pro.monthly` and
+  `gnome.farm.monthly` to the version under review.
+- "Restore Purchases" control: **present** on the plan screen.
 - Content Rights: **Yes**, the app contains third-party content — it hosts
   user-generated content and Gnome has the rights/permissions to display it.
 
@@ -741,11 +741,12 @@ Disclosure text for the review notes:
 ```
 SELLER PURCHASES
 
-This build has no StoreKit in-app purchase products and no subscription purchase
-path. Seller plan surfaces are informational and do not sell plans. The iOS app does
-include a one-time Stripe-hosted checkout for a $0.99 extra Sell publish/renewal
-when a seller exhausts their included allowance; Android does not expose that
-purchase path. Gnome takes no commission on anything neighbors trade.
+This build sells Pro and Farm auto-renewable subscriptions through Apple
+StoreKit. Gnome unlocks the plan only after the server verifies Apple's signed
+transaction, and Restore Purchases is on the plan screen. The iOS app does not
+sell standalone listing publishes, renewals, or promotion credits and contains
+no Stripe checkout or web-purchase link for digital functionality. Gnome takes
+no commission on anything neighbors trade.
 
 When a buyer and a seller settle up, they do it directly with each other. If the
 seller has published a Venmo, PayPal or Cash App handle, the app can open that
@@ -759,14 +760,10 @@ it opens an in-app notice with no price, no date and no way to buy, reserve or
 join a waitlist.
 ```
 
-> **Cross-lane note, not this document's fix.** `APP_STORE_PACKAGE.md` risk R1
-> flags that the Upgrade and Boost surfaces still print real dollar amounts next
-> to buttons that used to resolve to a "coming soon" alert (`expo/app/upgrade.tsx`,
-> `expo/app/promote/[listingId].tsx`, `expo/components/UpgradePromptCard.tsx`).
-> That was a Guideline 2.1 completeness risk owned by the app lane. It does not
-> change any App Privacy answer in this document. The separate 3.1.1 posture is
-> the iOS $0.99 Stripe-hosted seller overage path described above: no StoreKit
-> products, Android gated off, and explicit Review Notes disclosure.
+The exact App Review explanation and regression checklist live in
+`APP_STORE_PACKAGE.md` §6. Do not paste older notes that describe the plan screen
+as informational or disclose a native Stripe overage; neither statement matches
+the replacement candidate.
 
 ---
 
@@ -923,8 +920,8 @@ The page was re-probed on 2026-08-20 during the launch reconciliation pass.
 4. Enter App Privacy from **§2**. Tracking: **No**. Do not skip Precise
    Location (§2.6), Financial Info (§2.11) or Purchase History (§2.12) — all
    three are real and all three are easy to under-declare.
-5. Use the §11.5 iOS overage posture; configure no StoreKit subscription
-   products and disclose the Stripe-hosted seller overage in Review Notes.
+5. Use the §11.5 StoreKit posture; attach the existing Pro and Farm subscription
+   products and do not disclose a native Stripe overage that no longer exists.
 6. Answer **Yes** to account deletion; paste **§11.2** into the review notes.
 7. Paste **§11.3**, **§11.4** and the **§11.5** disclosure block into App Review
    Information.

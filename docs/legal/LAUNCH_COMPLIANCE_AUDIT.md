@@ -342,19 +342,11 @@ before you act.` The picker path still strips photo metadata through
 **Class: FIX BEFORE PUBLICATION (of paid plans).** Blocks flipping
 `payments_live_enabled` to true; does not block a free-tier launch.
 
-**Current launch state is narrower than paid-plan launch.** The live-payments
-gate is still off, `/upgrade` is informational, `UpgradePromptCard` opens that
-information screen, and `expo/app/promote/[listingId].tsx` no longer offers a
-paid extra-promotion checkout. Android also gates the $0.99 publish/renewal
-overage path through `canBuyDigitalInApp`.
-
-Important correction to this 2026-08-13 audit: iOS still can open Stripe-hosted
-checkout for a one-time $0.99 publish/renewal overage. That is now an explicit
-owner launch decision and an App Review 3.1.1 risk disclosed in
-`APP_STORE_PACKAGE.md` §6, not a hidden defect in this audit.
-
-"Restore purchases" remains **N/A** today because there are no StoreKit/IAP
-products to restore.
+**Current launch state is narrower than web paid-plan launch.** The live Stripe
+payments gate is still off. iOS `/upgrade` offers Pro and Farm through StoreKit,
+with server verification and Restore Purchases; Android has no purchase UI.
+Neither native app offers Stripe listing overages or purchased promotion-credit
+redemption. Those standalone products remain web-only.
 
 **What is missing for the web paid plans:**
 

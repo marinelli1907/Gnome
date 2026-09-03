@@ -1,8 +1,12 @@
-# App Store submission package — Gnome 1.1.0
+# App Store replacement submission package — Gnome 1.1.0
 
 Audited 2026-08-13 against `54e141e`, then reconciled on 2026-08-29 against the
-1.1.0 release branch and final EAS build 27. Every factual claim below cites
-the file or command it came from.
+1.1.0 release branch and EAS build 27. Reconciled again on 2026-09-03 at
+`725a8c71df0c0b14a6bc54fdbefce9e9916daba0` after App Review rejected build 32
+for a Gnome-controlled promo-code plan unlock. The replacement candidate removes
+that path, removes every native Stripe digital-purchase path, and adds the
+disabled-by-default Seasonal Discovery renderer.
+Every factual claim below cites the file or command it came from.
 Where a thing genuinely cannot be checked from this machine, it says so instead
 of guessing.
 
@@ -37,7 +41,7 @@ So:
 | Bundle identifier | `app.boonesystems.gnome` | `expo/app.json` → `ios.bundleIdentifier` | OK |
 | App name (binary) | `Gnome` | `expo/app.json` → `name`; `CFBundleDisplayName` in prebuilt `Info.plist` | OK |
 | Marketing version | `1.1.0` | `expo/app.json` → `version` | OK |
-| Build number | **Managed remotely — currently `27`** | `eas build:version:get --platform ios --profile production --non-interactive` on 2026-08-29 | Final artifact exists |
+| Build number | **Managed remotely — currently `32`** | `eas build:version:get --platform ios --profile production --non-interactive` on 2026-09-03 | Rejected build; production build auto-increments to 33 |
 | `appVersionSource` | `remote` | `expo/eas.json` → `cli.appVersionSource` | OK |
 | `autoIncrement` | `true` on `production` | `expo/eas.json` → `build.production` | OK |
 | EAS project | `@marinelli1907/gnome`, id `b84fe5e3-5446-45dd-b078-9db076159143` | `eas project:info` | OK |
@@ -46,27 +50,29 @@ So:
 | Orientation | Portrait | `expo/app.json` → `orientation` | OK |
 | Encryption declaration | `ITSAppUsesNonExemptEncryption: false` | `expo/app.json` → `ios.infoPlist` | OK — skips the per-build export questionnaire |
 
-**Build-number note.** Remote iOS buildNumber is `27` and `autoIncrement: true`.
-Build 27 is the final release artifact; older builds are superseded and must not
-be selected for version 1.1.0.
+**Build-number note.** Remote iOS buildNumber is `32` and `autoIncrement: true`.
+Build 32 was rejected and must not be reselected. The next production build is
+expected to auto-increment to 33; verify the number in EAS and App Store Connect
+after it is built rather than hard-coding it into the repository.
 
 ### 1.2 Build history
 
-The final signed iOS archive is version 1.1.0 build 27 at
-`artifacts/ios/Gnome-1.1.0-final.ipa`. It passed signature, entitlement, privacy
-manifest, and icon checks, uploaded to App Store Connect, and finished Apple
-processing. `eas.json` configures the existing App Store Connect app id; the
-build has not been attached to or submitted with the public version.
+Build 32 at `artifacts/ios/Gnome-1.1.0-build32.ipa` passed signature,
+entitlement, privacy-manifest, and icon inspection before upload, then App
+Review rejected it under Guideline 3.1.1 because its plan screen exposed a
+Gnome-controlled promo-code unlock. It is superseded. `eas.json` configures the
+existing App Store Connect app id; a new signed replacement artifact does not
+exist until the production EAS build in §10 completes.
 
 ### 1.3 Signing, capabilities, entitlements
 
 | Item | Actual | Source | Verdict |
 |---|---|---|---|
-| Signing | EAS-managed; signed build 27 verifies and satisfies its designated requirement | `codesign --verify --deep --strict` on the final IPA | VERIFIED |
+| Signing | EAS-managed; signed build 32 verified and satisfied its designated requirement | `codesign --verify --deep --strict` on the uploaded IPA | REPEAT ON REPLACEMENT |
 | Sign in with Apple | `usesAppleSignIn: true`; plugin `expo-apple-authentication` present; prebuild emits `com.apple.developer.applesignin = [Default]` | `expo/app.json`; prebuilt `ios/Gnome/Gnome.entitlements` | OK |
 | Apple provider enabled server-side | **`"apple": true`** | `curl https://fgybyghwcjlstqxkclch.supabase.co/auth/v1/settings` — verified live today | OK |
 | Google provider enabled server-side | **`"google": true`** | same call | OK |
-| Push entitlement | signed build 27 carries `aps-environment = production` | `codesign -d --entitlements :-` on the final IPA | VERIFIED |
+| Push entitlement | signed build 32 carries `aps-environment = production` | `codesign -d --entitlements :-` on the uploaded IPA | REPEAT ON REPLACEMENT |
 | `UIBackgroundModes` | absent | prebuilt `Info.plist` | Correct — Gnome sends alert pushes only, not silent pushes |
 | Associated domains | **absent** — no `com.apple.developer.associated-domains` | `expo/app.json`, prebuilt entitlements | See risk R4 |
 
@@ -98,13 +104,13 @@ Nothing required is missing.
 `NSPrivacyTracking: false`, no tracking domains, and the same 15 collected data
 types declared in §5. `npx expo config --type public` resolves those 15 entries.
 
-Signed build 27's root `PrivacyInfo.xcprivacy` carries all 15 configured
+Signed build 32's root `PrivacyInfo.xcprivacy` carries all 15 configured
 collected-data rows and `NSPrivacyTracking = false`.
 
 ### 1.7 Icon
 
 `expo/assets/images/icon.png` is the 1024×1024 source icon. Expo's generator
-flattened it correctly: signed build 27's `AppIcon60x60@2x.png` is 120×120 and
+flattened it correctly: signed build 32's `AppIcon60x60@2x.png` is 120×120 and
 has no alpha channel.
 
 ---
@@ -133,9 +139,10 @@ draws it. This is the single most likely reason a first submission bounces.
 **Current release behavior.** The dead-end controls were removed. The iOS
 `/upgrade` screen now loads and sells the real Pro and Farm StoreKit products,
 restores purchases, and opens Apple's subscription-management UI. The server
-must verify the signed transaction before the app changes a plan. Android does
-not expose digital-purchase controls under owner decision D1. The separate iOS
-$0.99 listing-overage path remains a disclosed App Review risk (§6).
+must verify the signed transaction before the app changes a plan. Native apps
+contain no Stripe digital checkout, overage, purchased-promotion-credit, or
+checkout-return path. Android exposes no digital-purchase controls under owner
+decision D1.
 
 ### R2 — Seed Drop: **fixed in the working tree and live website.** **RESOLVED**
 
@@ -450,44 +457,64 @@ superseded and must not be pasted into App Store Connect.
   management link.
 - Paid plan cards show StoreKit's localized monthly price and the screen links
   directly to Gnome's Terms of Use and Privacy Policy.
-- `FOUNDING3` selects the Pro product and uses Apple's store-confirmed
-  introductory-offer eligibility. The checkout sheet was verified showing a
-  three-month free trial without changing the intended business terms.
+- The iOS app contains no Gnome promo/coupon/referral entry field and sends no
+  Gnome promo value to checkout or StoreKit. Any introductory price shown by
+  Apple is an App Store Connect/StoreKit offer whose eligibility and redemption
+  are controlled by Apple, not a Gnome-entered code.
 
 Apple sandbox testing passed product load, purchase, server verification, Pro
 entitlement, and restore. The fail-closed path was also proved: StoreKit first
 reported a successful sandbox purchase while server verification failed, and
 the account remained Free until a valid server verification completed.
+Those results predate the replacement binary. The 2026-09-03 local Release
+simulator build re-proved product UI and the no-promo surface, but purchase and
+restore require a signed build plus an Apple sandbox account and must be rerun
+on the replacement artifact before submission.
 
-### 6.2 Other payment surfaces
+### 6.2 Guideline 3.1.1 promo-code correction
 
-- `expo/lib/billing.ts` can open a Stripe-hosted $0.99 checkout on iOS and web
-  for one additional Sell publish or renewal after the included allowance is
-  exhausted. Android hides this path through
-  `canBuyDigitalInApp = Platform.OS !== 'android'`.
+- `expo/app/upgrade.tsx` no longer renders or accepts a promo code.
+- The native Stripe client and its checkout success/cancel routes were removed.
+  `expo/lib/nativeSubscriptions.ts` no longer accepts a Gnome promo and sends
+  Pro/Farm purchases directly to StoreKit.
+- `billing-checkout` rejects every request whose platform is not explicitly
+  `web` before allowance, promo, product, portal, or Stripe processing.
+- Web pricing may still redeem web campaigns, and its request is explicitly
+  identified as `platform: 'web'`.
+- Referral UI is not shipped in the customer app. Internal, authenticated admin
+  complimentary-entitlement tools remain administrative account support, not a
+  customer-entered code or purchase alternative.
+
+Static compliance tests scan the shipped Expo source and backend guard order.
+There is no remaining iOS customer path where entering a Gnome-controlled code
+can grant Pro, Farm, a subscription discount, or temporary paid-plan access.
+
+### 6.3 Other payment surfaces
+
+- Standalone Sell publishes, renewals, and paid promotion credits are not sold
+  or redeemed in the native app. The retained Stripe versions are web-only and
+  every web caller sends `platform: 'web'` to the fail-closed backend.
+- Included Pro/Farm promotion credits remain usable because they are benefits of
+  the verified StoreKit subscription, not a separate external purchase.
 - Payments for produce and other physical marketplace goods occur directly
   between buyer and seller. The app may open the seller's Venmo, PayPal, Cash
   App, or Zelle details. Opening a payment link never marks an order paid;
   `PaymentDisclaimer` explains that the seller confirms payment separately.
 - Seed Drop is a non-transactional coming-soon surface and has no purchase CTA.
 
-### 6.3 App Review posture
+### 6.4 App Review posture
 
 | Guideline | Posture |
 |---|---|
-| **3.1.1 — In-App Purchase** | Pro and Farm are digital seller subscriptions and use StoreKit. Restore is present, and entitlement is server-verified. |
+| **3.1.1 — In-App Purchase** | Pro and Farm are digital seller subscriptions and use StoreKit. Restore is present, entitlement is server-verified, and iOS has no Gnome-controlled promo, Stripe checkout, listing overage, paid-promotion-credit redemption, or web-purchase link. |
 | **3.1.3(e) — Physical goods and services** | Produce and homemade-goods payments remain outside IAP and are handled directly between users. |
-| **3.1.1(a) — $0.99 listing overage** | The external Stripe link is allowed without an external-purchase entitlement in the United States storefront. Gnome 1.1.0 must therefore remain U.S.-only; expanding availability requires a fresh storefront-policy review. Disclose the path and never describe it as a physical-goods payment. |
 | **Android D1** | Android exposes no digital-purchase UI and no link-out to Stripe. |
 
 Do not tell App Review that nothing is purchasable or that the plan screen is
 informational. Submit the two StoreKit subscription products with the app, set
 availability to the United States only, and use the exact review notes in §8.2.
-If Apple still rejects the $0.99 external overage, remove or convert that
-one-time path; do not weaken the verified subscription architecture to preserve
-it.
 
-### 6.4 Live-payment gate
+### 6.5 Live-payment gate
 
 `billing_config.payments_live_enabled` remains **false**. Stripe remains in TEST
 mode, no real charge is authorized, and no public release may be submitted until
@@ -557,12 +584,20 @@ the plan screen. Gnome unlocks a plan only after server verification of Apple's
 signed transaction. Pro may show Apple's three-month introductory offer when
 the App Store says the account is eligible.
 
-The iOS app also includes a one-time Stripe-hosted $0.99 checkout for one extra
-Sell publish/renewal after a seller exhausts the included allowance; Android
-does not expose that path. This release is available only in the United States
-storefront. Payments for physical marketplace goods happen directly between
-buyer and seller. The app can open the seller's Venmo, PayPal, Cash App, or
-Zelle details, but Gnome never marks an order paid from that action. A
+GUIDELINE 3.1.1 CORRECTION
+The rejected build exposed a Gnome promo-code field on the plan screen. That
+field and its native redemption path have been removed. The iOS app cannot
+enter or redeem a Gnome-controlled promo, coupon, or referral code for Pro,
+Farm, a discount, or temporary paid access. The backend also rejects promo
+requests from mobile platforms before any promo or entitlement processing.
+Web-only campaign redemption is not exposed or linked from the iOS app.
+
+The iOS app does not sell standalone listing publishes, renewals, or promotion
+credits and contains no Stripe checkout or Stripe checkout-return route. When a
+seller exhausts an allowance, the app offers StoreKit plans or waiting for the
+allowance reset. Payments for physical marketplace goods happen directly
+between buyer and seller. The app can open the seller's Venmo, PayPal, Cash App,
+or Zelle details, but Gnome never marks an order paid from that action. A
 disclaimer is shown every time.
 
 SIGNING IN
@@ -602,9 +637,10 @@ daniel@boonesystems.com
 
 ## 9. Screenshot plan
 
-`supportsTablet` is `false`, so no iPad set is needed. Four opaque 6.9-inch-sized
-screenshots are ready in `artifacts/store/apple/`; each is 1320 × 2868 JPEG and
-depicts the actual cross-platform release-mode app UI.
+`supportsTablet` is `false`, so no iPad set is needed. Eight opaque 6.9-inch-sized
+screenshots are ready in `artifacts/store/apple/color/`; each is 1320 × 2868 JPEG
+and depicts the actual cross-platform release-mode app UI inside a branded,
+storefront-safe promotional frame.
 
 | # | File | Screen |
 |---|---|---|
@@ -612,11 +648,17 @@ depicts the actual cross-platform release-mode app UI.
 | 2 | `02-map.jpg` | Live map tiles, listing pins, and Apple attribution |
 | 3 | `03-market.jpg` | A customized public Market with cover/profile photos, followers, hours, visit requests, and a live Drop |
 | 4 | `04-listing.jpg` | The same Market's live Drop and photo inventory |
+| 5 | `05-search.jpg` | Search and category discovery across nearby inventory |
+| 6 | `06-listing-detail.jpg` | A real photo listing with price, unit, seller, and request action |
+| 7 | `07-zordy.jpg` | Zordy helping with a focused gardening question |
+| 8 | `08-sell.jpg` | The real Create Listing flow with photo drafting, title, harvest date, sale unit, price, and inventory |
 
-The set contains no emoji-only listing cards, no fake app mockup, no Upgrade or
-Boost screen, and no real private contact information. The website's app preview
-uses the same actual Browse capture. App Preview video is optional and omitted
-for 1.1.0.
+The set contains no emoji-only listing cards, no fake app mockup, and no real
+private contact information. The website's app preview uses the same actual
+Browse capture. The rejected Plans/promo screenshot is not part of the upload
+set. The Pro/Farm product-review screenshots in `artifacts/store/apple/review/`
+were also captured from the no-promo, no-standalone-overage Plans screen. App Preview video is
+optional and omitted for 1.1.0.
 
 ---
 
@@ -628,19 +670,22 @@ action.
 
 ### Before App Store submission
 
-1. **Owner:** apply the one remaining read-only grant repair listed in
-   `docs/release/PRODUCTION_MIGRATION_HANDOFF.md`. The preceding five release
-   migrations are applied and verified. Production remains read-only to coding
-   agents. Afterward, run the read-only proof and update the ledger.
+1. Review and apply the additive Seasonal Discovery migrations in order:
+   `20260903040036_seasonal_campaign_config.sql`, then
+   `20260903040040_seasonal_analytics_allowlist.sql`. Record them in
+   `supabase/migrations/APPLIED.tsv` only after production applies them. The
+   seeded campaign must remain `enabled = false` throughout App Review.
 2. Leave `billing_config.payments_live_enabled = false`; do not make a real
    charge or activate public paid subscriptions during release preparation.
-3. Use final iOS build 27. Do not rebuild unless a new code defect requires it;
-   any rebuild must increment the build number and repeat artifact inspection.
+3. Do not reuse rejected build 32. From `expo/`, run the production EAS build
+   command in the final checklist below. Remote versioning currently reports 32
+   and `autoIncrement` should produce build 33; verify what EAS actually assigns.
 
 ### Apple Developer portal (owner)
 
 4. The App ID, distribution signing, App Store profile, Sign in with Apple, and
-   production push entitlement are proven by signed final build 27.
+   production push entitlement were present on build 32. Repeat signature,
+   entitlement, privacy-manifest, and icon inspection on the replacement IPA.
 5. Complete a real-device APNs alert delivery test if it has not already been
    recorded. A production entitlement alone does not prove delivery.
 
@@ -648,18 +693,24 @@ action.
 
 6. Use the existing Gnome app record, App Store Connect id `6799531520`; do not
    create a duplicate.
-7. Set Availability to the **United States only** for 1.1.0. The product,
-   legal copy, and Guideline 3.1.1(a) external-overage posture are U.S.-specific.
+7. Set Availability to the **United States only** for 1.1.0. Nationwide U.S.
+   availability is the current product decision; international storefronts are
+   outside this release's legal and operational scope.
 8. Paste §3 (name, subtitle, keywords, promotional text, description, What's New,
    categories, URLs, and copyright).
-9. Upload the four approved screenshots from §9.
+9. Remove the old Plans/promo screenshot from App Store Connect and upload the
+   eight approved images from `artifacts/store/apple/color/` in §9 order.
 10. Complete **App Privacy** from §5. Tracking: **No**. Do not skip the
     Precise Location or Financial Info rows — both are real.
-11. Complete the **age rating** questionnaire from §4. Expected result: **13+**.
+11. Complete the **age rating** questionnaire from §4. Set **Age Assurance =
+    None**; do not claim an age-assurance feature. Confirm the resulting overall
+    age rating in App Store Connect.
 12. Attach `https://gnomefarmersmarket.com/terms` as the **Custom EULA**.
 13. Attach the existing `gnome.pro.monthly` and `gnome.farm.monthly` products to
-    the version for review; do not create duplicate products. Include the
-    `FOUNDING3` introductory offer configured on Pro.
+    the version for review; do not create duplicate products. Any introductory
+    offer must be configured and redeemed through App Store Connect/StoreKit,
+    never through a Gnome-entered code. Replace each product's old review image
+    with the matching no-promo asset in `artifacts/store/apple/review/`.
 14. Answer **"Yes"** to account deletion (§7).
 15. Create or confirm the reviewer account, enter its credentials in **App Review
     Information**, and paste the §8.2 notes. Do not put credentials in this repo.
@@ -668,15 +719,18 @@ action.
 
 ### Build and submit
 
-17. **Complete:** final build 27 was built, inspected, uploaded, and processed.
-18. **Complete:** the final archive has a valid signature, correct bundle id and
-    version, opaque icon, `aps-environment = production`, Sign in with Apple
-    entitlement, and all 15 privacy-manifest collected-data rows.
-19. Install the exact final artifact on a physical iPhone and rerun sign-in,
+17. From `expo/`, run `npx eas-cli build --platform ios --profile production`.
+    Let remote auto-increment assign the replacement build number.
+18. Download the completed IPA and verify its signature, bundle id/version,
+    opaque icon, `aps-environment = production`, Sign in with Apple entitlement,
+    and all configured privacy-manifest rows before uploading it.
+19. Install the exact replacement artifact on a physical iPhone and rerun sign-in,
     Browse, Map, post, report/block, account deletion entry point, StoreKit
     product load, sandbox purchase, server entitlement, restore, and fail-closed
-    verification.
-20. Attach processed build 27 to version 1.1.0 in the existing app record.
+    verification. Confirm the Plans screen has no Gnome promo/code field.
+20. Upload with `npx eas-cli submit --platform ios --profile production --path
+    <replacement-ipa>` or Transporter, wait for processing, and attach the new
+    build to version 1.1.0 in the existing app record.
     `eas.json` already holds the non-secret `ascAppId`; do not add Apple
     credentials to the repository.
 21. Stop before **Submit for Review** and request the owner's final submission
@@ -694,6 +748,6 @@ status:
 | eas.json has no `env` block → unconfigured binary | **RESOLVED, twice over.** `eas.json` now sets `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY` on all three profiles, **and** the same two are set in the EAS `production` environment | `expo/eas.json`; `eas build:version:get` printed "The following environment variables are defined in both the production build profile env configuration and the production environment on EAS… The values from the build profile configuration will be used." |
 | `OAUTH_READY` hardcoded; providers possibly disabled | **RESOLVED.** `sign-in.tsx` now fetches `/auth/v1/settings` at runtime and only renders a provider's button if the server says it is enabled. Live check today: `apple: true`, `google: true`, `email: true` | `expo/app/sign-in.tsx:39-68`; `curl …/auth/v1/settings` |
 | Password-reset deep link had no handler | **RESOLVED.** `AuthProvider.tsx` handles `getInitialURL` + the `url` event, parses `?code=`, exchanges it for a session | `expo/providers/AuthProvider.tsx:77-96` |
-| No EAS build has ever run | **RESOLVED.** Final signed version 1.1.0 build 27 was downloaded, inspected, uploaded, and processed. | `artifacts/ios/Gnome-1.1.0-final.ipa` |
-| APNs credentials / device push test | **PARTIAL.** Build 27 proves the production APNs entitlement. A recorded real-device delivery test remains open. | Signed build 27 entitlement inspection; §10 |
+| No EAS build has ever run | **RESOLVED.** Builds 27 and 32 were downloaded and inspected; build 32 reached App Review and is now superseded by the pending replacement. | `artifacts/ios/Gnome-1.1.0-build32.ipa` |
+| APNs credentials / device push test | **PARTIAL.** Build 32 proves the production APNs entitlement. A recorded real-device delivery test and replacement-artifact inspection remain open. | Signed build 32 entitlement inspection; §10 |
 | App Store Connect metadata | **OPEN.** The app record exists, and this document plus `artifacts/store/apple/` is the upload package. | §3–§5, §8–§10 |

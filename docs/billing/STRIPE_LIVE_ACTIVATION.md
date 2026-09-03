@@ -34,9 +34,9 @@ The Gnome Stripe account is **Boone Systems LLC** `acct_1U0DgIAGtpm0Et4C`.
    events: checkout.session.completed, customer.subscription.updated,
    customer.subscription.deleted, invoice.paid, invoice.payment_failed,
    charge.refunded. Set its signing secret as `STRIPE_WEBHOOK_SECRET_LIVE` (kept separate from the test secret; the webhook verifies each independently).
-6. Confirm return/cancel URLs resolve (`GNOME_PUBLIC_URL`, default
-   https://gnomefarmersmarket.com → `/my?checkout=success|cancelled`; the app
-   uses the `gnome://checkout-success|cancelled` deep links).
+6. Confirm web return/cancel URLs resolve (`GNOME_PUBLIC_URL`, default
+   https://gnomefarmersmarket.com → `/my?checkout=success|cancelled`). Native
+   apps do not call Stripe checkout or accept Stripe checkout-return deep links.
 
 ## §13 payment-hardening requirements (2026-08-17)
 
@@ -155,10 +155,10 @@ super-admin, audited).
 
 Run in order, after the checklist above, before announcing:
 
-1. **Mobile checkout deep-link round-trip on a real device** — checkout from
-   the app, complete payment, confirm `gnome://checkout-success` returns to the
-   app and the app re-asks the server (return is a signal, not proof).
-2. **One controlled real-money transaction** (smallest product, own card).
+1. **Web checkout round-trip** — begin on Gnome's website, complete payment,
+   confirm the browser returns to `/my?checkout=success`, and confirm the web
+   client re-asks the server (return is a signal, not proof).
+2. **One controlled real-money web transaction** (smallest product, own card).
 3. **Webhook receipt** for it — `stripe_events` row with `livemode=true`,
    `billing_events` effect recorded.
 4. **Authorization consumption** — the paid credit publishes exactly once,

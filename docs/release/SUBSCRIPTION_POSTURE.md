@@ -7,9 +7,9 @@
 > `docs/MONETIZATION.md`: Free, Pro (`grower`), Farm (`farm`), with
 > `sponsor` retained only as retired Legacy Farm.
 >
-> Current launch posture differs from this memo: Android gates digital purchase
-> UI off, while the $0.99 extra Sell listing remains live on iOS/web and must be
-> disclosed as a deliberate App Review 3.1.1 risk. Use
+> Current launch posture differs from this memo: iOS sells Pro and Farm only
+> through StoreKit, Android exposes no digital purchase UI, and standalone
+> publishes/renewals remain web-only. Use
 > `APP_STORE_PACKAGE.md` §6 and `APP_STORE_PRIVACY.md` §11.5 for submission.
 
 **Decision owner:** Daniel · **Prepared:** 2026-08-13 · **Repo state:** `main`, migrations

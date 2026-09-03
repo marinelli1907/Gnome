@@ -1,8 +1,11 @@
 # Gnome 1.1.0 — release board
 
 The single place that says what is done, what is holding, and who is holding it.
-Updated 2026-08-29 against the current release branch, final iOS build 27, and
-final Android versionCode 22.
+Updated 2026-09-03 after Apple rejected Gnome 1.1.0 build 32 under Guideline
+3.1.1 for its Gnome-controlled plan promo-code path. The replacement candidate
+removes that code path and the separate native Stripe overage/purchased-credit
+paths. It is implemented and statically verified; it has not yet been built,
+uploaded, or submitted. Android versionCode 28 remains unchanged.
 
 Companion docs: `GOOGLE_PLAY_PACKAGE.md` (the standing audit — evidence for every
 claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_ACTIVATION.md`
@@ -23,9 +26,9 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | Website ↔ app parity | **DEPLOYED / VERIFIED** | — | Live homepage uses the actual release-app capture; removed referral routes return 404 |
 | `/pricing` test-mode redirect | **DEPLOYED / VERIFIED** (`9945b24`) | — | Live `/pricing` re-probed 2026-08-20 |
 | **App icon + feature graphic** | **READY / MECHANICALLY VERIFIED** | — | Google assets are in `artifacts/store/google/` |
-| **D1 copy leaks** | **CLOSED / REGRESSION TESTED** | — | Android price and checkout surfaces are gated |
-| Reviewer notes (Play + iOS) | **READY** | — | Notes match the release behavior and payment posture |
-| iOS native subscriptions | **SANDBOX PASS** | — | Pro/Farm verification and restore were proven; live payments remain disabled |
+| **D1 copy leaks** | **CLOSED / NATIVE PATH REMOVED / REGRESSION TESTED** | — | Native source contains no standalone overage price, checkout, purchased-credit redemption, or Stripe return route |
+| Reviewer notes (Play + iOS) | **IOS REPLACEMENT NOTES READY / NOT RESUBMITTED** | Daniel | Use the Guideline 3.1.1 correction notes in `APP_STORE_PACKAGE.md`; stop before final Submit for Review |
+| iOS native subscriptions | **PRIOR SANDBOX PASS / BUILD 33 DEVICE RERUN REQUIRED** | Daniel | Pro/Farm verification and restore were proven previously; rerun on signed build 33; live payments remain disabled |
 | Deferred rewards/referrals | **REMOVED FROM CUSTOMER SURFACES** | — | Static release guard prevents routes or links from returning |
 | Store assets | **GOOGLE + APPLE READY / MECHANICALLY VERIFIED** | — | Apple screenshots are opaque 1320×2868 JPEGs; Google has four opaque 1287×2288 PNGs plus the verified icon and feature graphic in `artifacts/store/` |
 | **Final iOS artifact** | **READY / PROCESSED IN APP STORE CONNECT** | Daniel / Codex | `Gnome-1.1.0-final.ipa`, build 27, passed signature/privacy/icon checks, uploaded successfully, and finished processing; attach it to version 1.1.0 |
@@ -55,8 +58,8 @@ conflicts with the current board above, the current board is authoritative.
 | Money suites post-0126 | seed_drop_off ALL PASS · payment_hardening 34/34 · renew_window 24/24 | PG17 clean room |
 
 **Owner decisions D1–D5 — ALL DECIDED 2026-08-19.** Recorded in
-`../design/GNOME_IDENTITY.md`. D1 Android ships with no in-app digital purchase
-UI (gate `expo/lib/digitalPurchase.ts`); D2 active-slot semantics not in the RC;
+`../design/GNOME_IDENTITY.md`. D1 native apps contain no external digital
+checkout (iOS Pro/Farm use StoreKit; Android purchase UI remains off); D2 active-slot semantics not in the RC;
 D3 six tabs with short labels; D4 annual post-launch; D5 no claims for features
 that do not ship. The list below is kept for the reasoning behind each.
 
@@ -400,44 +403,31 @@ the report at its word, because a wrong blocker costs more than a missed one.
 **Verified** means I reproduced it; where my reading differs from the report's,
 that is stated.
 
-### 9.1 D1 copy leaks — fixed in working tree
+### 9.1 Native external digital checkout — removed in working tree
 
-**Fixed in working tree.** `expo/lib/digitalPurchase.ts` already gated the three
-*checkout* call sites correctly; this pass gates the customer-facing strings
-that Android users could still see.
+The Android-only boolean gate was insufficient for Apple's rejected build. The
+replacement removes the native Stripe client and checkout return routes, removes
+standalone overage purchase actions/copy from iOS and Android, and prevents the
+native Promote screen from redeeming externally purchased credits.
 
 | File | Fix |
 |---|---|
-| `expo/components/UpgradePromptCard.tsx` | Imports `canBuyDigitalInApp`; Android copy starts at upgrade, not "$0.99 each". |
-| `expo/components/mygnome/MyMarketCard.tsx` | Passes `{ canBuyExtras: canBuyDigitalInApp }` into allowance meters/hints. |
-| `expo/app/upgrade.tsx` | Android renewal/overage plan copy no longer names the extra-purchase price. |
-| `expo/app/import.tsx` + `expo/lib/importReview.ts` | Import result allowance summary can suppress extra-publish pricing on Android; web/Expo twin remains byte-identical. |
-| `expo/app/(tabs)/ai.tsx` | Bundle and renewal payment-needed chat branches use Android-safe copy before the existing gated card/button. |
-| `expo/app/market/bundles.tsx` | Removed the Android-visible web/Stripe workaround copy. |
-| `expo/lib/taxonomy.ts` | Bare-token fallback for `PUBLISH_ALLOWANCE_EXHAUSTED` follows the same gate. |
+| Native post, listing detail, Zordy, import, bundle, allowance, and plan surfaces | No standalone paid-publish/renewal copy or action; exhausted sellers see plans or wait for reset. |
+| `expo/app/upgrade.tsx` + `expo/lib/nativeSubscriptions.ts` | Pro/Farm purchase and restore remain StoreKit-only and server-verified. |
+| `expo/app/promote/[listingId].tsx` | Included plan credits remain; purchased-credit redemption is absent. |
+| `supabase/functions/billing-checkout/index.ts` | Every missing/native platform fails before digital checkout processing; retained callers must be explicit web clients. |
 
-Verification: `node web/lib/allowance.test.mjs` (31/31), `node
-expo/lib/allowance.test.mjs` (34/34), `node web/lib/importReview.test.mjs`
-(32/32), `npm run typecheck` in `expo/`, `npm run typecheck` in `web/`, and
-`git diff --check` all pass. No Map file changed. The worktree still carries
-pre-existing dirty migration/temp files; they are outside this launch-copy pass
-and were not cleaned, reverted or staged.
+Verification includes the combined Apple paid-digital static audit, native
+subscription static test, Expo allowance test, and Expo/web typechecks. No Map
+file changed. The worktree still carries unrelated owner files; they are being
+preserved and excluded from the focused commits.
 
 ### 9.2 Reviewer notes that misdescribe the product
 
-**Fixed in working tree.** `docs/release/GOOGLE_PLAY_PACKAGE.md` now says
-"No purchases on Android" and explains that Android shows plan comparison, not
-an overage purchase, when allowance is exhausted.
-
-The iOS pair no longer asserts "no Stripe call path." `APP_STORE_PACKAGE.md`
-and `APP_STORE_PRIVACY.md` now state the actual posture: no StoreKit products or
-subscriptions are configured, but `expo/lib/billing.ts` can open
-`billing-checkout` for the $0.99 publish/renewal overage path on iOS/web.
-
-What remains is not a hidden reviewer-note bug; the launch posture is to submit
-with a deliberate 3.1.1 risk explanation. Current official Apple Guideline 3.1.1
-still requires IAP for unlocking app functionality, while 3.1.1(a) and US
-storefront rules add external-link nuance.
+**Fixed in working tree.** `APP_STORE_PACKAGE.md` and `APP_STORE_PRIVACY.md`
+describe the actual replacement: StoreKit Pro/Farm subscriptions, no native
+Gnome code redemption, no native Stripe overage, and no purchased-promotion
+credit redemption. Web checkout remains separate and is not linked from iOS.
 
 ### 9.3 The link-out path — real, open, but not the date-driver
 
@@ -496,9 +486,8 @@ the upload. Tracked, not blocking.
   that Support URL.
 - **Legal audit stale-status cleanup fixed in working tree.** G9/G10 now point
   at the current privacy policy disclosures for Expo push, Stripe, Google and
-  OpenStreetMap; G7 now matches the iOS overage risk posture in
-  `APP_STORE_PACKAGE.md` §6 instead of preserving the old no-mobile-purchase
-  assumption.
+  OpenStreetMap; G7 now matches the StoreKit-only iOS posture in
+  `APP_STORE_PACKAGE.md` §6.
 - **Legacy launch runbook stale-status cleanup fixed in working tree.**
   `docs/LAUNCH.md` is marked superseded for the 1.1.0 store launch and no longer
   says Google/Apple providers are disabled. A 2026-08-20 app-shaped
@@ -509,9 +498,8 @@ the upload. Tracked, not blocking.
   and `GOOGLE_PLAY_PACKAGE.md` no longer say Android has never been built; they
   distinguish older Android `versionCode` 4 artifacts from the missing final
   reviewed Play-bound AAB. `docs/LAUNCH.md` no longer preserves the old Payment
-  Link switch-on runbook as current instructions. The AI tab also has a
-  defensive Android guard before `purchaseOverage`, and the web Ask Gnome prompt
-  says paid checkout is Stripe-managed only when checkout is enabled.
+  Link switch-on runbook as current instructions. The native overage checkout
+  was subsequently removed; web Ask Gnome identifies itself as a web caller.
 
 ### 9.5 What the audit checked and found correct
 

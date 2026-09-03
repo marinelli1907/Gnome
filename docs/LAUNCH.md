@@ -71,9 +71,9 @@ is a few minutes in https://supabase.com/dashboard/project/fgybyghwcjlstqxkclch.
 The old 2026-08-06 Payment Link switch-on note is superseded. Current pricing
 truth is the 0126 three-tier model in `docs/MONETIZATION.md`: Free, Pro
 (`grower`), and Farm (`farm`), with live charging intentionally disabled and
-Stripe still in TEST mode. Android exposes no in-app digital purchase UI for
-v1.1 (D1); iOS/web $0.99 overage remains a deliberate, separately documented
-review risk. Do not re-enable legacy Payment Links or resurrect Boost/Max/Farm
+Stripe still in TEST mode. Native apps expose no external digital checkout:
+iOS sells Pro/Farm only through StoreKit and Android purchase UI is off; the
+$0.99 overage remains web-only. Do not re-enable legacy Payment Links or resurrect Boost/Max/Farm
 $99 launch copy from this checklist.
 
 ## Done (verified live 2026-08-03)
