@@ -21,7 +21,7 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | **B1** Google Maps | **CLOSED ON EMULATOR / PLAY INSTALL RECHECK REQUIRED** | Daniel | Re-verify Map from the final Play internal-test install (§3) |
 | **B2** FCM push | **CONFIGURED / PHYSICAL ANDROID PROOF MISSING** | Daniel | Physical Android run (§2); this cannot be closed on an emulator |
 | **B3** Deletion URL + contact | **CLOSED** | — | — |
-| **B4** Purchase posture | **CLOSED — D1 VERIFIED** | — | Android has no digital purchase UI or Stripe link-out |
+| **B4** Purchase posture | **CLOSED — NATIVE EXTERNAL DIGITAL CHECKOUT REMOVED** | — | iOS uses StoreKit for Pro/Farm only; Android has no digital purchase UI; standalone overages/promotions are web-only |
 | **§4.3b** Gemini data safety | **OWNER ACTION** | **Daniel** | See `GEMINI_DATA_SAFETY_DECISION.md`: paid Gemini key, or declare Shared = Yes |
 | Website ↔ app parity | **DEPLOYED / VERIFIED** | — | Live homepage uses the actual release-app capture; removed referral routes return 404 |
 | `/pricing` test-mode redirect | **DEPLOYED / VERIFIED** (`9945b24`) | — | Live `/pricing` re-probed 2026-08-20 |
@@ -30,19 +30,22 @@ claim), `PLAY_STORE_LISTING.md` (store presentation), `../billing/STRIPE_LIVE_AC
 | Reviewer notes (Play + iOS) | **IOS REPLACEMENT NOTES READY / NOT RESUBMITTED** | Daniel | Use the Guideline 3.1.1 correction notes in `APP_STORE_PACKAGE.md`; stop before final Submit for Review |
 | iOS native subscriptions | **PRIOR SANDBOX PASS / BUILD 33 DEVICE RERUN REQUIRED** | Daniel | Pro/Farm verification and restore were proven previously; rerun on signed build 33; live payments remain disabled |
 | Deferred rewards/referrals | **REMOVED FROM CUSTOMER SURFACES** | — | Static release guard prevents routes or links from returning |
-| Store assets | **GOOGLE + APPLE READY / MECHANICALLY VERIFIED** | — | Apple screenshots are opaque 1320×2868 JPEGs; Google has four opaque 1287×2288 PNGs plus the verified icon and feature graphic in `artifacts/store/` |
-| **Final iOS artifact** | **READY / PROCESSED IN APP STORE CONNECT** | Daniel / Codex | `Gnome-1.1.0-final.ipa`, build 27, passed signature/privacy/icon checks, uploaded successfully, and finished processing; attach it to version 1.1.0 |
+| Store assets | **APPLE REPLACEMENT READY LOCALLY / ASC UPDATE PENDING** | Daniel | Eight 1320×2868 JPEGs are in `artifacts/store/apple/color/`; slot 8 is the real Sell flow and the rejected Plans/promo image is excluded |
+| Apple privacy, rating, availability | **AGE ASSURANCE CORRECTION REQUIRED** | Daniel | Set App Store Connect Age Assurance to **None**; do not invent an app feature. Other saved metadata remains subject to final review |
+| **Final iOS artifact** | **BUILD 32 REJECTED / REPLACEMENT NOT BUILT** | Daniel / Codex | Build 32 is superseded. Remote build number is 32; the next production EAS build should auto-increment to 33 and must repeat signed-artifact inspection |
 | **Final AAB** | **READY / LOCAL VALIDATION PASS** | Daniel / Codex | `Gnome-1.1.0-final.aab`, versionCode 22, passed Bundletool and signature checks; upload after the Play upload-key reset is accepted |
 | **Play upload key** | **ROTATION PREPARED / RESET NOT SUBMITTED** | Daniel / Codex | Submit the prepared public-certificate reset in Play Console; never use the replacement private key locally |
-| **Production migrations** | **5 APPLIED + VERIFIED / 1 READ-ONLY GRANT REPAIR PENDING** | Daniel | Apply only `20260830013208_lock_public_market_drops_projection.sql`, then Codex verifies read-only |
-| **Public store submission** | **HOLD BY DESIGN** | Daniel | Prepare internal/TestFlight artifacts only; do not submit publicly without a separate owner action |
+| **Production migrations** | **EXISTING LAUNCH MIGRATIONS VERIFIED / 2 SEASONAL MIGRATIONS PENDING** | Daniel | Seasonal config and analytics migrations are additive and clean-room tested; seed campaign is `enabled = false` and must remain disabled through review |
+| **Public store submission** | **APPLE REPLACEMENT PREP / NOT SUBMITTED** | Daniel | Build, inspect, upload, attach, and complete replacement QA; stop before Apple's final Submit for Review boundary |
 
-Current verification: Expo typecheck and lint pass, all 51 Node/static tests
-pass, the Next.js production build passes, Expo Doctor is 18/18, Edge function
-typechecks have zero failures, the clean-room billing/entitlement suites pass,
-the release-mode iOS simulator app builds and launches, its Map renders tiles,
-pins, and attribution without known fatal log signatures, and production still
-reports `payments_live_enabled = false`.
+Current replacement-candidate verification: Expo typecheck and lint, web
+typecheck, Edge Function Deno checks, the combined Apple paid-digital static
+audit, direct Node/static suites, and the clean-room payment, subscription,
+entitlement, RLS, compliance, and Seasonal suites pass. The earlier local
+Release simulator run predates removal of the native overage path and is not
+runtime proof of this exact source. No release binary was built at this gate.
+Seasonal Discovery remains disabled, the Plans screen contains no Gnome
+promo-code entry, and `payments_live_enabled` remains false.
 
 The detailed sections below preserve historical evidence. Where a dated detail
 conflicts with the current board above, the current board is authoritative.
