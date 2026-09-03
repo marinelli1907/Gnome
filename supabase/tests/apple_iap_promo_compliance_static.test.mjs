@@ -24,6 +24,7 @@ const subscriptions = read('expo/lib/nativeSubscriptions.ts');
 const promote = read('expo/app/promote/[listingId].tsx');
 const checkout = read('supabase/functions/billing-checkout/index.ts');
 const assistant = read('supabase/functions/gnome-assistant/index.ts');
+const assistantActions = read('supabase/functions/gnome-assistant/market_actions.ts');
 const mobileSupabase = read('expo/lib/supabase.ts');
 const webSupabase = read('web/lib/supabaseBrowser.ts');
 const overageBoundary = read('supabase/migrations/20260903192317_ios_web_overage_boundary.sql');
@@ -121,6 +122,13 @@ assert.match(webSupabase, /headers:\s*\{\s*'x-gnome-platform': 'web'\s*\}/u);
 assert.match(assistant, /bodyPlatform === 'web' && headerPlatform === 'web'/u);
 assert.match(assistant, /Access-Control-Allow-Headers[^\n]+x-gnome-platform/u);
 assert.match(assistant, /'x-gnome-platform': digitalPurchasesAvailable \? 'web' : 'native'/u);
+assert.match(assistantActions, /translateActionError\(err: string, digitalPurchasesAvailable = false\)/u);
+assert.match(assistantActions, /ovRow\?\.reason === 'ALREADY_AUTHORIZED'\) \{\s*if \(deps\.digitalPurchasesAvailable !== true\)/u);
+assert.ok(
+  [...assistantActions.matchAll(/if \(deps\.digitalPurchasesAvailable !== true\)/gu)].length >= 2,
+  'native Zordy must refuse both a new paid renewal and a waiting web authorization',
+);
+assert.match(assistantActions, /confirmResultReply\([\s\S]*digitalPurchasesAvailable = false\): string/u);
 for (const [name, source] of webInvokedFunctions) {
   assert.match(source, /Access-Control-Allow-Headers[^\n]+x-gnome-platform/u, `${name} must allow the shared web platform header`);
 }

@@ -96,8 +96,10 @@ ck('a different number is not evidence', m.priceEvidence('change roma to $4', 50
 ck('price formats as $5/quart', m.fmtPrice(500, 'quart') === '$5/quart', m.fmtPrice(500, 'quart'));
 ck('cents survive when they matter', m.fmtPrice(550, 'each') === '$5.50/each');
 ck('raw SQL never reaches the seller',
-  !/42501|PGRST|PUBLISH_ALLOWANCE_EXHAUSTED/.test(m.translateActionError('PUBLISH_ALLOWANCE_EXHAUSTED'))
-  && m.translateActionError('PUBLISH_ALLOWANCE_EXHAUSTED').includes('$0.99'));
+    !/42501|PGRST|PUBLISH_ALLOWANCE_EXHAUSTED/.test(m.translateActionError('PUBLISH_ALLOWANCE_EXHAUSTED'))
+  && !m.translateActionError('PUBLISH_ALLOWANCE_EXHAUSTED').includes('$0.99'));
+ck('web-only action errors may name the standalone price',
+  m.translateActionError('PUBLISH_ALLOWANCE_EXHAUSTED', true).includes('$0.99'));
 ck('unknown errors fall back to a safe sentence',
   m.translateActionError('deadlock detected').includes('nothing was changed').valueOf() === false
     ? m.translateActionError('deadlock detected').toLowerCase().includes('nothing was changed')
@@ -168,6 +170,7 @@ ck('unknown errors fall back to a safe sentence',
     intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
     listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
     rpcResults: { my_overage_required: { data: [{ required: true, intent: 'renewal' }], error: null } },
+    digitalPurchasesAvailable: true,
   });
   const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
   ck('renewal is proposal-only and names the $0.99',
@@ -177,17 +180,17 @@ ck('unknown errors fall back to a safe sentence',
   ck('proposal reply says nothing happened yet', resp.reply.includes('Nothing is changed yet'), resp.reply);
 }
 {
-  const { deps } = fakeDeps({
+  const { deps, log } = fakeDeps({
     intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
     listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
     rpcResults: { my_overage_required: { data: [{ required: true, intent: 'renewal' }], error: null } },
     digitalPurchasesAvailable: false,
   });
   const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
-  ck('Android renewal proposal suppresses the $0.99 price string',
-    resp?.proposal?.action === 'renew' && !resp.reply.includes('$0.99')
-    && resp.reply.includes('unavailable') === false
-    && resp.reply.includes('paid plan on this device'),
+  ck('native renewal exhaustion has no paid proposal or price',
+    !resp?.proposal && !resp?.reply.includes('$0.99')
+    && resp?.reply.includes('Review plans')
+    && !log.some((c) => c.fn === 'ai_propose_action'),
     JSON.stringify(resp));
 }
 
@@ -236,6 +239,7 @@ ck('unknown errors fall back to a safe sentence',
     intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
     listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
     rpcResults: { my_overage_required: { data: [{ required: true, reason: 'ALLOWANCE_EXHAUSTED' }], error: null } },
+    digitalPurchasesAvailable: true,
   });
   const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
   ck('payment-required proposal carries the structured money block',
@@ -247,11 +251,25 @@ ck('unknown errors fall back to a safe sentence',
     intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
     listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
     rpcResults: { my_overage_required: { data: [{ required: false, reason: 'ALREADY_AUTHORIZED' }], error: null } },
+    digitalPurchasesAvailable: true,
   });
   const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
   ck('already-paid renewal says so and promises no new charge',
     resp?.proposal?.payment?.already_paid === true && /no new charge/.test(resp.reply),
     JSON.stringify({ p: resp?.proposal?.payment, reply: resp?.reply }));
+}
+{
+  const { deps, log } = fakeDeps({
+    intent: { action: 'renew', query: 'sourdough', price_cents: null, unit: '', quantity: '', scope: 'one', days: null },
+    listings: [L('a', 'Sourdough Bread', 3, { status: 'expired' })],
+    rpcResults: { my_overage_required: { data: [{ required: false, reason: 'ALREADY_AUTHORIZED' }], error: null } },
+    digitalPurchasesAvailable: false,
+  });
+  const resp = await m.handleMarketAction(deps, 'renew my sourdough listing', ['Sourdough Bread']);
+  ck('native caller cannot consume or be told about a web authorization',
+    !resp?.proposal && !/paid|charge|\$0\.99/i.test(resp?.reply ?? '')
+    && !log.some((c) => c.fn === 'ai_propose_action'),
+    JSON.stringify(resp));
 }
 
 // Injection cannot smuggle a payment amount: unknown intent keys never surface.
@@ -334,7 +352,9 @@ ck('confirm result: created drop reads back title and count',
 // Confirm-result phrasing (client-side sentences after ai_confirm_action).
 ck('confirm result: all renewed', m.confirmResultReply({ action: 'renew', ok_count: 3, payment_needed: 0 }) === '3 listings renewed.');
 ck('confirm result: payment split is honest',
-  m.confirmResultReply({ action: 'renew', ok_count: 1, payment_needed: 2 }).includes('$0.99'));
+  m.confirmResultReply({ action: 'renew', ok_count: 1, payment_needed: 2 }, true).includes('$0.99'));
+ck('native confirm result suppresses standalone renewal price',
+  !m.confirmResultReply({ action: 'renew', ok_count: 1, payment_needed: 2 }).includes('$0.99'));
 ck('confirm result: idempotent no-op reads calmly',
   m.confirmResultReply({ action: 'renew', ok_count: 0, payment_needed: 0 }).includes('already'));
 
@@ -415,7 +435,9 @@ ck('confirm result: created basket reads back title and count',
   m.confirmResultReply({ action: 'create_bundle', ok_count: 1, bundle: { title: 'Breakfast Basket', items: 3 } })
     .includes('“Breakfast Basket” is live with 3 items'));
 ck('confirm result: basket over allowance points at the $0.99 path',
-  m.confirmResultReply({ action: 'create_bundle', ok_count: 0, payment_needed: 1 }).includes('$0.99'));
+  m.confirmResultReply({ action: 'create_bundle', ok_count: 0, payment_needed: 1 }, true).includes('$0.99'));
+ck('native basket result suppresses standalone publish price',
+  !m.confirmResultReply({ action: 'create_bundle', ok_count: 0, payment_needed: 1 }).includes('$0.99'));
 
 console.log('');
 console.log(`market actions: ${n - failed}/${n} passed`);

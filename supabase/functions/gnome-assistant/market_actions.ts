@@ -263,7 +263,7 @@ export function ambiguousReply(query: string, options: FoundListing[]): string {
 }
 
 // SQL error name -> seller sentence. Raw codes never reach the seller.
-export function translateActionError(err: string): string {
+export function translateActionError(err: string, digitalPurchasesAvailable = false): string {
   const e = String(err ?? '');
   if (e.includes('LISTING_NOT_FOUND')) return 'I couldn\'t find that listing in your market.';
   if (e.includes('NOT_A_SALE_LISTING')) return 'That one isn\'t a For Sale listing, so it doesn\'t have a price.';
@@ -289,7 +289,9 @@ export function translateActionError(err: string): string {
   if (e.includes('COMPONENT_NOT_AVAILABLE')) return 'One of those listings isn\'t live in your market right now, so it can\'t go in a basket.';
   if (e.includes('BUNDLE_UNAVAILABLE')) return 'That basket isn\'t available right now — one of its items is spoken for.';
   if (e.includes('PUBLISH_ALLOWANCE_EXHAUSTED') || e.includes('PAYMENT_REQUIRED')) {
-    return 'Your plan\'s included renewals are used up — this one would be $0.99.';
+    return digitalPurchasesAvailable
+      ? 'Your plan\'s included renewals are used up — this one would be $0.99.'
+      : 'Your plan\'s included renewals are used up. Review plans or wait for your allowance to reset.';
   }
   return 'Something went wrong on my end — nothing was changed. Try again in a moment.';
 }
@@ -306,9 +308,8 @@ export type ActionProposal = {
   expires_in_minutes: number;
   items: { id: string; title: string }[];
   /** Renewal-class money facts, from my_overage_required — never from the model.
-   * required=true: confirming will come back payment_needed; the client should offer the
-   * existing $0.99 checkout. already_paid=true: a paid authorization is waiting; confirming
-   * consumes it with NO new charge. Absent for non-renewal actions. */
+   * Web-only money facts. Native callers never receive a paid proposal, even if
+   * a web authorization exists. Absent for non-renewal actions. */
   payment?: { required: boolean; already_paid: boolean; price_cents: number };
 };
 
@@ -653,11 +654,21 @@ export async function handleMarketAction(
     const { data: ov } = await deps.rpc('my_overage_required', { p_listing: listing.id });
     const ovRow = (Array.isArray(ov) ? ov[0] : ov) as { required?: boolean; reason?: string } | null;
     if (ovRow?.required === true) {
-      payNote = deps.digitalPurchasesAvailable === false
-        ? ' Your included renewals are used up; renewals need a paid plan on this device.'
-        : ' Your included renewals are used up, so this one is $0.99.';
+      if (deps.digitalPurchasesAvailable !== true) {
+        return {
+          handled: true,
+          reply: 'Your included renewals are used up. Review plans or wait for your allowance to reset. Nothing was changed.',
+        };
+      }
+      payNote = ' Your included renewals are used up, so this one is $0.99.';
       payment = { required: true, already_paid: false, price_cents: 99 };
     } else if (ovRow?.reason === 'ALREADY_AUTHORIZED') {
+      if (deps.digitalPurchasesAvailable !== true) {
+        return {
+          handled: true,
+          reply: 'Your included renewals are used up. Review plans or wait for your allowance to reset. Nothing was changed.',
+        };
+      }
       payNote = ' You already paid for this one — confirming uses that payment, with no new charge.';
       payment = { required: false, already_paid: true, price_cents: 0 };
     } else if (ovRow?.required === false) {
@@ -712,10 +723,12 @@ export function confirmResultReply(result: {
   action?: string; ok_count?: number; payment_needed?: number;
   drop?: { title?: string; items?: number };
   bundle?: { title?: string; items?: number };
-}): string {
+}, digitalPurchasesAvailable = false): string {
   if (result.action === 'create_bundle') {
     if ((result.payment_needed ?? 0) > 0) {
-      return 'Your plan\'s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created.';
+      return digitalPurchasesAvailable
+        ? 'Your plan\'s Sell publishes are used up, so publishing this basket needs a $0.99 extra publish (or an upgrade). Nothing was created.'
+        : 'Your plan\'s Sell publishes are used up. Review plans or wait for your allowance to reset. Nothing was created.';
     }
     const t = result.bundle?.title ?? 'Gift Basket';
     const n = Number(result.bundle?.items ?? 0);
@@ -734,7 +747,9 @@ export function confirmResultReply(result: {
   const parts: string[] = [];
   if (ok > 0) parts.push(`${ok} listing${ok === 1 ? '' : 's'} ${did}.`);
   if (pay > 0) {
-    parts.push(`${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`);
+    parts.push(digitalPurchasesAvailable
+      ? `${pay} need${pay === 1 ? 's' : ''} a $0.99 renewal — your plan's included renewals are used up.`
+      : `${pay} could not be renewed because your plan's included renewals are used up.`);
   }
   if (!parts.length) parts.push('Nothing needed doing — everything was already in that state.');
   return parts.join(' ');
