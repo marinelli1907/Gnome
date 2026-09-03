@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const admin = read('admin/App.tsx');
-const claim = read('expo/app/claim-market.tsx');
 const assist = read('expo/app/market/assistance.tsx');
 const upgrade = read('expo/app/upgrade.tsx');
 const webPricing = read('web/app/pricing/PricingCTA.tsx');
@@ -20,9 +19,11 @@ assert.match(admin, /admin_promo_campaigns_v2/u);
 assert.match(admin, /admin_prepare_concierge_entitlement/u);
 assert.match(admin, /Begins at claim/u);
 assert.match(admin, /Bound to the current secure invitation/u);
-assert.match(claim, /Claim my Market/u);
-assert.match(claim, /PUBLIC_STAND/u);
-assert.match(claim, /One quick account update/u);
+assert.equal(
+  existsSync(fileURLToPath(new URL('../../expo/app/claim-market.tsx', import.meta.url))),
+  false,
+  'entitlement-bearing concierge claim must remain web-only',
+);
 assert.match(assist, /'OFF'.*'SUPPORT'.*'MANAGED'/su);
 assert.doesNotMatch(upgrade, /Promo code|Have a code\?|FOUNDING3|preview_promo/iu);
 assert.equal(

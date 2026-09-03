@@ -133,10 +133,6 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', title: 'Account update', ...headerStyle }}
               />
               <Stack.Screen
-                name="claim-market"
-                options={{ title: 'Claim your Market', ...headerStyle }}
-              />
-              <Stack.Screen
                 name="garden"
                 options={{ title: 'Garden Planner', ...headerStyle }}
               />

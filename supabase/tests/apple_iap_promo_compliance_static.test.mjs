@@ -45,10 +45,16 @@ assert.doesNotMatch(
   /functions\.invoke\(['"]billing-checkout|gnome:\/\/checkout-(?:success|cancelled)|openStripeSubscriptionPortal|createPlanCheckout|finishPlanCheckout/iu,
   'the shipped mobile source must not call or return from external digital checkout',
 );
+assert.doesNotMatch(
+  shippedMobileSources,
+  /claim_prepared_market|concierge_claim_preview|claim-market/iu,
+  'the shipped mobile source must not redeem a concierge token that can activate paid-plan access',
+);
 assert.equal(existsSync(path.join(root, 'expo/lib/billing.ts')), false, 'the native Stripe billing client must be absent');
 assert.equal(existsSync(path.join(root, 'expo/lib/digitalPurchase.ts')), false, 'the retired native digital-purchase gate must be absent');
 assert.equal(existsSync(path.join(root, 'expo/app/checkout-success.tsx')), false, 'the native checkout success route must be absent');
 assert.equal(existsSync(path.join(root, 'expo/app/checkout-cancelled.tsx')), false, 'the native checkout cancel route must be absent');
+assert.equal(existsSync(path.join(root, 'expo/app/claim-market.tsx')), false, 'the entitlement-bearing native claim route must be absent');
 
 // Pro/Farm still use verified StoreKit products, including pending-state denial
 // and restore. Removing Stripe must not weaken the existing server verification.
