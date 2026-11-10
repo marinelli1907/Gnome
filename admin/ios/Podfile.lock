@@ -2252,12 +2252,12 @@ SPEC CHECKSUMS:
   ExpoImagePicker: 6963584297308d729b08d04d84f9f6c1ac966561
   ExpoKeepAwake: c26f14275017370cc8a4b7b43a0e23361f2053a5
   ExpoLogBox: 2c4225a62f1cfb943e6b2df4fa4fe2d136e06fb6
-  ExpoModulesCore: ac795a728544c5964f1a54926c868045bdd61831
+  ExpoModulesCore: c3a062aefd9d589e14725f7abe502aebd5c77215
   ExpoModulesJSI: ea64813990c7650f3a2d469f176a54c3c7b2c66a
   ExpoModulesWorklets: ba8252c1824dce38008bdbd1de28566c6591ab7b
   ExpoSplashScreen: 6f422fd595600d78520c6b7dcf8a908fb8a7fec0
   FBLazyVector: 3c3be9a019176b5699455f7f66c5444b78a411c6
-  hermes-engine: 0436d6865d5618caacc60525ec8c4a1ad303a3fd
+  hermes-engine: f40d0ffc0d8d2b06e6792ea3d6243ac85d3f6add
   RCTDeprecation: bccb6545c26db881ecddfd83a3f9ea82aba1605f
   RCTRequired: b2f74764d596fc0051f00fee94b49bf41a6f7f5a
   RCTSwiftUI: c6d6a31b849b9dfa64c33b55dc91ac15dd55774c
