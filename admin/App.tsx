@@ -5,7 +5,7 @@
 // checked server-side (admin_has_perm / audited RPCs). No service keys here.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
   RefreshControl, SafeAreaView, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,9 +38,10 @@ const C = {
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 type Me = { user_id: string; role: string; permissions: string[]; is_owner: boolean };
-type Tab = 'home' | 'concierge' | 'fulfill' | 'ai' | 'more';
+type Tab = 'feed' | 'home' | 'concierge' | 'fulfill' | 'ai' | 'more';
 
 const TABS: { id: Tab; label: string; icon: LucideIcon; color: string }[] = [
+  { id: 'feed', label: 'Live', icon: Activity, color: C.green },
   { id: 'home', label: 'Brief', icon: HomeIcon, color: C.primary },
   { id: 'concierge', label: 'Sellers', icon: Store, color: C.orange },
   { id: 'fulfill', label: 'Fulfill', icon: PackageCheck, color: C.orange },
@@ -51,7 +52,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon; color: string }[] = [
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [me, setMe] = useState<Me | null | 'denied' | 'loading'>('loading');
-  const [tab, setTab] = useState<Tab>('home');
+  const [tab, setTab] = useState<Tab>('feed');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -99,6 +100,7 @@ export default function App() {
         <View style={s.roleBadge}><Text style={s.role}>{admin.role}</Text></View>
       </View>
       <View style={{ flex: 1 }}>
+        {tab === 'feed' && <LiveFeed can={can} />}
         {tab === 'home' && <Home />}
         {tab === 'concierge' && <SellerConcierge can={can} isOwner={admin.is_owner} />}
         {tab === 'fulfill' && <Fulfill can={can} />}
@@ -144,6 +146,283 @@ function SignIn() {
         </Pressable>
       </Centered>
     </KeyboardAvoidingView>
+  );
+}
+
+// ---------------------------------------------------------------- Live Feed
+// Newest-first stream from admin_live_feed (one read-only, admin-gated RPC). Quick comps reuse
+// the existing audited admin_grant_plan_v2 — nothing here writes a table directly.
+type FeedType = 'signup' | 'market' | 'listing' | 'report' | 'plan';
+type FeedRange = 'today' | '7d' | '30d' | 'all';
+type FeedItem = {
+  id: string; type: FeedType; kind: string; at: string; label: string; detail: string | null;
+  user_id: string | null; user_first: string | null; market_id: string | null; market_name: string | null;
+};
+const FEED_TYPES: { id: FeedType; label: string; icon: LucideIcon; color: string }[] = [
+  { id: 'signup', label: 'Sign-ups', icon: UsersRound, color: C.primary },
+  { id: 'market', label: 'Markets', icon: Store, color: C.orange },
+  { id: 'listing', label: 'Listings', icon: Sprout, color: C.green },
+  { id: 'report', label: 'Reports', icon: ShieldCheck, color: C.red },
+  { id: 'plan', label: 'Plans', icon: Gift, color: C.blue },
+];
+const FEED_RANGES: { id: FeedRange; label: string }[] = [
+  { id: 'today', label: 'Today' }, { id: '7d', label: '7 days' }, { id: '30d', label: '30 days' }, { id: 'all', label: 'All' },
+];
+const FEED_KIND_LABELS: Record<string, string> = {
+  signup: 'New sign-up', market_created: 'New Market', listing_created: 'New listing',
+  report_listing: 'Listing reported', report_market: 'Market reported', report_user: 'User reported',
+  report_claim: 'Claim reported', report_message: 'Message reported',
+  comp_granted: 'Comp granted', comp_revoked: 'Comp revoked',
+  subscription_started: 'Subscription started', subscription_ended: 'Subscription ended',
+};
+const COMP_DAYS = [30, 60, 90] as const;
+const FEED_PAGE = 50;
+const NY = 'America/New_York';
+const NO_MARKET_MSG = 'This person hasn’t opened a Market yet, so there’s nothing to comp.';
+
+// Midnight today in New York as a real instant, whatever zone the phone is in.
+function nyMidnight(now = new Date()): Date {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: NY, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const p = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
+  const asUtc = Date.UTC(p('year'), p('month') - 1, p('day'), p('hour') % 24, p('minute'), p('second'));
+  const offsetMs = asUtc - Math.floor(now.getTime() / 1000) * 1000; // NY wall clock minus real UTC
+  return new Date(Date.UTC(p('year'), p('month') - 1, p('day')) - offsetMs);
+}
+function feedSince(range: FeedRange): string | null {
+  if (range === 'all') return null;
+  if (range === 'today') return nyMidnight().toISOString();
+  return new Date(Date.now() - (range === '7d' ? 7 : 30) * 864e5).toISOString();
+}
+const nyTime = (iso: string) =>
+  new Date(iso).toLocaleString('en-US', { timeZone: NY, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET';
+const nyDate = (d: Date | string) =>
+  new Date(d).toLocaleDateString('en-US', { timeZone: NY, month: 'short', day: 'numeric', year: 'numeric' });
+
+function LiveFeed({ can }: { can: (p: string) => boolean }) {
+  const [types, setTypes] = useState<FeedType[]>(FEED_TYPES.map((t) => t.id));
+  const [range, setRange] = useState<FeedRange>('7d');
+  const [items, setItems] = useState<FeedItem[] | null>(null);
+  const [cursor, setCursor] = useState<{ at: string; id: string } | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [err, setErr] = useState<ServerError | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [comped, setComped] = useState<Record<string, string>>({}); // market_id -> end date label
+  const [busyMarket, setBusyMarket] = useState<string | null>(null);
+  const reqSeq = useRef(0);
+  const canComp = can('subscriptions.grant_complimentary');
+
+  const fetchPage = useCallback(async (before: { at: string; id: string } | null) => {
+    const { data, error } = await supabase.rpc('admin_live_feed', {
+      p_types: types.length === FEED_TYPES.length ? null : types,
+      p_since: feedSince(range),
+      p_before: before?.at ?? null,
+      p_limit: FEED_PAGE,
+      p_before_id: before?.id ?? null,
+    });
+    return { data: data as any, error };
+  }, [types, range]);
+
+  // Full reload (filters changed / pull-to-refresh). A sequence number drops stale answers
+  // so a slow old request can never overwrite the list for newer filters.
+  const reload = useCallback(async (showSpinner: boolean) => {
+    const seq = ++reqSeq.current;
+    if (showSpinner) setRefreshing(true);
+    const { data, error } = await fetchPage(null);
+    if (seq !== reqSeq.current) return;
+    if (showSpinner) setRefreshing(false);
+    if (error) { setErr(serverError(error)); return; }
+    setErr(null);
+    setItems((data?.items ?? []) as FeedItem[]);
+    setHasMore(Boolean(data?.has_more));
+    setCursor(data?.has_more ? { at: String(data.next_before), id: String(data.next_before_id) } : null);
+    setUpdatedAt(new Date());
+  }, [fetchPage]);
+
+  // Quiet auto-refresh: pull the newest page and prepend anything not already shown, so rows
+  // someone paged into stay put.
+  const pollNewest = useCallback(async () => {
+    const seq = reqSeq.current;
+    const { data, error } = await fetchPage(null);
+    if (seq !== reqSeq.current || error) return;
+    const fresh = (data?.items ?? []) as FeedItem[];
+    setItems((cur) => {
+      if (!cur) return fresh;
+      const seen = new Set(cur.map((i) => i.id));
+      const added = fresh.filter((i) => !seen.has(i.id));
+      return added.length ? [...added, ...cur] : cur;
+    });
+    setUpdatedAt(new Date());
+  }, [fetchPage]);
+
+  const loadMore = async () => {
+    if (!cursor || loadingMore) return;
+    const seq = reqSeq.current;
+    setLoadingMore(true);
+    const { data, error } = await fetchPage(cursor);
+    setLoadingMore(false);
+    if (seq !== reqSeq.current) return;
+    if (error) { alertServerError(error); return; }
+    const more = (data?.items ?? []) as FeedItem[];
+    setItems((cur) => {
+      const seen = new Set((cur ?? []).map((i) => i.id));
+      return [...(cur ?? []), ...more.filter((i) => !seen.has(i.id))];
+    });
+    setHasMore(Boolean(data?.has_more));
+    setCursor(data?.has_more ? { at: String(data.next_before), id: String(data.next_before_id) } : null);
+  };
+
+  useEffect(() => { void reload(true); }, [reload]);
+
+  // Poll every 30s while this tab is mounted and the app is in the foreground.
+  useEffect(() => {
+    let active = AppState.currentState === 'active';
+    const sub = AppState.addEventListener('change', (st) => {
+      const wasActive = active;
+      active = st === 'active';
+      if (active && !wasActive) void pollNewest();
+    });
+    const t = setInterval(() => { if (active) void pollNewest(); }, 30000);
+    return () => { clearInterval(t); sub.remove(); };
+  }, [pollNewest]);
+
+  const toggleType = (t: FeedType) => {
+    setTypes((cur) => {
+      if (cur.includes(t)) return cur.length === 1 ? cur : cur.filter((x) => x !== t);
+      return FEED_TYPES.map((x) => x.id).filter((x) => x === t || cur.includes(x));
+    });
+  };
+
+  const comp = (item: FeedItem) => {
+    if (!item.market_id) { Alert.alert('No Market yet', NO_MARKET_MSG); return; }
+    const who = item.user_first ?? (item.type === 'signup' ? item.label : 'This seller');
+    const market = item.market_name ?? 'their Market';
+    Alert.alert('Comp Pro (Grower)', `${who} · ${market}\nHow long?`, [
+      ...COMP_DAYS.map((d) => ({ text: `${d} days`, onPress: () => confirmComp(item, d, who, market) })),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
+  };
+
+  const confirmComp = (item: FeedItem, days: number, who: string, market: string) => {
+    const ends = new Date(Date.now() + days * 864e5);
+    Alert.alert('Give a free Pro (Grower) plan?',
+      `Who: ${who}\nMarket: ${market}\nLength: ${days} days\nEnds: ${nyDate(ends)}\n\nFree access only. No card, no charge, and any paid subscription stays as it is.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Give comp', onPress: () => void runComp(item, ends, who, market, 'CANCEL_NEW') },
+      ]);
+  };
+
+  const runComp = async (item: FeedItem, ends: Date, who: string, market: string, overlap: string) => {
+    const marketId = item.market_id!;
+    setBusyMarket(marketId);
+    const { data, error } = await supabase.rpc('admin_grant_plan_v2', {
+      p_market: marketId, p_plan: 'grower', p_expires: ends.toISOString(),
+      p_reason_code: 'FOUNDING_SELLER', p_reason_explanation: null,
+      p_note: 'Quick comp from Live Feed', p_approval_reference: null,
+      p_source: 'ADMIN', p_overlap_action: overlap,
+    });
+    setBusyMarket(null);
+    if (error) {
+      if ((error.message ?? '').startsWith('MARKET_NOT_FOUND')) Alert.alert('No Market yet', NO_MARKET_MSG);
+      else alertServerError(error);
+      return;
+    }
+    const d = data as any;
+    if (d?.outcome === 'OVERLAP') {
+      const existingPlan = promoPlanLabel(String(d.existing_plan));
+      const existingEnd = d.existing_expires_at ? `until ${nyDate(String(d.existing_expires_at))}` : 'with no end date';
+      const canExtend = d.existing_plan === 'grower' && d.existing_expires_at && new Date(d.existing_expires_at) < ends;
+      Alert.alert('Already comped', `${market} already has free ${existingPlan} ${existingEnd}.${canExtend ? '' : ' To change it, open the person under More › Users.'}`, [
+        { text: 'Leave it', style: 'cancel' },
+        ...(canExtend ? [{ text: `Extend to ${nyDate(ends)}`, onPress: () => void runComp(item, ends, who, market, 'EXTEND_CURRENT') }] : []),
+      ]);
+      return;
+    }
+    const endLabel = nyDate(String(d?.expires_at ?? ends.toISOString()));
+    setComped((cur) => ({ ...cur, [marketId]: endLabel }));
+    Alert.alert('Comp given', `${who} has free Pro (Grower) on ${market} until ${endLabel}. Nothing was charged.`);
+    void pollNewest();
+  };
+
+  const header = (
+    <View>
+      <View style={s.rowBetween}>
+        <Text style={[s.h2, { marginTop: 4 }]}>Live feed</Text>
+        <Text style={s.cardSub}>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString('en-US', { timeZone: NY, hour: 'numeric', minute: '2-digit' })} ET` : ''}</Text>
+      </View>
+      <View style={[s.durationRow, { marginBottom: 8 }]}>
+        {FEED_TYPES.map(({ id, label, icon: Icon, color }) => {
+          const on = types.includes(id);
+          return (
+            <Pressable key={id} accessibilityRole="checkbox" accessibilityState={{ checked: on }} onPress={() => toggleType(id)}
+              style={[s.feedChip, on && { backgroundColor: color, borderColor: color }]}>
+              <Icon size={13} color={on ? '#FFFFFF' : C.muted} />
+              <Text style={[s.durationText, on && s.durationTextActive]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={[s.durationRow, { marginBottom: 10 }]}>
+        {FEED_RANGES.map((r) => (
+          <Pressable key={r.id} onPress={() => setRange(r.id)} style={[s.durationChoice, range === r.id && s.durationChoiceActive]}>
+            <Text style={[s.durationText, range === r.id && s.durationTextActive]}>{r.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {err && <ErrorCard e={err} />}
+    </View>
+  );
+
+  if (items === null && !err) return <Centered><ActivityIndicator color={C.primary} /></Centered>;
+
+  return (
+    <FlatList
+      data={items ?? []}
+      keyExtractor={(i) => i.id}
+      contentContainerStyle={{ padding: 16 }}
+      ListHeaderComponent={header}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void reload(true)} tintColor={C.primary} />}
+      onEndReachedThreshold={0.4}
+      onEndReached={() => { if (hasMore) void loadMore(); }}
+      ListEmptyComponent={err ? null : (
+        <Card><Text style={s.cardTitle}>Nothing here yet</Text><Text style={s.cardSub}>No events match these filters. Try a longer date range.</Text></Card>
+      )}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={C.primary} style={{ marginVertical: 12 }} />
+        : hasMore ? <SmallBtn label="Load more" onPress={() => void loadMore()} /> : null}
+      renderItem={({ item }) => {
+        const meta = FEED_TYPES.find((t) => t.id === item.type) ?? FEED_TYPES[0];
+        const Icon = meta.icon;
+        const compable = canComp && (item.type === 'signup' || item.type === 'market' || item.type === 'listing');
+        const compedUntil = item.market_id ? comped[item.market_id] : undefined;
+        const owner = item.type === 'signup' ? null : item.user_first;
+        return (
+          <View style={s.card}>
+            <View style={s.rowBetween}>
+              <View style={[s.feedKind, { backgroundColor: meta.color }]}>
+                <Icon size={12} color="#FFFFFF" />
+                <Text style={s.feedKindText}>{FEED_KIND_LABELS[item.kind] ?? item.kind}</Text>
+              </View>
+              <Text style={s.cardSub}>{nyTime(item.at)}</Text>
+            </View>
+            <Text style={[s.cardTitle, { marginTop: 8 }]} numberOfLines={2}>{item.label}</Text>
+            {(item.detail || owner || (item.market_name && item.type !== 'market')) && (
+              <Text style={s.cardSub} numberOfLines={2}>
+                {[owner, item.type !== 'market' && item.type !== 'plan' ? item.market_name : null, item.detail].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+            {item.type === 'signup' && !item.market_id && <Text style={s.cardSub}>No Market yet</Text>}
+            {compedUntil && <Text style={[s.cardSub, { color: C.green, fontWeight: '700' }]}>Comped Pro (Grower) until {compedUntil}</Text>}
+            {compable && (
+              <SmallBtn icon={Gift} label={busyMarket && busyMarket === item.market_id ? 'Giving comp…' : 'Comp'}
+                disabled={busyMarket !== null} onPress={() => comp(item)} />
+            )}
+          </View>
+        );
+      }}
+    />
   );
 }
 
@@ -1395,6 +1674,7 @@ const GRANT_PLANS: { id: GrantPlan; label: string; detail: string }[] = [
 ];
 const GRANT_DURATIONS: { days: number | null; label: string }[] = [
   { days: 30, label: '30 days' },
+  { days: 60, label: '60 days' },
   { days: 90, label: '90 days' },
   { days: 365, label: '1 year' },
   { days: null, label: 'No expiry' },
@@ -3717,6 +3997,7 @@ const SERVER_ERRORS: Record<string, [string, string]> = {
   UNKNOWN_STATE: ['State not recognized', 'Use the two-letter state code, e.g. NC.'],
   UNKNOWN_CLASS: ['Class not recognized', 'That product class no longer exists. Pull to refresh.'],
   NOT_FOUND: ['Already gone', 'That record no longer exists. Pull to refresh.'],
+  MARKET_NOT_FOUND: ['No Market yet', 'This person hasn’t opened a Market yet, so there’s nothing to comp.'],
 };
 function serverError(e: { message?: string } | null | undefined): ServerError {
   const raw = (e?.message ?? '').trim();
@@ -3851,6 +4132,9 @@ const s = StyleSheet.create({
   durationChoiceActive: { borderColor: C.primary, backgroundColor: C.primary },
   durationText: { fontSize: 11.5, fontWeight: '700', color: C.muted },
   durationTextActive: { color: '#FFFFFF' },
+  feedChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: C.surface },
+  feedKind: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  feedKindText: { fontSize: 10.5, fontWeight: '900', color: '#FFFFFF' },
   selfServePlan: { marginTop: 15, paddingTop: 14, borderTopWidth: 1, borderColor: C.border },
   checkBox: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, borderColor: C.muted, alignItems: 'center', justifyContent: 'center' },
   checkBoxActive: { backgroundColor: C.primary, borderColor: C.primary },
